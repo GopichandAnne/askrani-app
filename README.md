@@ -18,9 +18,10 @@ This PR contains, per the kickoff brief, **no product UI yet**:
 
 - ✅ Next.js + TS + Tailwind + shadcn/ui scaffold (hand-authored, install-ready)
 - ✅ `app/tokens.css` — brand design tokens, single source of truth
-- ✅ Full Postgres schema — `supabase/migrations/0001…0005`
-- ✅ RLS on every table + helper functions + policies
-- ✅ `RLS_TESTS.md` + pgTAP test `supabase/tests/rls_test.sql`
+- ✅ Full Postgres schema — `supabase/migrations/0001…0006`
+- ✅ RLS on every table + helper functions + policies + grants
+- ✅ `RLS_TESTS.md` + pgTAP test `supabase/tests/rls_test.sql` — **all 12 pass**
+  on the local stack (`supabase test db` → `Result: PASS`)
 - ✅ `.env.local` (blank values) + `.env.example` (documented)
 
 **Next:** human review of RLS, then Phase 2 (App shell + Orders realtime screen).
@@ -71,7 +72,7 @@ lib/
     admin.ts        SERVICE-ROLE client — server-only, bypasses RLS
 supabase/
   config.toml       CLI config
-  migrations/       0001 enums · 0002 tables · 0003 rls helpers · 0004 policies · 0005 seed
+  migrations/       0001 enums · 0002 tables · 0003 rls helpers · 0004 policies · 0005 seed · 0006 grants
   tests/rls_test.sql  pgTAP cross-store isolation test
 RLS_TESTS.md        security model + how to run the gate
 ```

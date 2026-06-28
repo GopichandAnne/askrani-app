@@ -63,10 +63,11 @@ select is(
   0,
   'userA CANNOT read store B orders');
 
-select is(
-  (select count(*)::int from public.store_secrets),
-  0,
-  'userA CANNOT read store_secrets (no client policy)');
+select throws_ok(
+  $$ select 1 from public.store_secrets $$,
+  '42501',
+  null,
+  'userA CANNOT read store_secrets (table privilege revoked)');
 
 select is(
   (select count(*)::int from public.threads where store_slug = 'foodistan-cedar-park'),
@@ -81,11 +82,15 @@ select is(
   0,
   'userA CANNOT read store B agent_config');
 
+-- owner update runs as a top-level statement; then assert it took effect
+update public.agent_config set value = '0.0900' where key = 'tax_rate';
 select is(
-  (with u as (update public.agent_config set value = '0.0900' where key = 'tax_rate' returning 1)
-   select count(*)::int from u),
-  1,
-  'userA (owner) CAN update own store agent_config tax_rate (1 row)');
+  (select ac.value
+   from public.agent_config ac
+   join public.stores s on s.id = ac.store_id
+   where s.slug = 'man-pasand-lakeline' and ac.key = 'tax_rate'),
+  '0.0900',
+  'userA (owner) CAN update own store agent_config tax_rate');
 
 reset role;
 
@@ -98,11 +103,16 @@ select isnt(
   0,
   'staff C CAN read store A agent_config');
 
+-- non-owner update runs but RLS USING filters it to 0 rows (no error);
+-- assert the owner-set value (0.0900) is unchanged
+update public.agent_config set value = '0.0999' where key = 'tax_rate';
 select is(
-  (with u as (update public.agent_config set value = '0.0999' where key = 'tax_rate' returning 1)
-   select count(*)::int from u),
-  0,
-  'staff C (non-owner) CANNOT update agent_config (0 rows affected)');
+  (select ac.value
+   from public.agent_config ac
+   join public.stores s on s.id = ac.store_id
+   where s.slug = 'man-pasand-lakeline' and ac.key = 'tax_rate'),
+  '0.0900',
+  'staff C (non-owner) CANNOT update agent_config (value unchanged)');
 
 select throws_ok(
   $$ insert into public.agent_config (store_id, key, value)
@@ -122,10 +132,11 @@ select is(
   0,
   'userB CANNOT read store A orders');
 
-select is(
-  (select count(*)::int from public.store_secrets),
-  0,
-  'userB CANNOT read store_secrets');
+select throws_ok(
+  $$ select 1 from public.store_secrets $$,
+  '42501',
+  null,
+  'userB CANNOT read store_secrets (table privilege revoked)');
 
 reset role;
 

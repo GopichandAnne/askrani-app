@@ -14,8 +14,8 @@ run it, and (3) a manual verification matrix for a live project.
 | Table | SELECT | INSERT | UPDATE | DELETE |
 |---|---|---|---|---|
 | `stores` | members of store | platform admin | owner | owner |
-| `store_secrets` | **none (service-role only)** | none | none | none |
-| `platform_admins` | **none (service-role only)** | none | none | none |
+| `store_secrets` | **none — service-role only (table grant REVOKED + no policy)** | none | none | none |
+| `platform_admins` | **none — service-role only (table grant REVOKED + no policy)** | none | none | none |
 | `staff` | members of store | owner | owner | owner |
 | `orders` | members of store | any staff | any staff | none (status-only lifecycle) |
 | `threads` | members of store | any staff | any staff (routing toggle) | none |
@@ -35,6 +35,10 @@ run it, and (3) a manual verification matrix for a live project.
   are unaffected by these policies. **The service-role key must stay server-only.**
 - Helper functions (`is_platform_admin`, `user_store_ids`, `user_store_slugs`,
   `user_is_owner`) are `SECURITY DEFINER` to avoid policy recursion on `staff`.
+- Table privileges (`0006_grants.sql`): `anon`/`authenticated` are granted DML on
+  public tables (RLS does the row gating), **except** `store_secrets` and
+  `platform_admins`, where the grant is **revoked** entirely — a client role
+  can't even attempt a query. Defense in depth on top of the missing policy.
 
 ### The two guarantees that matter most
 1. **Cross-store isolation** — store A staff cannot read store B's
@@ -66,18 +70,21 @@ output ends with:
 ```
 ok 1 - userA sees exactly one order (own store only)
 ok 2 - userA CANNOT read store B orders
-ok 3 - userA CANNOT read store_secrets (no client policy)
+ok 3 - userA CANNOT read store_secrets (table privilege revoked)
 ok 4 - userA CANNOT read store B threads
 ok 5 - userA CANNOT read store B agent_config
-ok 6 - userA (owner) CAN update own store agent_config tax_rate (1 row)
+ok 6 - userA (owner) CAN update own store agent_config tax_rate
 ok 7 - staff C CAN read store A agent_config
-ok 8 - staff C (non-owner) CANNOT update agent_config (0 rows affected)
+ok 8 - staff C (non-owner) CANNOT update agent_config (value unchanged)
 ok 9 - staff C (non-owner) CANNOT insert agent_config (RLS violation)
 ok 10 - userB CANNOT read store A orders
-ok 11 - userB CANNOT read store_secrets
+ok 11 - userB CANNOT read store_secrets (table privilege revoked)
 ok 12 - anon (no session) sees zero orders
-# All 12 tests passed.
+Result: PASS
 ```
+
+> **Verified:** all 12 assertions pass on the local Supabase stack
+> (`supabase test db` → `Result: PASS`, exit 0).
 
 > **HUMAN TODO (tooling):** Node.js and the Supabase CLI are not yet installed on
 > this machine. Install Node 20+ (for `npm install`) and the Supabase CLI +
@@ -86,11 +93,12 @@ ok 12 - anon (no session) sees zero orders
 
 ### What each assertion proves
 - **1–5** Cross-store isolation for userA: sees only their store's order; zero
-  visibility into store B orders/threads/agent_config; zero visibility into
-  `store_secrets`.
-- **6** Owners CAN write their own store's `agent_config`.
-- **7–9** A non-owner staff member can *read* config but cannot *update* (0 rows,
-  silently filtered by `USING`) or *insert* (hard RLS violation, SQLSTATE 42501).
+  visibility into store B orders/threads/agent_config; `store_secrets` access is
+  denied at the table-privilege level (SQLSTATE 42501).
+- **6** Owners CAN write their own store's `agent_config` (the update takes effect).
+- **7–9** A non-owner staff member can *read* config but cannot *update* (RLS
+  `USING` filters the update to 0 rows, so the value stays unchanged) or *insert*
+  (hard RLS violation, SQLSTATE 42501).
 - **10–11** Symmetric isolation for userB (different store).
 - **12** `anon` sees nothing.
 
