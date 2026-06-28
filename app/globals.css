@@ -1,0 +1,99 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Brand tokens (single source of truth) */
+@import "./tokens.css";
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Semantic (shadcn/ui) tokens — MAPPED from brand tokens above.
+   shadcn components reference these via tailwind.config.ts (bg-primary, etc.).
+   Light = :root, Dark = .dark (class strategy, toggled by next-themes).
+   ═══════════════════════════════════════════════════════════════════════════ */
+@layer base {
+  :root {
+    --background: var(--cream);
+    --foreground: var(--text);
+
+    --card: #ffffff;
+    --card-foreground: var(--text);
+
+    --popover: #ffffff;
+    --popover-foreground: var(--text);
+
+    --primary: var(--teal);
+    --primary-foreground: #ffffff;
+
+    --secondary: var(--teal-mist);
+    --secondary-foreground: var(--teal-deep);
+
+    --muted-surface: #f3f4f6;
+    --muted-foreground: var(--muted);
+
+    --accent: var(--teal-mist);
+    --accent-foreground: var(--teal-deep);
+
+    --destructive: #dc2626;
+    --destructive-foreground: #ffffff;
+
+    /* --border already defined in tokens.css (#e5e7eb) */
+    --input: var(--border);
+    --ring: var(--teal);
+  }
+
+  .dark {
+    --background: var(--navy);
+    --foreground: var(--dark-text);
+
+    --card: var(--navy-surface);
+    --card-foreground: var(--dark-text);
+
+    --popover: var(--navy-surface);
+    --popover-foreground: var(--dark-text);
+
+    /* primary gradient/teal stays — it pops on navy */
+    --primary: var(--teal);
+    --primary-foreground: #06201d;
+
+    --secondary: #122a2a;
+    --secondary-foreground: var(--teal-light);
+
+    --muted-surface: #182338;
+    --muted-foreground: var(--dark-muted);
+
+    --accent: #122a2a;
+    --accent-foreground: var(--teal-light);
+
+    --destructive: #ef4444;
+    --destructive-foreground: #ffffff;
+
+    --border: var(--navy-border);
+    --input: var(--navy-border);
+    --ring: var(--teal-light);
+  }
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Respect reduced-motion for the signature live feed + lifts. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}

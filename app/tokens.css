@@ -1,0 +1,59 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Ask Rani — DESIGN TOKENS (single source of truth)
+   Extracted verbatim from the production askrani.ai stylesheet.
+   DO NOT invent brand colors. Components derive from these variables only.
+   Semantic (shadcn/ui) tokens are mapped from these in globals.css.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Brand: teal (primary) ───────────────────────────────────────────── */
+  --teal: #14b8a6; /* primary */
+  --teal-dark: #0d9488;
+  --teal-deep: #0f766e; /* headings/links on light */
+  --teal-light: #5eead4; /* accents, live pulse, dark-mode link */
+  --teal-mist: #f0fdfa; /* tints, chat bubbles */
+  --teal-border: #ccfbf1;
+
+  /* ── Brand: coral (secondary accent — sparing) ───────────────────────── */
+  --coral: #fb923c;
+  --coral-dark: #f97316;
+
+  /* ── Surfaces / neutrals ─────────────────────────────────────────────── */
+  --navy: #0c1222; /* dark-mode surface base */
+  --cream: #fafaf8; /* light app background */
+  --text: #1f2937;
+  --muted: #6b7280;
+  --border: #e5e7eb;
+
+  /* dark-mode surface ramp (derived from the site's dark aesthetic) */
+  --navy-surface: #141b2e; /* raised surfaces */
+  --navy-border: #1e293b;
+  --dark-text: #fafaf8;
+  --dark-muted: #9ca3af;
+
+  /* ── Signature treatments ────────────────────────────────────────────── */
+  --gradient-primary: linear-gradient(135deg, var(--teal), var(--teal-dark));
+  --radius: 12px; /* button / control radius */
+  --radius-lg: 16px; /* large (cards) */
+  --shadow-primary: 0 4px 14px rgba(20, 184, 166, 0.3);
+
+  /* ── Order-status chip colors (soft tint bg + saturated text) ─────────── */
+  /* saturated text values: */
+  --status-placed: #6b7280; /* grey */
+  --status-submitted: #d97706; /* amber */
+  --status-pending_approval: #f97316; /* coral */
+  --status-proposed: #14b8a6; /* teal */
+  --status-confirmed: #0f766e; /* teal-deep */
+  --status-fulfilled: #16a34a; /* green (confirmed-complete) */
+  --status-rejected: #dc2626; /* red */
+  --status-cancelled: #dc2626; /* red */
+  /* soft tint backgrounds: */
+  --status-placed-bg: #f3f4f6;
+  --status-submitted-bg: #fffbeb;
+  --status-pending_approval-bg: #fff7ed;
+  --status-proposed-bg: #f0fdfa;
+  --status-confirmed-bg: #f0fdfa;
+  --status-fulfilled-bg: #f0fdf4;
+  --status-rejected-bg: #fef2f2;
+  --status-cancelled-bg: #fef2f2;
+}

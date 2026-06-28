@@ -1,0 +1,55 @@
+# Supabase CLI config. Used by `supabase db push`, `supabase test db`, and
+# `supabase start` (local stack). HUMAN TODO: run `supabase link --project-ref
+# <ref>` to bind this to the cloud project before `db push`.
+project_id = "askrani-app"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[db.pooler]
+enabled = false
+
+[realtime]
+enabled = true
+# Realtime is a HARD requirement on the Orders screen.
+
+[studio]
+enabled = true
+port = 54323
+
+[inbucket]
+enabled = true
+port = 54324
+
+[auth]
+enabled = true
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["http://localhost:3000/auth/callback"]
+jwt_expiry = 3600
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+# Magic-link login (no phone/Twilio).
+enable_confirmations = false
+
+# Google OAuth — secrets come from env, never hardcode.
+# HUMAN TODO: set SUPABASE_AUTH_GOOGLE_CLIENT_ID / _SECRET (local) and configure
+# the Google provider in the hosted project's Auth settings.
+[auth.external.google]
+enabled = true
+client_id = "env(SUPABASE_AUTH_GOOGLE_CLIENT_ID)"
+secret = "env(SUPABASE_AUTH_GOOGLE_SECRET)"
+redirect_uri = ""
+
+[edge_runtime]
+enabled = true
