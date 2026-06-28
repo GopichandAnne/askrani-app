@@ -1,0 +1,31 @@
+import {
+  BarChart3,
+  BookOpen,
+  Bot,
+  LifeBuoy,
+  MessagesSquare,
+  Package,
+  ShoppingCart,
+  type LucideIcon,
+} from "lucide-react";
+
+export type NavItem = {
+  label: string;
+  href: string;
+  icon: LucideIcon;
+  /** false = planned but not built yet (shown disabled with a "Soon" chip). */
+  available: boolean;
+  /** owner/platform-admin only. */
+  ownerOnly?: boolean;
+};
+
+/** Information architecture for the panel (built in order across phases). */
+export const NAV_ITEMS: NavItem[] = [
+  { label: "Orders", href: "/orders", icon: ShoppingCart, available: true },
+  { label: "Conversations", href: "/conversations", icon: MessagesSquare, available: false },
+  { label: "Inventory", href: "/inventory", icon: Package, available: false },
+  { label: "Agent", href: "/agent", icon: Bot, available: false, ownerOnly: true },
+  { label: "Knowledge", href: "/knowledge", icon: BookOpen, available: false },
+  { label: "Tickets", href: "/tickets", icon: LifeBuoy, available: false },
+  { label: "Dashboard", href: "/dashboard", icon: BarChart3, available: false, ownerOnly: true },
+];
