@@ -27,5 +27,5 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Agent", href: "/agent", icon: Bot, available: false, ownerOnly: true },
   { label: "Knowledge", href: "/knowledge", icon: BookOpen, available: true, ownerOnly: false },
   { label: "Tickets", href: "/tickets", icon: LifeBuoy, available: true },
-  { label: "Dashboard", href: "/dashboard", icon: BarChart3, available: false, ownerOnly: true },
+  { label: "Dashboard", href: "/dashboard", icon: BarChart3, available: true, ownerOnly: true },
 ];
