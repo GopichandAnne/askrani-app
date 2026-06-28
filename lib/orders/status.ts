@@ -48,9 +48,20 @@ const REJECTABLE: OrderStatus[] = [
   "pending_approval",
   "proposed",
 ];
-/** Anything before the order is locked in (confirmed). */
+/** Anything before the order is locked in (confirmed) — used for cancel. */
 export const PRE_CONFIRM: OrderStatus[] = [
   "placed",
+  "submitted",
+  "pending_approval",
+  "proposed",
+];
+
+/**
+ * Statuses editOrder() permits. Mirrors Orders.gs exactly: edits are allowed on
+ * submitted / pending_approval / proposed only — NOT on `placed` (the customer
+ * is still building the cart) and not once confirmed/rejected/cancelled.
+ */
+export const EDITABLE: OrderStatus[] = [
   "submitted",
   "pending_approval",
   "proposed",
@@ -60,7 +71,7 @@ export const canApprove = (s: OrderStatus) => APPROVABLE.includes(s);
 export const canConfirm = (s: OrderStatus) => s === "proposed";
 export const canReject = (s: OrderStatus) => REJECTABLE.includes(s);
 export const canCancel = (s: OrderStatus) => PRE_CONFIRM.includes(s);
-export const canEdit = (s: OrderStatus) => PRE_CONFIRM.includes(s);
+export const canEdit = (s: OrderStatus) => EDITABLE.includes(s);
 
 export type OrderAction =
   | "approve"

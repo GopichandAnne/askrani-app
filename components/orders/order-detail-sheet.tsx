@@ -22,6 +22,7 @@ import {
   rejectOrder,
   type ActionResult,
 } from "@/app/(app)/orders/actions";
+import { useStore } from "@/components/store/store-provider";
 import { StatusChip } from "./status-chip";
 import { OrderModeBadge } from "./order-mode-badge";
 import {
@@ -62,6 +63,7 @@ const EVENT_LABEL: Record<string, string> = {
   order_proposed: "Proposed to customer",
   order_confirmed: "Order confirmed",
   order_cancelled: "Order cancelled",
+  price_edited: "Price edited",
   ticket_opened: "Ticket opened",
   ticket_resolved: "Ticket resolved",
   routing_state_changed: "Routing changed",
@@ -80,6 +82,8 @@ export function OrderDetailSheet({
   taxRate: number;
   onApplied: (orderId: string, patch: Partial<Order>) => void;
 }) {
+  const { active, isPlatformAdmin } = useStore();
+  const isOwner = isPlatformAdmin || active.role === "owner";
   const [pending, startTransition] = useTransition();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<OrderItem[]>([]);
@@ -167,6 +171,9 @@ export function OrderDetailSheet({
   const items = editing ? draft : order.items_json;
   const customer =
     order.customer_name?.trim() || order.customer_phone || "Unknown customer";
+  // Owners can edit any line; staff can only price request items. Hide Edit
+  // entirely when there's nothing the current role may change.
+  const canEditAnyLine = isOwner || order.items_json.some(isRequestItem);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -201,7 +208,7 @@ export function OrderDetailSheet({
           <section className="space-y-2">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold">Items</h3>
-              {canEdit(status) && !editing && (
+              {canEdit(status) && !editing && canEditAnyLine && (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -243,26 +250,35 @@ export function OrderDetailSheet({
                       </p>
                     </div>
                     <div className="shrink-0 text-right">
-                      {editing && request ? (
-                        <div className="flex items-center gap-1">
-                          <span className="text-muted-foreground text-xs">$</span>
-                          <Input
-                            type="number"
-                            inputMode="decimal"
-                            step="0.01"
-                            min="0"
-                            value={item.unit_price ?? ""}
-                            placeholder="price"
-                            onChange={(e) =>
-                              updateDraft(i, {
-                                unit_price:
-                                  e.target.value === ""
-                                    ? null
-                                    : Number(e.target.value),
-                              } as Partial<OrderItem>)
-                            }
-                            className="h-8 w-24 text-right"
-                          />
+                      {editing && (isOwner || request) ? (
+                        <div className="flex flex-col items-end gap-0.5">
+                          <div className="flex items-center gap-1">
+                            <span className="text-muted-foreground text-xs">
+                              $
+                            </span>
+                            <Input
+                              type="number"
+                              inputMode="decimal"
+                              step="0.01"
+                              min="0"
+                              value={item.unit_price ?? ""}
+                              placeholder="price"
+                              onChange={(e) =>
+                                updateDraft(i, {
+                                  unit_price:
+                                    e.target.value === ""
+                                      ? null
+                                      : Number(e.target.value),
+                                } as Partial<OrderItem>)
+                              }
+                              className="h-8 w-24 text-right"
+                            />
+                          </div>
+                          {lt != null && (
+                            <span className="text-muted-foreground text-xs">
+                              = {formatMoney(lt, currency)}
+                            </span>
+                          )}
                         </div>
                       ) : (
                         <>
@@ -278,6 +294,11 @@ export function OrderDetailSheet({
                           {item.unit_price != null && (
                             <p className="text-muted-foreground text-xs">
                               {formatMoney(item.unit_price, currency)} ea
+                            </p>
+                          )}
+                          {editing && !isOwner && !request && (
+                            <p className="text-muted-foreground text-[10px]">
+                              owner only
                             </p>
                           )}
                         </>
