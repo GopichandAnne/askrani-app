@@ -1,38 +1,42 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { getActiveStore } from "@/lib/store/active-store";
-import { Badge } from "@/components/ui/badge";
+import { createClient } from "@/lib/supabase/server";
+import { toOrder } from "@/lib/orders/types";
+import { OrdersBoard } from "@/components/orders/orders-board";
 
 export const metadata: Metadata = { title: "Orders · Ask Rani" };
 
 export default async function OrdersPage() {
   const ctx = await getActiveStore();
-  const store = ctx?.active;
+  if (!ctx || !ctx.active) redirect("/login");
+  const store = ctx.active;
+
+  const supabase = await createClient();
+  const [ordersRes, cfgRes] = await Promise.all([
+    supabase
+      .from("orders")
+      .select("*")
+      .eq("store_slug", store.slug)
+      .order("timestamp", { ascending: false, nullsFirst: false })
+      .limit(200),
+    supabase
+      .from("agent_config")
+      .select("value")
+      .eq("store_id", store.id)
+      .eq("key", "tax_rate")
+      .maybeSingle(),
+  ]);
+
+  const orders = (ordersRes.data ?? []).map(toOrder);
+  const taxRate = Number.parseFloat(cfgRes.data?.value ?? "0") || 0;
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="font-display text-2xl italic">Orders</h1>
-          <p className="text-muted-foreground text-sm">
-            {store ? store.name : "—"}
-          </p>
-        </div>
-        <span className="text-muted-foreground inline-flex items-center gap-2 text-xs">
-          <span className="bg-teal-light size-2 animate-live-pulse rounded-full" />
-          live
-        </span>
-      </div>
-
-      <div className="bg-card flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed py-20 text-center">
-        <Badge variant="secondary">Next chunk</Badge>
-        <p className="text-sm font-medium">The realtime order feed lands here.</p>
-        <p className="text-muted-foreground max-w-sm text-sm">
-          Live list by status with slide-in updates, filters (incl. order mode),
-          the order detail with both item variants and the interleaved event
-          timeline, and the status actions (approve → propose, confirm, reject,
-          cancel, edit).
-        </p>
-      </div>
-    </div>
+    <OrdersBoard
+      initialOrders={orders}
+      storeSlug={store.slug}
+      storeName={store.name}
+      taxRate={taxRate}
+    />
   );
 }
