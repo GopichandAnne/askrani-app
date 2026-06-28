@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -27,25 +27,30 @@ export function ThreadPanel({
   const [pending, startTransition] = useTransition();
 
   const threadId = thread?.thread_id;
-  useEffect(() => {
-    if (!threadId) return;
-    let active = true;
-    setMessages(null);
+
+  const loadMessages = useCallback(async (id: string) => {
     const supabase = createClient();
-    supabase
+    const { data } = await supabase
       .from("thread_messages")
       .select(
         "message_id, created_at, direction, sender, text, kind, event_type, related_order_id",
       )
-      .eq("thread_id", threadId)
-      .order("created_at", { ascending: true })
-      .then(({ data }) => {
-        if (active) setMessages((data as ConversationMessage[]) ?? []);
-      });
+      .eq("thread_id", id)
+      .order("created_at", { ascending: true });
+    return (data as ConversationMessage[]) ?? [];
+  }, []);
+
+  useEffect(() => {
+    if (!threadId) return;
+    let active = true;
+    setMessages(null);
+    loadMessages(threadId).then((rows) => {
+      if (active) setMessages(rows);
+    });
     return () => {
       active = false;
     };
-  }, [threadId]);
+  }, [threadId, loadMessages]);
 
   if (!thread) {
     return (
@@ -68,6 +73,8 @@ export function ThreadPanel({
             ? "You're now handling this conversation"
             : "Conversation handed back to Rani",
         );
+        // Refresh so the new routing_state_changed event shows in the timeline.
+        loadMessages(thread!.thread_id).then(setMessages);
       } else {
         toast.error("Couldn't update routing", { description: res.error });
       }
