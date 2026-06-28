@@ -47,6 +47,23 @@ export async function updateProduct(
   if ("in_stock" in patch) next.in_stock = !!patch.in_stock;
   if ("verified" in patch) next.verified = !!patch.verified;
 
+  // Price is a catalog/money change -> owners only (in_stock/verified are not).
+  // Enforced server-side here AND by the DB trigger (0010) for the raw-API path.
+  if ("price" in next) {
+    const { data: prod } = await supabase
+      .from("products")
+      .select("store_id")
+      .eq("id", id)
+      .maybeSingle();
+    if (!prod) return { ok: false, error: "Product not found." };
+    const { data: ownerFlag } = await supabase.rpc("user_is_owner", {
+      p_store_id: prod.store_id,
+    });
+    if (!ownerFlag) {
+      return { ok: false, error: "Only owners can change product prices." };
+    }
+  }
+
   const { data, error } = await supabase
     .from("products")
     .update(next)
@@ -74,6 +91,14 @@ export async function addProduct(input: ProductInput): Promise<ProductResult> {
     data: { user },
   } = await supabase.auth.getUser();
 
+  // Adding a product is a catalog action -> owners only (also enforced by RLS).
+  const { data: ownerFlag } = await supabase.rpc("user_is_owner", {
+    p_store_id: ctx.active.id,
+  });
+  if (!ownerFlag) {
+    return { ok: false, error: "Only owners can add products." };
+  }
+
   const { data, error } = await supabase
     .from("products")
     .insert({
@@ -96,9 +121,23 @@ export async function addProduct(input: ProductInput): Promise<ProductResult> {
   return { ok: true, product: data as Product };
 }
 
-/** Remove a product. */
+/** Remove a product. Owners only (also enforced by RLS). */
 export async function removeProduct(id: string): Promise<SimpleResult> {
   const supabase = await createClient();
+
+  const { data: prod } = await supabase
+    .from("products")
+    .select("store_id")
+    .eq("id", id)
+    .maybeSingle();
+  if (!prod) return { ok: false, error: "Product not found." };
+  const { data: ownerFlag } = await supabase.rpc("user_is_owner", {
+    p_store_id: prod.store_id,
+  });
+  if (!ownerFlag) {
+    return { ok: false, error: "Only owners can remove products." };
+  }
+
   const { error } = await supabase.from("products").delete().eq("id", id);
   if (error) return { ok: false, error: error.message };
   revalidatePath("/inventory");

@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import type { Product, ProductPatch } from "@/lib/inventory/types";
 import { removeProduct, updateProduct } from "@/app/(app)/inventory/actions";
+import { useStore } from "@/components/store/store-provider";
+import { formatMoney } from "@/lib/orders/totals";
 import { AddProductDialog } from "./add-product-dialog";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -36,6 +38,8 @@ export function InventoryTable({
   initialProducts: Product[];
   storeName: string;
 }) {
+  const { active, isPlatformAdmin } = useStore();
+  const isOwner = isPlatformAdmin || active.role === "owner";
   const [products, setProducts] = useState<Product[]>(initialProducts);
   const [query, setQuery] = useState("");
 
@@ -83,7 +87,11 @@ export function InventoryTable({
           <h1 className="font-display text-2xl italic">Inventory</h1>
           <p className="text-muted-foreground text-sm">{storeName}</p>
         </div>
-        <AddProductDialog onAdded={(p) => setProducts((prev) => [p, ...prev])} />
+        {isOwner && (
+          <AddProductDialog
+            onAdded={(p) => setProducts((prev) => [p, ...prev])}
+          />
+        )}
       </header>
 
       <div className="relative max-w-sm">
@@ -126,6 +134,7 @@ export function InventoryTable({
                 <ProductRow
                   key={p.id}
                   product={p}
+                  isOwner={isOwner}
                   onSave={save}
                   onRemove={remove}
                 />
@@ -140,10 +149,12 @@ export function InventoryTable({
 
 function ProductRow({
   product,
+  isOwner,
   onSave,
   onRemove,
 }: {
   product: Product;
+  isOwner: boolean;
   onSave: (id: string, patch: ProductPatch) => void;
   onRemove: (id: string) => void;
 }) {
@@ -179,23 +190,32 @@ function ProductRow({
         {product.sku ?? "—"}
       </TableCell>
       <TableCell>
-        <div className="flex items-center gap-1">
-          <span className="text-muted-foreground text-xs">$</span>
-          <Input
-            type="number"
-            inputMode="decimal"
-            step="0.01"
-            min="0"
-            value={priceStr}
-            onChange={(e) => setPriceStr(e.target.value)}
-            onBlur={commitPrice}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
-            }}
-            className="h-8 w-24"
-            placeholder="—"
-          />
-        </div>
+        {isOwner ? (
+          <div className="flex items-center gap-1">
+            <span className="text-muted-foreground text-xs">$</span>
+            <Input
+              type="number"
+              inputMode="decimal"
+              step="0.01"
+              min="0"
+              value={priceStr}
+              onChange={(e) => setPriceStr(e.target.value)}
+              onBlur={commitPrice}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+              }}
+              className="h-8 w-24"
+              placeholder="—"
+            />
+          </div>
+        ) : (
+          // Staff: price is read-only (owner-gated catalog/money field).
+          <span className="text-sm">
+            {product.price == null
+              ? "—"
+              : formatMoney(product.price, product.currency ?? "USD")}
+          </span>
+        )}
       </TableCell>
       <TableCell className="text-center">
         <Switch
@@ -212,32 +232,34 @@ function ProductRow({
         />
       </TableCell>
       <TableCell>
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="text-muted-foreground hover:text-destructive size-8"
-              aria-label="Remove product"
-            >
-              <Trash2 className="size-4" />
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Remove {product.name}?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This deletes the product from this store&apos;s inventory.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Keep</AlertDialogCancel>
-              <AlertDialogAction onClick={() => onRemove(product.id)}>
-                Remove
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        {isOwner && (
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-muted-foreground hover:text-destructive size-8"
+                aria-label="Remove product"
+              >
+                <Trash2 className="size-4" />
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Remove {product.name}?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This deletes the product from this store&apos;s inventory.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Keep</AlertDialogCancel>
+                <AlertDialogAction onClick={() => onRemove(product.id)}>
+                  Remove
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        )}
       </TableCell>
     </TableRow>
   );
