@@ -22,7 +22,7 @@ export type NavItem = {
 /** Information architecture for the panel (built in order across phases). */
 export const NAV_ITEMS: NavItem[] = [
   { label: "Orders", href: "/orders", icon: ShoppingCart, available: true },
-  { label: "Conversations", href: "/conversations", icon: MessagesSquare, available: false },
+  { label: "Conversations", href: "/conversations", icon: MessagesSquare, available: true },
   { label: "Inventory", href: "/inventory", icon: Package, available: false },
   { label: "Agent", href: "/agent", icon: Bot, available: false, ownerOnly: true },
   { label: "Knowledge", href: "/knowledge", icon: BookOpen, available: false },
