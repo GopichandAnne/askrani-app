@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import type { Order, OrderRow, OrderStatus } from "@/lib/orders/types";
 import { toOrder } from "@/lib/orders/types";
@@ -42,37 +43,57 @@ export function OrdersBoard({
   // Realtime: live INSERT/UPDATE/DELETE for this store's orders.
   useEffect(() => {
     const supabase = createClient();
-    const channel = supabase
-      .channel(`orders-${storeSlug}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "orders",
-          filter: `store_slug=eq.${storeSlug}`,
-        },
-        (payload) => {
-          if (payload.eventType === "DELETE") {
-            const oldId = (payload.old as { id?: string })?.id;
-            if (oldId) setOrders((prev) => prev.filter((o) => o.id !== oldId));
-            return;
-          }
-          const row = toOrder(payload.new as OrderRow);
-          flash(row.id);
-          setOrders((prev) => {
-            const idx = prev.findIndex((o) => o.id === row.id);
-            if (idx === -1) return [row, ...prev];
-            const copy = prev.slice();
-            copy[idx] = row;
-            return copy;
-          });
-        },
-      )
-      .subscribe((status) => setConnected(status === "SUBSCRIBED"));
+    let channel: RealtimeChannel | null = null;
+    let cancelled = false;
+
+    (async () => {
+      // Hand the user's access token to the realtime socket BEFORE subscribing.
+      // `orders` is RLS-protected, so without this the subscription doesn't
+      // authorize (the dot stays "offline" / no rows arrive). createBrowserClient
+      // doesn't reliably set this before the first subscribe.
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (cancelled) return;
+      if (session?.access_token) {
+        await supabase.realtime.setAuth(session.access_token);
+      }
+
+      channel = supabase
+        .channel(`orders-${storeSlug}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "orders",
+            filter: `store_slug=eq.${storeSlug}`,
+          },
+          (payload) => {
+            if (payload.eventType === "DELETE") {
+              const oldId = (payload.old as { id?: string })?.id;
+              if (oldId)
+                setOrders((prev) => prev.filter((o) => o.id !== oldId));
+              return;
+            }
+            const row = toOrder(payload.new as OrderRow);
+            flash(row.id);
+            setOrders((prev) => {
+              const idx = prev.findIndex((o) => o.id === row.id);
+              if (idx === -1) return [row, ...prev];
+              const copy = prev.slice();
+              copy[idx] = row;
+              return copy;
+            });
+          },
+        )
+        .subscribe((status) => setConnected(status === "SUBSCRIBED"));
+    })();
 
     return () => {
-      supabase.removeChannel(channel);
+      cancelled = true;
+      setConnected(false);
+      if (channel) supabase.removeChannel(channel);
     };
   }, [storeSlug]);
 
