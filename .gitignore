@@ -44,3 +44,6 @@ next-env.d.ts
 # supabase local
 /supabase/.branches
 /supabase/.temp
+# edge function secrets (local serve) — never commit
+/supabase/functions/.env
+!/supabase/functions/.env.example
