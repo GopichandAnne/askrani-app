@@ -287,6 +287,68 @@ export type Database = {
         }
         Relationships: []
       }
+      products: {
+        Row: {
+          brand: string | null
+          category: string | null
+          created_at: string
+          created_by: string | null
+          currency: string
+          id: string
+          in_stock: boolean
+          name: string
+          price: number | null
+          size: string | null
+          sku: string | null
+          store_id: string
+          unit: string | null
+          updated_at: string
+          verified: boolean
+        }
+        Insert: {
+          brand?: string | null
+          category?: string | null
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          id?: string
+          in_stock?: boolean
+          name: string
+          price?: number | null
+          size?: string | null
+          sku?: string | null
+          store_id: string
+          unit?: string | null
+          updated_at?: string
+          verified?: boolean
+        }
+        Update: {
+          brand?: string | null
+          category?: string | null
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          id?: string
+          in_stock?: boolean
+          name?: string
+          price?: number | null
+          size?: string | null
+          sku?: string | null
+          store_id?: string
+          unit?: string | null
+          updated_at?: string
+          verified?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "products_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       saved_qa: {
         Row: {
           active: boolean
