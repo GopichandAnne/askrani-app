@@ -14,6 +14,7 @@ import {
 } from "@/lib/orders/status";
 import { computeTotals, formatMoney, lineTotal } from "@/lib/orders/totals";
 import { formatDateTime } from "@/lib/format";
+import { eventLabel } from "@/lib/conversations/events";
 import {
   approveOrder,
   cancelOrder,
@@ -58,16 +59,6 @@ type TimelineRow = {
   text: string | null;
 };
 
-const EVENT_LABEL: Record<string, string> = {
-  order_created: "Order created",
-  order_proposed: "Proposed to customer",
-  order_confirmed: "Order confirmed",
-  order_cancelled: "Order cancelled",
-  price_edited: "Price edited",
-  ticket_opened: "Ticket opened",
-  ticket_resolved: "Ticket resolved",
-  routing_state_changed: "Routing changed",
-};
 
 export function OrderDetailSheet({
   order,
@@ -481,10 +472,7 @@ function Timeline({ rows }: { rows: TimelineRow[] | null }) {
     <ol className="space-y-2">
       {rows.map((r) => {
         if (r.kind === "event") {
-          const label =
-            (r.event_type && EVENT_LABEL[r.event_type]) ||
-            r.event_type ||
-            "Event";
+          const label = eventLabel(r.event_type);
           return (
             <li key={r.message_id} className="flex items-center gap-2 text-xs">
               <span className="bg-secondary text-secondary-foreground rounded-full px-2 py-0.5 font-medium">
