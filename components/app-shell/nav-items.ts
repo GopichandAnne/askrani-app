@@ -25,7 +25,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Conversations", href: "/conversations", icon: MessagesSquare, available: true },
   { label: "Inventory", href: "/inventory", icon: Package, available: true },
   { label: "Agent", href: "/agent", icon: Bot, available: false, ownerOnly: true },
-  { label: "Knowledge", href: "/knowledge", icon: BookOpen, available: false },
+  { label: "Knowledge", href: "/knowledge", icon: BookOpen, available: true, ownerOnly: false },
   { label: "Tickets", href: "/tickets", icon: LifeBuoy, available: false },
   { label: "Dashboard", href: "/dashboard", icon: BarChart3, available: false, ownerOnly: true },
 ];
