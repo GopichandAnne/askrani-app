@@ -1,0 +1,137 @@
+// Conversation prompt assembly — Bot Phase 2 (pure, no I/O).
+//
+// These functions are deterministic and side-effect-free so they can be
+// unit-tested without the Gemini key or a database. The whole design goal is
+// CACHEABILITY: Gemini's implicit caching keys on the longest common PREFIX of
+// consecutive requests, so the *stable* content (store config + KB) must sit at
+// the very front and never vary turn-to-turn, while the *volatile* content
+// (history + the new message) is appended at the end.
+//
+//   request = systemInstruction (STABLE prefix)  +  contents (history … new msg)
+//
+// buildSystemInstruction() depends ONLY on store config — never on the current
+// message or history — so it is byte-identical for every turn in a store and
+// caches cleanly. buildContents() appends the new message strictly last, so each
+// turn's contents is a prefix of the next turn's (after the prior turn folds
+// into history), preserving the cache prefix as the conversation grows.
+
+/** A Gemini content part. */
+export interface Part {
+  text: string;
+}
+
+/** A Gemini content turn. role "user" = customer, "model" = the bot. */
+export interface Content {
+  role: "user" | "model";
+  parts: Part[];
+}
+
+/** A single saved Q&A used as knowledge-base grounding. */
+export interface SavedQa {
+  question: string;
+  answer: string | null;
+}
+
+/** Store-level conversation config assembled from agent_config + the store row. */
+export interface AgentConfig {
+  storeName: string;
+  businessType: string | null;
+  personality: string | null;
+  offTopicHandling: string | null;
+  languageHandling: string | null;
+  engageInfo: string | null;
+  storePrompt: string | null;
+  /** How many prior turns to load into context (agent_config history_turns). */
+  historyTurns: number;
+  /** Active escalation Q&A used as KB grounding (stable prefix material). */
+  savedQa: SavedQa[];
+}
+
+// Baked-in operating rules — part of the stable prefix, identical across stores.
+const BASE_RULES = [
+  "You are replying inside WhatsApp. Keep replies short, warm, and plain-text",
+  "(no markdown headings or tables). Answer in the customer's language.",
+  "Only use facts from this prompt and the conversation; if you don't know,",
+  "say so and offer to connect a human. Never invent prices, stock, or policy.",
+].join(" ");
+
+/**
+ * Assemble the STABLE system instruction for a store. Depends only on `c` —
+ * NOT on the current message or history — so it is identical every turn and
+ * forms the cacheable prefix. Sections are omitted when empty so the string
+ * stays stable (an unset field doesn't inject a blank header).
+ */
+export function buildSystemInstruction(c: AgentConfig): string {
+  const out: string[] = [];
+  const who = c.businessType
+    ? `${c.storeName} (a ${c.businessType})`
+    : c.storeName;
+  out.push(`You are Rani, the AI shopping assistant for ${who}.`);
+  out.push(BASE_RULES);
+
+  if (c.personality) out.push(`\n## Personality\n${c.personality}`);
+  if (c.storePrompt) out.push(`\n## About this store\n${c.storePrompt}`);
+  if (c.engageInfo) out.push(`\n## How to engage\n${c.engageInfo}`);
+  if (c.languageHandling) out.push(`\n## Language\n${c.languageHandling}`);
+  if (c.offTopicHandling) out.push(`\n## Off-topic requests\n${c.offTopicHandling}`);
+
+  if (c.savedQa.length > 0) {
+    out.push("\n## Knowledge base (use these answers when they apply)");
+    for (const qa of c.savedQa) {
+      out.push(`Q: ${qa.question}\nA: ${qa.answer ?? ""}`);
+    }
+  }
+  return out.join("\n");
+}
+
+/**
+ * Map prior conversation rows (oldest-first) into alternating user/model
+ * contents. Empty sides are skipped so a half-logged turn can't desync roles.
+ */
+export function shapeHistory(
+  rows: { user_message: string | null; assistant_response: string | null }[],
+): Content[] {
+  const out: Content[] = [];
+  for (const r of rows) {
+    if (r.user_message) out.push({ role: "user", parts: [{ text: r.user_message }] });
+    if (r.assistant_response) {
+      out.push({ role: "model", parts: [{ text: r.assistant_response }] });
+    }
+  }
+  return out;
+}
+
+/**
+ * Build the `contents` array: history first (untouched), the new customer
+ * message appended strictly LAST. This ordering is what keeps the cache prefix
+ * intact across turns.
+ */
+export function buildContents(history: Content[], currentText: string): Content[] {
+  return [...history, { role: "user", parts: [{ text: currentText }] }];
+}
+
+/**
+ * Routing gate: when an owner has taken over a thread, the bot stays silent.
+ * Anything other than active_owner_handling (idle, null) -> bot may respond.
+ */
+export function shouldBotRespond(routingState: string | null | undefined): boolean {
+  return routingState !== "active_owner_handling";
+}
+
+/**
+ * Lightweight language tag for analytics (dashboard reads analytics_json.language).
+ * Script-based heuristic only — detects South Asian scripts, defaults to "en".
+ * Does NOT catch romanized text (e.g. "namaste" in Latin) — good enough for a
+ * v1 signal; can be upgraded to an LLM-returned tag later.
+ */
+export function detectLanguage(text: string): string {
+  if (/[ऀ-ॿ]/.test(text)) return "hi"; // Devanagari (Hindi/Marathi)
+  if (/[ఀ-౿]/.test(text)) return "te"; // Telugu
+  if (/[஀-௿]/.test(text)) return "ta"; // Tamil
+  if (/[઀-૿]/.test(text)) return "gu"; // Gujarati
+  if (/[਀-੿]/.test(text)) return "pa"; // Gurmukhi (Punjabi)
+  if (/[ঀ-৿]/.test(text)) return "bn"; // Bengali
+  if (/[ഀ-ൿ]/.test(text)) return "ml"; // Malayalam
+  if (/[ಀ-೿]/.test(text)) return "kn"; // Kannada
+  return "en";
+}

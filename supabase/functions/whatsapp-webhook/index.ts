@@ -1,19 +1,16 @@
-// WhatsApp inbound webhook — Bot Phase 1.
+// WhatsApp inbound webhook — Bot Phases 1–2.
 //   GET  : Meta verification handshake (hub.challenge / verify token)
 //   POST : signed inbound intake -> fast 200 ACK -> background:
 //          route to store, dedup on wamid, persist to threads/thread_messages,
-//          send a canned reply.
-// No conversation/LLM yet (Phase 2). Every write is service-role.
+//          then hand off to the conversation core (history + Gemini + reply).
+// Every write is service-role.
 
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { serviceClient } from "../_shared/supabase.ts";
 import { verifySignature } from "../_shared/signature.ts";
-import { getStoreAccessToken, getStoreByPhoneNumberId } from "../_shared/config.ts";
-import { sendText } from "../_shared/wa.ts";
+import { getStoreByPhoneNumberId } from "../_shared/config.ts";
+import { handleConversation } from "../_shared/conversation.ts";
 import type { Store, WaContact, WaMessage, WaWebhook } from "../_shared/types.ts";
-
-const CANNED_REPLY =
-  "Thanks! We got your message. Ask Rani is being set up for this store — we'll be with you shortly. 🙏";
 
 // deno-lint-ignore no-explicit-any
 declare const EdgeRuntime: any;
@@ -155,13 +152,15 @@ async function handleMessage(
 
   console.log(`[webhook] ${store.slug} <- ${from}: ${text?.slice(0, 80)}`);
 
-  // Phase 1: canned reply (best-effort).
-  const token = await getStoreAccessToken(db, store.id);
-  if (!token) {
-    console.warn(`[webhook] no access token for ${store.slug}; skipping reply`);
-    return;
-  }
-  await sendText(token, phoneNumberId, from, CANNED_REPLY);
+  // Phase 2: hand off to the conversation core (routing gate + Gemini + reply).
+  await handleConversation(db, store, {
+    threadId,
+    sessionId: `wa_${from}`,
+    customerPhone: from,
+    phoneNumberId,
+    inboundText: text ?? "",
+    deviceType: "whatsapp",
+  });
 }
 
 function extractText(msg: WaMessage): string {

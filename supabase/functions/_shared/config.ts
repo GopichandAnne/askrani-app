@@ -8,7 +8,7 @@ export async function getStoreByPhoneNumberId(
 ): Promise<Store | null> {
   const { data } = await db
     .from("stores")
-    .select("id, slug, store_display_name")
+    .select("id, slug, store_display_name, business_type")
     .eq("whatsapp_phone_number_id", phoneNumberId)
     .eq("active", true)
     .maybeSingle();
