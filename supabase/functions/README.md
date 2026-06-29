@@ -30,6 +30,16 @@ supabase functions serve whatsapp-webhook --env-file supabase/functions/.env
 To exercise it you need a store row whose `whatsapp_phone_number_id` matches the
 test payload's `metadata.phone_number_id`.
 
+## Test
+
+```bash
+deno test -A supabase/functions/whatsapp-webhook/index.test.ts
+```
+
+Locks the signature boundary: missing / wrong / wrong-body signatures all → 401,
+only a valid signature passes the gate, GET verify token honored. (Run with a
+standalone Deno — the bundled `supabase functions serve` has a Windows spawn bug.)
+
 ## Deploy
 
 ```bash

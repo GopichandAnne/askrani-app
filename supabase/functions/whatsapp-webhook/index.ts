@@ -18,7 +18,10 @@ const CANNED_REPLY =
 // deno-lint-ignore no-explicit-any
 declare const EdgeRuntime: any;
 
-Deno.serve(async (req: Request): Promise<Response> => {
+// Exported so tests can call it directly. Only bound to a server when this
+// file is the entry point (import.meta.main) — importing it (e.g. in the test)
+// does NOT start a server.
+export async function handler(req: Request): Promise<Response> {
   const url = new URL(req.url);
 
   // ── GET: Meta verification handshake ───────────────────────────────────────
@@ -63,7 +66,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
   }
 
   return new Response("ok", { status: 200 });
-});
+}
+
+if (import.meta.main) Deno.serve(handler);
 
 async function handlePayload(payload: WaWebhook): Promise<void> {
   const db = serviceClient();

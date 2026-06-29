@@ -4,7 +4,7 @@
  * Uint8Array (do NOT re-serialize the parsed JSON).
  */
 export async function verifySignature(
-  rawBody: Uint8Array,
+  rawBody: Uint8Array<ArrayBuffer>,
   header: string | null,
   appSecret: string,
 ): Promise<boolean> {
