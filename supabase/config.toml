@@ -53,3 +53,8 @@ redirect_uri = ""
 
 [edge_runtime]
 enabled = true
+
+# WhatsApp webhook: Meta calls this unauthenticated (no Supabase JWT). Security
+# is the X-Hub-Signature-256 HMAC check inside the function, not the gateway.
+[functions.whatsapp-webhook]
+verify_jwt = false
