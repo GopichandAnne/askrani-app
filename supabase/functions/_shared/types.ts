@@ -40,4 +40,5 @@ export interface Store {
   id: string;
   slug: string;
   store_display_name: string | null;
+  business_type: string | null;
 }
