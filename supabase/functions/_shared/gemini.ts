@@ -1,76 +1,123 @@
-// Gemini client (AI Studio API key path) — Bot Phase 2.
+// Gemini client + function-calling loop — Bot Phases 2–3.
 //
-// Reads GEMINI_API_KEY from the function env (set via `supabase secrets set` for
-// deploy, or supabase/functions/.env locally). Implicit caching is automatic on
-// the 2.5 models for repeated prefixes — there is no flag to set; we earn cache
-// hits purely by keeping `systemInstruction` stable and appending volatile turns
-// last (see prompt.ts). Watch usageMetadata.cachedContentTokenCount to confirm.
+// AI Studio key path (GEMINI_API_KEY). Implicit caching is automatic on 2.5
+// models for repeated prefixes: systemInstruction + tool declarations are stable
+// (cacheable prefix); retrieved tool results land in the volatile contents.
 //
-// Best-effort: a missing key, HTTP error, or exception returns null rather than
-// throwing, so intake never breaks. With no key the bot simply stays quiet —
-// the inbound is still persisted by the webhook.
+// The loop: call the model; if it emits functionCall part(s), execute them (in
+// parallel), append the model turn + a role:"user" functionResponse turn, and
+// call again — bounded by MAX_TOOL_ITERATIONS. In the generativelanguage v1beta
+// API, Content.role must be "user" or "model", so tool results go back as a
+// "user" turn carrying functionResponse parts (NOT a "function" role — that's a
+// Vertex-ism).
+//
+// Best-effort: missing key or a failed call returns { text: null } so intake
+// never breaks and the bot stays quiet.
 
-import type { Content } from "./prompt.ts";
+import type { Toolset } from "./tools.ts";
 
 const DEFAULT_MODEL = "gemini-2.5-flash";
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta";
+const MAX_TOOL_ITERATIONS = 4;
 
-export interface GeminiResult {
+export interface FunctionCall {
+  name: string;
+  args: Record<string, unknown>;
+}
+export interface GeminiPart {
+  text?: string;
+  functionCall?: FunctionCall;
+  functionResponse?: { name: string; response: Record<string, unknown> };
+}
+export interface GeminiContent {
+  role: "user" | "model";
+  parts: GeminiPart[];
+}
+
+export interface GeminiReply {
   text: string | null;
-  /** Tokens served from the implicit cache, if reported (0 / undefined = miss). */
-  cachedTokens?: number;
+  toolsUsed: string[];
 }
 
 /**
- * Generate a reply. `systemInstruction` is the stable cacheable prefix;
- * `contents` is history + the new message (new message last). Returns
- * { text: null } when GEMINI_API_KEY is unset or the call fails.
+ * Generate a reply, running the tool loop if a toolset is given. Returns the
+ * final text (null on no-key/failure) and the ordered list of tools invoked.
  */
 export async function generateReply(
   systemInstruction: string,
-  contents: Content[],
-): Promise<GeminiResult> {
+  contents: GeminiContent[],
+  toolset?: Toolset,
+): Promise<GeminiReply> {
   const key = Deno.env.get("GEMINI_API_KEY");
   if (!key) {
     console.warn("[gemini] GEMINI_API_KEY not set — skipping reply (inbound still logged)");
-    return { text: null };
+    return { text: null, toolsUsed: [] };
   }
   const model = Deno.env.get("GEMINI_MODEL") ?? DEFAULT_MODEL;
+  const url = `${API_BASE}/models/${model}:generateContent?key=${key}`;
+  const tools = toolset && toolset.declarations.length > 0
+    ? [{ functionDeclarations: toolset.declarations }]
+    : undefined;
+
+  const convo: GeminiContent[] = [...contents];
+  const toolsUsed: string[] = [];
 
   try {
-    const res = await fetch(
-      `${API_BASE}/models/${model}:generateContent?key=${key}`,
-      {
+    for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
+      const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: systemInstruction }] },
-          contents,
+          contents: convo,
+          ...(tools ? { tools } : {}),
           generationConfig: { temperature: 0.7, maxOutputTokens: 800 },
         }),
-      },
-    );
-    if (!res.ok) {
-      console.error(`[gemini] ${res.status}: ${await res.text()}`);
-      return { text: null };
+      });
+      if (!res.ok) {
+        console.error(`[gemini] ${res.status}: ${await res.text()}`);
+        return { text: null, toolsUsed };
+      }
+      // deno-lint-ignore no-explicit-any
+      const json: any = await res.json();
+      const cached = json?.usageMetadata?.cachedContentTokenCount;
+      if (cached) console.log(`[gemini] cache hit: ${cached} tokens`);
+
+      const content = json?.candidates?.[0]?.content;
+      const parts: GeminiPart[] = content?.parts ?? [];
+      const calls = parts.filter((p): p is GeminiPart & { functionCall: FunctionCall } =>
+        !!p.functionCall
+      );
+
+      if (calls.length === 0) {
+        const text = parts.map((p) => p.text ?? "").join("").trim() || null;
+        return { text, toolsUsed };
+      }
+
+      // Execute the model's tool calls (parallel), then feed results back.
+      if (!toolset) return { text: null, toolsUsed }; // model called a tool with none offered
+      convo.push({ role: "model", parts });
+      const results = await Promise.all(
+        calls.map(async (c) => {
+          toolsUsed.push(c.functionCall.name);
+          const response = await toolset.execute(
+            c.functionCall.name,
+            c.functionCall.args ?? {},
+          );
+          return { name: c.functionCall.name, response };
+        }),
+      );
+      convo.push({
+        role: "user",
+        parts: results.map((r) => ({
+          functionResponse: { name: r.name, response: r.response },
+        })),
+      });
     }
-    // deno-lint-ignore no-explicit-any
-    const json: any = await res.json();
-    const text: string | null =
-      json?.candidates?.[0]?.content?.parts
-        ?.map((p: Part) => p.text ?? "")
-        .join("")
-        .trim() || null;
-    const cachedTokens: number | undefined =
-      json?.usageMetadata?.cachedContentTokenCount;
-    if (cachedTokens) console.log(`[gemini] cache hit: ${cachedTokens} tokens`);
-    return { text, cachedTokens };
+    console.warn(`[gemini] hit MAX_TOOL_ITERATIONS (${MAX_TOOL_ITERATIONS})`);
+    return { text: null, toolsUsed };
   } catch (err) {
     console.error("[gemini] error:", err);
-    return { text: null };
+    return { text: null, toolsUsed };
   }
-}
-
-interface Part {
-  text?: string;
 }

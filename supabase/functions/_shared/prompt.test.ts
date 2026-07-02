@@ -26,28 +26,29 @@ function cfg(over: Partial<AgentConfig> = {}): AgentConfig {
     engageInfo: "Offer to build a cart.",
     storePrompt: "We carry South Asian groceries.",
     historyTurns: 10,
-    savedQa: [{ question: "Do you deliver?", answer: "Yes, within 5 miles." }],
     ...over,
   };
 }
 
-Deno.test("system instruction includes store + config + KB", () => {
+Deno.test("system instruction includes store + config", () => {
   const s = buildSystemInstruction(cfg());
   assert(s.includes("Man Pasand"));
   assert(s.includes("grocery"));
   assert(s.includes("Friendly and concise."));
   assert(s.includes("We carry South Asian groceries."));
-  assert(s.includes("Do you deliver?"));
-  assert(s.includes("Yes, within 5 miles."));
+});
+
+Deno.test("system instruction has NO knowledge in the prefix (retrieval-on-demand)", () => {
+  // KB/products are fetched via tools now, never baked into the cached prefix.
+  const s = buildSystemInstruction(cfg());
+  assert(!s.includes("## Knowledge base"));
+  assert(!s.includes("Q:"));
 });
 
 Deno.test("system instruction omits empty sections (stays stable)", () => {
-  const s = buildSystemInstruction(
-    cfg({ personality: null, engageInfo: null, savedQa: [] }),
-  );
+  const s = buildSystemInstruction(cfg({ personality: null, engageInfo: null }));
   assert(!s.includes("## Personality"));
   assert(!s.includes("## How to engage"));
-  assert(!s.includes("## Knowledge base"));
   // present sections still render
   assert(s.includes("## About this store"));
 });

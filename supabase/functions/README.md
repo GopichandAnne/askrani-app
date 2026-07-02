@@ -37,6 +37,35 @@ Gemini → log turn + reply**.
 - **Logging** — the turn → `conversations` (with a `language` tag in
   `analytics_json`); the reply → `thread_messages` (outbound, append-only).
 
+## Commerce retrieval (Phase 3a) — hybrid product search
+
+The reply step is now a **Gemini function-calling loop** (`gemini.ts`): the model
+calls tools, we run them against Postgres, feed results back, it composes the
+answer. Language intelligence lives in the model (it normalizes romanized/other
+-language messages into a clean query); tools are deterministic retrieval.
+
+- **`search_products`** (`tools.ts`) — **hybrid**: `pg_trgm` lexical +
+  `pgvector` semantic, fused by RRF in the `search_products` RPC (migration
+  0014). Query embedded live (`gemini-embedding-001`, `RETRIEVAL_QUERY`, 768d);
+  product embeddings precomputed at index time (`RETRIEVAL_DOCUMENT`). Out-of
+  -stock rows are returned (flagged), not filtered.
+- **Cacheable prefix preserved** — tool *declarations* are stable (cached with
+  the system instruction); retrieved rows land in the volatile `contents`.
+  `saved_qa` was moved out of the prefix (→ `knowledge_index`, Phase 3b).
+- **20K-ready indexing** — `embeddings.ts` batches (`batchEmbedContents`, 100/
+  call), paces, and backs off. Reindex is **incremental**: `products
+  .embedding_stale` (trigger-flipped on name/brand/category/size/unit change) is
+  drained in bounded chunks. A single edit re-embeds one row; full rebuild =
+  mark-all-stale + drain; bulk import = insert-stale + drain.
+
+## `bot-admin` (internal)
+
+Not public — gated by the `ADMIN_TASK_SECRET` secret (`x-admin-secret` header)
+plus default `verify_jwt` (invoke with the service-role key). Actions:
+`reindex_products {store_slug, mode?, max_rows?}`, `search {store_slug, query}`,
+`chat {store_slug, message}` (runs the full turn loop without WhatsApp — used to
+verify retrieval + the function-calling loop before touching the live webhook).
+
 ## Run locally
 
 ```bash
