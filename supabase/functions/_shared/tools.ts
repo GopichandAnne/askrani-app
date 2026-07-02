@@ -70,7 +70,29 @@ const SEARCH_PRODUCTS_DECL: FunctionDeclaration = {
   },
 };
 
+const SEARCH_KNOWLEDGE_DECL: FunctionDeclaration = {
+  name: "search_knowledge",
+  description:
+    "Search the store's knowledge base — policies, hours, delivery/return rules, " +
+    "FAQs, and curated answers — for anything that is NOT a specific product " +
+    "lookup. Use it for questions like 'do you deliver?', 'what are your hours?', " +
+    "'what's your return policy?'. Pass a normalized English query. Returns the " +
+    "most relevant snippets; if nothing relevant comes back, say you'll check " +
+    "with the store rather than guessing.",
+  parameters: {
+    type: "object",
+    properties: {
+      query: {
+        type: "string",
+        description: "Normalized English description of what the customer wants to know.",
+      },
+    },
+    required: ["query"],
+  },
+};
+
 const SEARCH_PRODUCTS_LIMIT = 5;
+const SEARCH_KNOWLEDGE_LIMIT = 4;
 
 async function executeSearchProducts(
   db: SupabaseClient,
@@ -111,13 +133,42 @@ async function executeSearchProducts(
   return { products, count: products.length };
 }
 
-/** Build the toolset bound to a store's DB context. Phase 3b adds search_knowledge. */
+async function executeSearchKnowledge(
+  db: SupabaseClient,
+  store: Store,
+  args: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const query = String(args.query ?? "").trim();
+  if (!query) return { snippets: [], note: "empty query" };
+
+  const embedding = await embedQuery(query);
+  const { data, error } = await db.rpc("search_knowledge", {
+    p_store_id: store.id,
+    p_query_embedding: toVectorLiteral(embedding),
+    p_limit: SEARCH_KNOWLEDGE_LIMIT,
+  });
+  if (error) {
+    console.error(`[tools] search_knowledge: ${error.message}`);
+    return { snippets: [], note: "search failed" };
+  }
+  const snippets = (data ?? []).map(
+    (r: { kind: string; source_ref: string | null; chunk_text: string }) => ({
+      source: r.source_ref,
+      kind: r.kind,
+      text: r.chunk_text,
+    }),
+  );
+  return { snippets, count: snippets.length };
+}
+
+/** Build the toolset bound to a store's DB context. */
 export function buildToolset(db: SupabaseClient, store: Store): Toolset {
   const executors: Record<string, ToolExecutor> = {
     search_products: (args) => executeSearchProducts(db, store, args),
+    search_knowledge: (args) => executeSearchKnowledge(db, store, args),
   };
   return {
-    declarations: [SEARCH_PRODUCTS_DECL],
+    declarations: [SEARCH_PRODUCTS_DECL, SEARCH_KNOWLEDGE_DECL],
     execute: async (name, args) => {
       const fn = executors[name];
       if (!fn) return { error: `unknown tool: ${name}` };

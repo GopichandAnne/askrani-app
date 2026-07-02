@@ -58,13 +58,28 @@ answer. Language intelligence lives in the model (it normalizes romanized/other
   drained in bounded chunks. A single edit re-embeds one row; full rebuild =
   mark-all-stale + drain; bulk import = insert-stale + drain.
 
+## Knowledge RAG (Phase 3b) — `search_knowledge`
+
+Second tool on the same loop. `knowledge_index` (migration 0015) is one semantic
+store for **documents** (chunked) and **saved_qa** (single units), embedded with
+`gemini-embedding-001` (`RETRIEVAL_DOCUMENT`, 768d). `search_knowledge` (0016) is
+cosine top-K — meaning-first, no lexical half (KB queries are conceptual, corpus
+small). The model routes: product/price/stock → `search_products`; policy/hours/
+delivery/FAQ → `search_knowledge`; mixed questions call **both in parallel**.
+
+- `knowledge.ts` — `chunkText` (boundary-aware, overlapping), `ingestDocument`
+  (replace chunks for a title), `syncSavedQaToIndex` (mirror active saved_qa),
+  `reindexKnowledge` (incremental stale-drain, same 20K-ready pattern).
+- Ingestion is service-role (bot-admin); the panel's paste-text Knowledge screen
+  will POST through an owner-gated server route (next slice).
+
 ## `bot-admin` (internal)
 
 Not public — gated by the `ADMIN_TASK_SECRET` secret (`x-admin-secret` header)
 plus default `verify_jwt` (invoke with the service-role key). Actions:
-`reindex_products {store_slug, mode?, max_rows?}`, `search {store_slug, query}`,
-`chat {store_slug, message}` (runs the full turn loop without WhatsApp — used to
-verify retrieval + the function-calling loop before touching the live webhook).
+`reindex_products`, `search` (product debug), `chat` (full turn loop without
+WhatsApp — verify before touching the live webhook), `ingest_document`,
+`sync_saved_qa`, `reindex_knowledge`, `search_knowledge` (KB debug).
 
 ## Run locally
 

@@ -18,6 +18,11 @@ import { serviceClient } from "../_shared/supabase.ts";
 import { getStoreBySlug } from "../_shared/config.ts";
 import { embedDocuments, embedQuery, toVectorLiteral } from "../_shared/embeddings.ts";
 import { productEmbedText } from "../_shared/tools.ts";
+import {
+  ingestDocument,
+  reindexKnowledge,
+  syncSavedQaToIndex,
+} from "../_shared/knowledge.ts";
 import { generateTurnReply } from "../_shared/conversation.ts";
 
 const REINDEX_DEFAULT_MAX = 200;
@@ -65,6 +70,33 @@ Deno.serve(async (req) => {
         });
         if (error) return json({ error: error.message }, 500);
         return json({ store: store.slug, query, results: data });
+      }
+      case "ingest_document": {
+        const title = String(body.title ?? "").trim();
+        const text = String(body.text ?? "");
+        if (!title || !text.trim()) return json({ error: "title and text required" }, 400);
+        const { chunks } = await ingestDocument(db, store.id, title, text);
+        const reindex = await reindexKnowledge(db, store.id, Number(body.max_rows ?? 200));
+        return json({ store: store.slug, title, chunks, ...reindex });
+      }
+      case "sync_saved_qa": {
+        const { synced } = await syncSavedQaToIndex(db, store.id);
+        const reindex = await reindexKnowledge(db, store.id, Number(body.max_rows ?? 200));
+        return json({ store: store.slug, synced, ...reindex });
+      }
+      case "reindex_knowledge": {
+        const result = await reindexKnowledge(db, store.id, Number(body.max_rows ?? 200));
+        return json({ store: store.slug, ...result });
+      }
+      case "search_knowledge": {
+        const embedding = await embedQuery(String(body.query ?? ""));
+        const { data, error } = await db.rpc("search_knowledge", {
+          p_store_id: store.id,
+          p_query_embedding: toVectorLiteral(embedding),
+          p_limit: Number(body.limit ?? 4),
+        });
+        if (error) return json({ error: error.message }, 500);
+        return json({ store: store.slug, query: body.query, results: data });
       }
       case "chat": {
         const message = String(body.message ?? "");
