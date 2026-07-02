@@ -1,6 +1,7 @@
-// Conversation core — Bot Phase 2. Orchestrates one inbound turn:
-//   routing gate -> load history -> assemble prefix-first prompt -> Gemini ->
-//   log turn (conversations) + send reply + persist outbound (thread_messages).
+// Conversation core — Bot Phases 2–3. Orchestrates one inbound turn:
+//   routing gate -> load history -> assemble prefix-first prompt -> Gemini
+//   function-calling loop (search_products, ...) -> log turn (conversations) +
+//   send reply + persist outbound (thread_messages).
 //
 // The inbound message has already been persisted by the webhook (Phase 1) and
 // deduped on wamid, so this runs at most once per real message. Every step is
@@ -16,9 +17,30 @@ import {
   detectLanguage,
   shouldBotRespond,
 } from "./prompt.ts";
-import { generateReply } from "./gemini.ts";
+import { generateReply, type GeminiReply } from "./gemini.ts";
+import { buildToolset } from "./tools.ts";
 import { getStoreAccessToken } from "./config.ts";
 import { sendText } from "./wa.ts";
+
+/**
+ * Produce Rani's reply for one turn: load config + history, assemble the
+ * prefix-first prompt, and run the Gemini function-calling loop with the store's
+ * toolset (search_products; search_knowledge in 3b). No routing gate, logging,
+ * or WhatsApp send — callers layer those on. Reused by the webhook and the
+ * bot-admin `chat` debug action.
+ */
+export async function generateTurnReply(
+  db: SupabaseClient,
+  store: Store,
+  opts: { sessionId: string; inboundText: string },
+): Promise<GeminiReply> {
+  const config = await loadAgentConfig(db, store);
+  const history = await loadHistory(db, store.slug, opts.sessionId, config.historyTurns);
+  const systemInstruction = buildSystemInstruction(config);
+  const contents = buildContents(history, opts.inboundText);
+  const toolset = buildToolset(db, store);
+  return await generateReply(systemInstruction, contents, toolset);
+}
 
 export interface ConversationContext {
   threadId: string;
@@ -45,20 +67,18 @@ export async function handleConversation(
     return;
   }
 
-  // ── Assemble prefix-first prompt. ──────────────────────────────────────────
-  const config = await loadAgentConfig(db, store);
-  const history = await loadHistory(db, store.slug, ctx.sessionId, config.historyTurns);
-  const systemInstruction = buildSystemInstruction(config);
-  const contents = buildContents(history, ctx.inboundText);
-
-  // ── Generate (no-op without GEMINI_API_KEY). ───────────────────────────────
+  // ── Generate the reply (tool loop; no-op without GEMINI_API_KEY). ───────────
   const startedAt = Date.now();
-  const { text: reply } = await generateReply(systemInstruction, contents);
+  const { text: reply, toolsUsed } = await generateTurnReply(db, store, {
+    sessionId: ctx.sessionId,
+    inboundText: ctx.inboundText,
+  });
   const responseTimeMs = Date.now() - startedAt;
   if (!reply) {
     console.warn(`[conv] no reply for ${ctx.threadId} (no key or generation failed)`);
     return;
   }
+  if (toolsUsed.length) console.log(`[conv] ${ctx.threadId} tools: ${toolsUsed.join(", ")}`);
 
   // ── Log the turn + send + persist outbound. ────────────────────────────────
   await logTurn(db, store, ctx, reply, responseTimeMs);

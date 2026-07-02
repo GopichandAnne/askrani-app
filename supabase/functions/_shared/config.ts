@@ -15,6 +15,19 @@ export async function getStoreByPhoneNumberId(
   return (data as Store) ?? null;
 }
 
+/** Resolve a store by slug (admin/debug paths). */
+export async function getStoreBySlug(
+  db: SupabaseClient,
+  slug: string,
+): Promise<Store | null> {
+  const { data } = await db
+    .from("stores")
+    .select("id, slug, store_display_name, business_type")
+    .eq("slug", slug)
+    .maybeSingle();
+  return (data as Store) ?? null;
+}
+
 /** The store's WhatsApp access token (service-role only — never client-readable). */
 export async function getStoreAccessToken(
   db: SupabaseClient,

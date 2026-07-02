@@ -14,6 +14,10 @@
 // caches cleanly. buildContents() appends the new message strictly last, so each
 // turn's contents is a prefix of the next turn's (after the prior turn folds
 // into history), preserving the cache prefix as the conversation grows.
+//
+// Knowledge (products, saved_qa, documents) is deliberately NOT in the prefix —
+// it's fetched on demand via tools (search_products, and search_knowledge in
+// Phase 3b), keeping the cached prefix lean and stable.
 
 /** A Gemini content part. */
 export interface Part {
@@ -24,12 +28,6 @@ export interface Part {
 export interface Content {
   role: "user" | "model";
   parts: Part[];
-}
-
-/** A single saved Q&A used as knowledge-base grounding. */
-export interface SavedQa {
-  question: string;
-  answer: string | null;
 }
 
 /** Store-level conversation config assembled from agent_config + the store row. */
@@ -43,16 +41,22 @@ export interface AgentConfig {
   storePrompt: string | null;
   /** How many prior turns to load into context (agent_config history_turns). */
   historyTurns: number;
-  /** Active escalation Q&A used as KB grounding (stable prefix material). */
-  savedQa: SavedQa[];
 }
 
 // Baked-in operating rules — part of the stable prefix, identical across stores.
 const BASE_RULES = [
   "You are replying inside WhatsApp. Keep replies short, warm, and plain-text",
   "(no markdown headings or tables). Answer in the customer's language.",
-  "Only use facts from this prompt and the conversation; if you don't know,",
-  "say so and offer to connect a human. Never invent prices, stock, or policy.",
+  "You MUST call search_products BEFORE stating whether the store has an item,",
+  "or giving any price or in-stock status — never answer that from memory or",
+  "assumption, even for common items you think you know. Trust ONLY the tool",
+  "result: if it shows an item out of stock, say it's currently out; if the",
+  "search returns nothing, say you'll check with the store — never claim",
+  "availability you haven't verified with a search.",
+  "When a customer asks what to buy or what you'd recommend — including for",
+  "comfort needs like a cold or a party — search the catalog and suggest",
+  "relevant products the store actually sells. You may suggest groceries",
+  "(teas, honey, ginger, etc.), but do not give medical or professional advice.",
 ].join(" ");
 
 /**
@@ -75,12 +79,6 @@ export function buildSystemInstruction(c: AgentConfig): string {
   if (c.languageHandling) out.push(`\n## Language\n${c.languageHandling}`);
   if (c.offTopicHandling) out.push(`\n## Off-topic requests\n${c.offTopicHandling}`);
 
-  if (c.savedQa.length > 0) {
-    out.push("\n## Knowledge base (use these answers when they apply)");
-    for (const qa of c.savedQa) {
-      out.push(`Q: ${qa.question}\nA: ${qa.answer ?? ""}`);
-    }
-  }
   return out.join("\n");
 }
 
