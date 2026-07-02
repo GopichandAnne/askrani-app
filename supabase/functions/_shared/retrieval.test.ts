@@ -4,6 +4,7 @@
 import { assert, assertAlmostEquals, assertEquals } from "jsr:@std/assert@1";
 import { EMBED_DIM, l2normalize, toVectorLiteral } from "./embeddings.ts";
 import { productEmbedText } from "./tools.ts";
+import { chunkText, estimateTokens } from "./knowledge.ts";
 
 Deno.test("l2normalize -> unit length", () => {
   const v = l2normalize([3, 4]); // |[3,4]| = 5
@@ -41,4 +42,32 @@ Deno.test("productEmbedText: name-only product", () => {
     productEmbedText({ name: "Toor Dal", brand: null, category: null, size: null, unit: null }),
     "Toor Dal",
   );
+});
+
+Deno.test("chunkText: short text -> single chunk", () => {
+  assertEquals(chunkText("We deliver within 5 miles."), ["We deliver within 5 miles."]);
+  assertEquals(chunkText("   "), []);
+});
+
+Deno.test("chunkText: long text -> overlapping chunks, all within budget", () => {
+  const para = "This is a sentence about store policy. ".repeat(60); // ~2280 chars
+  const text = [para, para, para].join("\n\n"); // ~6.8k chars
+  const chunks = chunkText(text, 3000, 400);
+  assert(chunks.length >= 2, "should split");
+  for (const c of chunks) assert(c.length <= 3000, `chunk over budget: ${c.length}`);
+  // overlap: end of chunk[0] should reappear at the start region of chunk[1]
+  const tail = chunks[0].slice(-100).trim();
+  assert(chunks[1].includes(tail.slice(0, 40)), "expected overlap between chunks");
+});
+
+Deno.test("chunkText: a single oversized paragraph still terminates and covers", () => {
+  const big = "word ".repeat(2000); // ~10k chars, no paragraph breaks
+  const chunks = chunkText(big, 3000, 400);
+  assert(chunks.length >= 3);
+  for (const c of chunks) assert(c.length <= 3000);
+});
+
+Deno.test("estimateTokens ~ chars/4", () => {
+  assertEquals(estimateTokens("abcd"), 1);
+  assertEquals(estimateTokens("abcde"), 2);
 });
