@@ -3,7 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getActiveStore } from "@/lib/store/active-store";
-import type { SavedQA, SavedQAInput, SavedQAPatch } from "@/lib/knowledge/types";
+import { callBotAdmin } from "@/lib/knowledge/bot-admin";
+import type {
+  KnowledgeDoc,
+  SavedQA,
+  SavedQAInput,
+  SavedQAPatch,
+} from "@/lib/knowledge/types";
 
 export type QAResult =
   | { ok: true; qa: SavedQA }
@@ -122,41 +128,97 @@ export async function deleteQA(id: string): Promise<SimpleResult> {
   return { ok: true };
 }
 
-/**
- * Trigger the existing document-KB reindex for the active store. The reindex
- * endpoint lives in the AskRani-WA backend; its URL is configured out-of-band.
- * HUMAN TODO: set KB_REINDEX_URL (and confirm the auth/payload it expects).
- */
-export async function refreshKnowledgeBase(): Promise<RefreshResult> {
+/** Owner-gate the active store; returns its {id, slug} or an error. */
+async function requireActiveOwner(
+  supabase: SupabaseServerClient,
+): Promise<{ ok: true; id: string; slug: string } | { ok: false; error: string }> {
   const ctx = await getActiveStore();
   if (!ctx?.active) return { ok: false, error: "No active store." };
-
-  const supabase = await createClient();
   const { data: isOwner } = await supabase.rpc("user_is_owner", {
     p_store_id: ctx.active.id,
   });
-  if (!isOwner) return { ok: false, error: "Only owners can refresh the KB." };
+  if (!isOwner) return { ok: false, error: "Only owners can manage the knowledge base." };
+  return { ok: true, id: ctx.active.id, slug: ctx.active.slug };
+}
 
-  const endpoint = process.env.KB_REINDEX_URL;
-  if (!endpoint) {
-    return {
-      ok: false,
-      error:
-        "Reindex endpoint not configured yet (HUMAN TODO: set KB_REINDEX_URL).",
-    };
-  }
+/**
+ * Sync saved Q&A into the searchable knowledge index (embeds new/changed
+ * entries). The bot retrieves these via search_knowledge at chat time.
+ */
+export async function refreshKnowledgeBase(): Promise<RefreshResult> {
+  const supabase = await createClient();
+  const gate = await requireActiveOwner(supabase);
+  if (!gate.ok) return gate;
 
-  try {
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ store_slug: ctx.active.slug }),
-    });
-    if (!res.ok) {
-      return { ok: false, error: `Reindex failed (HTTP ${res.status}).` };
+  const res = await callBotAdmin({ action: "sync_saved_qa", store_slug: gate.slug });
+  if (!res.ok) return { ok: false, error: res.error };
+  const synced = Number(res.data.synced ?? 0);
+  return { ok: true, message: `Synced ${synced} Q&A ${synced === 1 ? "entry" : "entries"} to search.` };
+}
+
+/** List the active store's KB documents, aggregated from their chunks. */
+export async function listDocuments(): Promise<KnowledgeDoc[]> {
+  const ctx = await getActiveStore();
+  if (!ctx?.active) return [];
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("knowledge_index")
+    .select("source_ref, embedding_stale, updated_at")
+    .eq("store_id", ctx.active.id)
+    .eq("kind", "document_chunk");
+
+  const byTitle = new Map<string, KnowledgeDoc>();
+  for (const row of data ?? []) {
+    const title = row.source_ref ?? "(untitled)";
+    const doc = byTitle.get(title) ?? { title, chunks: 0, indexed: true, updatedAt: null };
+    doc.chunks += 1;
+    if (row.embedding_stale) doc.indexed = false;
+    if (!doc.updatedAt || (row.updated_at && row.updated_at > doc.updatedAt)) {
+      doc.updatedAt = row.updated_at;
     }
-    return { ok: true, message: "Knowledge base reindex started." };
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Reindex failed." };
+    byTitle.set(title, doc);
   }
+  return [...byTitle.values()].sort((a, b) => a.title.localeCompare(b.title));
+}
+
+/** Ingest (chunk + embed) a pasted document into the KB (owners only). */
+export async function ingestDocument(
+  title: string,
+  text: string,
+): Promise<RefreshResult> {
+  const t = cleanStr(title);
+  const body = cleanStr(text);
+  if (!t) return { ok: false, error: "A title is required." };
+  if (!body) return { ok: false, error: "Paste the document text." };
+
+  const supabase = await createClient();
+  const gate = await requireActiveOwner(supabase);
+  if (!gate.ok) return gate;
+
+  const res = await callBotAdmin({
+    action: "ingest_document",
+    store_slug: gate.slug,
+    title: t,
+    text: body,
+  });
+  if (!res.ok) return { ok: false, error: res.error };
+  revalidatePath("/knowledge");
+  const chunks = Number(res.data.chunks ?? 0);
+  return { ok: true, message: `Indexed "${t}" (${chunks} ${chunks === 1 ? "chunk" : "chunks"}).` };
+}
+
+/** Remove a KB document and its chunks (owners only). */
+export async function deleteDocument(title: string): Promise<SimpleResult> {
+  const supabase = await createClient();
+  const gate = await requireActiveOwner(supabase);
+  if (!gate.ok) return gate;
+
+  const res = await callBotAdmin({
+    action: "delete_document",
+    store_slug: gate.slug,
+    title,
+  });
+  if (!res.ok) return { ok: false, error: res.error };
+  revalidatePath("/knowledge");
+  return { ok: true };
 }

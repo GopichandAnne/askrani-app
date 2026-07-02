@@ -1,4 +1,4 @@
-export type Json =
+﻿export type Json =
   | string
   | number
   | boolean
@@ -7,6 +7,11 @@ export type Json =
   | Json[]
 
 export type Database = {
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
+  __InternalSupabase: {
+    PostgrestVersion: "14.5"
+  }
   public: {
     Tables: {
       agent_config: {
@@ -198,6 +203,59 @@ export type Database = {
           },
         ]
       }
+      knowledge_index: {
+        Row: {
+          chunk_index: number
+          chunk_text: string
+          created_at: string
+          embedded_at: string | null
+          embedding: string | null
+          embedding_stale: boolean
+          id: string
+          kind: string
+          source_ref: string | null
+          store_id: string
+          token_count: number | null
+          updated_at: string
+        }
+        Insert: {
+          chunk_index?: number
+          chunk_text: string
+          created_at?: string
+          embedded_at?: string | null
+          embedding?: string | null
+          embedding_stale?: boolean
+          id?: string
+          kind: string
+          source_ref?: string | null
+          store_id: string
+          token_count?: number | null
+          updated_at?: string
+        }
+        Update: {
+          chunk_index?: number
+          chunk_text?: string
+          created_at?: string
+          embedded_at?: string | null
+          embedding?: string | null
+          embedding_stale?: boolean
+          id?: string
+          kind?: string
+          source_ref?: string | null
+          store_id?: string
+          token_count?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "knowledge_index_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       orders: {
         Row: {
           created_at: string
@@ -294,6 +352,9 @@ export type Database = {
           created_at: string
           created_by: string | null
           currency: string
+          embedded_at: string | null
+          embedding: string | null
+          embedding_stale: boolean
           id: string
           in_stock: boolean
           name: string
@@ -311,6 +372,9 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           currency?: string
+          embedded_at?: string | null
+          embedding?: string | null
+          embedding_stale?: boolean
           id?: string
           in_stock?: boolean
           name: string
@@ -328,6 +392,9 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           currency?: string
+          embedded_at?: string | null
+          embedding?: string | null
+          embedding_stale?: boolean
           id?: string
           in_stock?: boolean
           name?: string
@@ -737,6 +804,42 @@ export type Database = {
     }
     Functions: {
       is_platform_admin: { Args: never; Returns: boolean }
+      search_knowledge: {
+        Args: {
+          p_limit?: number
+          p_query_embedding: string
+          p_store_id: string
+        }
+        Returns: {
+          chunk_text: string
+          distance: number
+          kind: string
+          source_ref: string
+        }[]
+      }
+      search_products: {
+        Args: {
+          p_limit?: number
+          p_pool?: number
+          p_query: string
+          p_query_embedding: string
+          p_rrf_k?: number
+          p_store_id: string
+        }
+        Returns: {
+          brand: string
+          category: string
+          currency: string
+          id: string
+          in_stock: boolean
+          name: string
+          price: number
+          score: number
+          size: string
+          sku: string
+          unit: string
+        }[]
+      }
       user_is_owner: { Args: { p_store_id: string }; Returns: boolean }
       user_store_ids: { Args: never; Returns: string[] }
       user_store_slugs: { Args: never; Returns: string[] }
@@ -926,4 +1029,3 @@ export const Constants = {
     },
   },
 } as const
-

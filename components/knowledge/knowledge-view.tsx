@@ -2,10 +2,16 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
-import type { SavedQA } from "@/lib/knowledge/types";
-import { deleteQA, refreshKnowledgeBase } from "@/app/(app)/knowledge/actions";
+import type { KnowledgeDoc, SavedQA } from "@/lib/knowledge/types";
+import {
+  deleteDocument,
+  deleteQA,
+  listDocuments,
+  refreshKnowledgeBase,
+} from "@/app/(app)/knowledge/actions";
 import { useStore } from "@/components/store/store-provider";
 import { QADialog } from "./qa-dialog";
+import { DocumentDialog } from "./document-dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -20,20 +26,47 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { BookOpen, Loader2, Pencil, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
+import {
+  BookOpen,
+  FileText,
+  Loader2,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Search,
+  Trash2,
+} from "lucide-react";
 
 export function KnowledgeView({
   initialEntries,
+  initialDocs,
   storeName,
 }: {
   initialEntries: SavedQA[];
+  initialDocs: KnowledgeDoc[];
   storeName: string;
 }) {
   const { active, isPlatformAdmin } = useStore();
   const isOwner = isPlatformAdmin || active.role === "owner";
   const [entries, setEntries] = useState<SavedQA[]>(initialEntries);
+  const [docs, setDocs] = useState<KnowledgeDoc[]>(initialDocs);
   const [query, setQuery] = useState("");
   const [refreshing, startRefresh] = useTransition();
+
+  async function reloadDocs() {
+    setDocs(await listDocuments());
+  }
+
+  async function removeDoc(title: string) {
+    const before = docs;
+    setDocs((prev) => prev.filter((d) => d.title !== title));
+    const res = await deleteDocument(title);
+    if (res.ok) toast.success("Document removed");
+    else {
+      setDocs(before);
+      toast.error("Couldn't remove", { description: res.error });
+    }
+  }
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -70,7 +103,7 @@ export function KnowledgeView({
     startRefresh(async () => {
       const res = await refreshKnowledgeBase();
       if (res.ok) toast.success(res.message);
-      else toast.error("Refresh document KB", { description: res.error });
+      else toast.error("Sync Q&A to search", { description: res.error });
     });
   }
 
@@ -94,7 +127,7 @@ export function KnowledgeView({
               ) : (
                 <RefreshCw className="size-4" />
               )}
-              Refresh document KB
+              Sync Q&amp;A to search
             </Button>
             <QADialog
               mode="create"
@@ -109,6 +142,82 @@ export function KnowledgeView({
         )}
       </header>
 
+      <section className="space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-muted-foreground text-sm font-medium">Documents</h2>
+          {isOwner && (
+            <DocumentDialog
+              onIngested={reloadDocs}
+              trigger={
+                <Button variant="outline" size="sm">
+                  <Plus className="size-4" /> Add document
+                </Button>
+              }
+            />
+          )}
+        </div>
+        {docs.length === 0 ? (
+          <p className="text-muted-foreground bg-card rounded-lg border border-dashed px-4 py-6 text-center text-sm">
+            {isOwner
+              ? "Paste a policy, FAQ, or guide so Rani can answer from it."
+              : "No documents yet."}
+          </p>
+        ) : (
+          <ul className="grid gap-2 sm:grid-cols-2">
+            {docs.map((d) => (
+              <li
+                key={d.title}
+                className="bg-card flex items-start gap-3 rounded-lg border p-3"
+              >
+                <FileText className="text-muted-foreground mt-0.5 size-4 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{d.title}</p>
+                  <div className="mt-1 flex items-center gap-2 text-xs">
+                    <span className="text-muted-foreground">
+                      {d.chunks} {d.chunks === 1 ? "chunk" : "chunks"}
+                    </span>
+                    {!d.indexed && (
+                      <Badge variant="outline" className="text-muted-foreground">
+                        indexing…
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+                {isOwner && (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="text-muted-foreground hover:text-destructive size-8 shrink-0"
+                        aria-label="Delete document"
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Delete this document?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          Rani will no longer be able to answer from “{d.title}”.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Keep</AlertDialogCancel>
+                        <AlertDialogAction onClick={() => removeDoc(d.title)}>
+                          Delete
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <h2 className="text-muted-foreground pt-1 text-sm font-medium">Saved Q&amp;A</h2>
       <div className="relative max-w-sm">
         <Search className="text-muted-foreground pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2" />
         <Input

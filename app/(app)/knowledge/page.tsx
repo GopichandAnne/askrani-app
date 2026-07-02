@@ -4,6 +4,7 @@ import { getActiveStore } from "@/lib/store/active-store";
 import { createClient } from "@/lib/supabase/server";
 import type { SavedQA } from "@/lib/knowledge/types";
 import { KnowledgeView } from "@/components/knowledge/knowledge-view";
+import { listDocuments } from "./actions";
 
 export const metadata: Metadata = { title: "Knowledge · Ask Rani" };
 
@@ -13,17 +14,21 @@ export default async function KnowledgePage() {
   const store = ctx.active;
 
   const supabase = await createClient();
-  const { data: entries } = await supabase
-    .from("saved_qa")
-    .select("*")
-    .eq("store_id", store.id)
-    .order("created_at", { ascending: false })
-    .limit(1000);
+  const [{ data: entries }, docs] = await Promise.all([
+    supabase
+      .from("saved_qa")
+      .select("*")
+      .eq("store_id", store.id)
+      .order("created_at", { ascending: false })
+      .limit(1000),
+    listDocuments(),
+  ]);
 
   return (
     <KnowledgeView
       key={store.slug}
       initialEntries={(entries ?? []) as SavedQA[]}
+      initialDocs={docs}
       storeName={store.name}
     />
   );
