@@ -88,6 +88,18 @@ Deno.serve(async (req) => {
         const result = await reindexKnowledge(db, store.id, Number(body.max_rows ?? 200));
         return json({ store: store.slug, ...result });
       }
+      case "delete_document": {
+        const title = String(body.title ?? "").trim();
+        if (!title) return json({ error: "title required" }, 400);
+        const { error } = await db
+          .from("knowledge_index")
+          .delete()
+          .eq("store_id", store.id)
+          .eq("kind", "document_chunk")
+          .eq("source_ref", title);
+        if (error) return json({ error: error.message }, 500);
+        return json({ store: store.slug, deleted: title });
+      }
       case "search_knowledge": {
         const embedding = await embedQuery(String(body.query ?? ""));
         const { data, error } = await db.rpc("search_knowledge", {
