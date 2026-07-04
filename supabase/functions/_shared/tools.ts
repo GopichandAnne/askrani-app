@@ -243,7 +243,9 @@ const PLACE_ORDER_DECL: FunctionDeclaration = {
   },
 };
 
-/** Cart shape returned to the model (subtotal is code-computed, not model math). */
+/** Cart shape returned to the model (subtotal is code-computed, not model math).
+ *  unit_price/line_total are null for unpriced items — the model must say the
+ *  store team will confirm that price, never guess it. */
 function formatCart(lines: CartLine[]): Record<string, unknown> {
   return {
     items: lines.map((l) => ({
@@ -251,12 +253,13 @@ function formatCart(lines: CartLine[]): Record<string, unknown> {
       name: l.name,
       quantity: l.quantity,
       unit: l.unit,
-      unit_price: l.unit_price,
+      unit_price: l.unit_price, // null = unpriced
       line_total: l.line_total,
     })),
-    subtotal: cartSubtotal(lines),
+    subtotal: cartSubtotal(lines), // priced items only
     currency: "USD",
     count: lines.length,
+    has_unpriced: lines.some((l) => l.unit_price == null),
   };
 }
 
@@ -272,7 +275,6 @@ export function buildToolset(db: SupabaseClient, store: Store, sessionId: string
         case "added": return { added: true, item: res.name, cart };
         case "removed": return { removed: true, cart };
         case "out_of_stock": return { added: false, reason: "out of stock", item: res.name, cart };
-        case "no_price": return { added: false, reason: "no price on file", item: res.name, cart };
         default: return { added: false, reason: "not found — search_products first", cart };
       }
     },

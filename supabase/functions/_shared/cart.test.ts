@@ -17,10 +17,16 @@ Deno.test("round2 avoids float drift", () => {
 Deno.test("buildLine snapshots price and computes line_total in code", () => {
   const l = buildLine(P(), 3);
   assertEquals(l.sku, "MP-0001");
-  assertEquals(l.catalog_matched, true);
   assertEquals(l.unit_price, 6.99);
   assertEquals(l.quantity, 3);
   assertEquals(l.line_total, 20.97);
+});
+
+Deno.test("buildLine with no price -> unpriced line (null, never guessed)", () => {
+  const l = buildLine(P({ price: null }), 3);
+  assertEquals(l.unit_price, null);
+  assertEquals(l.line_total, null);
+  assertEquals(l.quantity, 3);
 });
 
 Deno.test("cartSubtotal sums line totals (rounded)", () => {
@@ -34,4 +40,12 @@ Deno.test("cartSubtotal sums line totals (rounded)", () => {
 
 Deno.test("cartSubtotal of empty cart is 0", () => {
   assertEquals(cartSubtotal([]), 0);
+});
+
+Deno.test("cartSubtotal skips unpriced lines", () => {
+  const lines: CartLine[] = [
+    buildLine(P({ sku: "A", price: 2.49 }), 2), // 4.98
+    buildLine(P({ sku: "B", price: null }), 1), // unpriced -> 0
+  ];
+  assertEquals(cartSubtotal(lines), 4.98);
 });

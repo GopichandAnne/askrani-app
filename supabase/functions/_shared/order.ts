@@ -15,14 +15,41 @@ export interface OrderTotals {
   subtotal: number;
   tax: number;
   total: number;
+  /** true when at least one line has no price (staff prices it at confirm). */
+  hasUnpriced: boolean;
 }
 
-/** Panel-identical: subtotal = Σ line_total, tax = subtotal×rate, total = sum. */
+/** Panel-identical: subtotal = Σ priced line_total, tax = subtotal×rate. Unpriced
+ *  lines contribute 0 and flag hasUnpriced so the total is provisional. */
 export function computeTotals(lines: CartLine[], taxRate: number): OrderTotals {
-  const subtotal = round2(lines.reduce((s, l) => s + (l.line_total ?? 0), 0));
+  let subtotal = 0;
+  let hasUnpriced = false;
+  for (const l of lines) {
+    if (l.line_total == null) hasUnpriced = true;
+    else subtotal += l.line_total;
+  }
+  subtotal = round2(subtotal);
   const tax = round2(subtotal * (taxRate || 0));
   const total = round2(subtotal + tax);
-  return { subtotal, tax, total };
+  return { subtotal, tax, total, hasUnpriced };
+}
+
+/** Map a cart line to the panel's items_json shape: priced -> CatalogItem,
+ *  unpriced -> RequestItem (which staff may price in the Orders module). */
+function toOrderItem(l: CartLine): Record<string, unknown> {
+  if (l.unit_price != null && l.line_total != null) {
+    return {
+      sku: l.sku, catalog_matched: true, name: l.name, brand: l.brand,
+      size: l.size, unit: l.unit, quantity: l.quantity, notes: null,
+      unit_price: l.unit_price, line_total: l.line_total,
+    };
+  }
+  const desc = [l.name, [l.size, l.unit].filter(Boolean).join(" ")].filter(Boolean).join(" ");
+  return {
+    sku: "", item_id: crypto.randomUUID(), catalog_matched: false,
+    description: desc, name: l.name, brand: l.brand, size: l.size, unit: l.unit,
+    quantity: l.quantity, notes: null, unit_price: null, line_total: null,
+  };
 }
 
 export async function loadTaxRate(db: SupabaseClient, storeId: string): Promise<number> {
@@ -115,11 +142,13 @@ export async function placeOrder(
   const revalidated: CartLine[] = [];
   for (const line of lines) {
     const p = bySku.get(line.sku);
-    if (!p || !p.in_stock || p.price == null) {
-      outOfStock.push(line.name);
+    if (!p || !p.in_stock) {
+      outOfStock.push(line.name); // stock is checked for every item, priced or not
       continue;
     }
-    if (round2(p.price) !== round2(line.unit_price)) {
+    // Surface a price change only for an item the customer was quoted a price for
+    // (both cart and live priced, and they differ). Unpriced stays unpriced.
+    if (line.unit_price != null && p.price != null && round2(p.price) !== round2(line.unit_price)) {
       priceChanges.push({ name: line.name, was: line.unit_price, now: p.price });
     }
     revalidated.push(buildLine(p as Parameters<typeof buildLine>[0], line.quantity));
@@ -127,9 +156,11 @@ export async function placeOrder(
   if (outOfStock.length > 0) return { placed: false, reason: "out_of_stock", items: outOfStock };
   if (priceChanges.length > 0) return { placed: false, reason: "price_changed", changes: priceChanges };
 
-  // ── Totals from LIVE prices; write the order the panel expects ──────────────
+  // ── Totals from LIVE prices (priced lines); write the order the panel expects ─
   const taxRate = await loadTaxRate(db, store.id);
   const totals = computeTotals(revalidated, taxRate);
+  const itemsJson = revalidated.map(toOrderItem);
+  const orderMode = revalidated.some((l) => l.unit_price == null) ? "request" : "standard";
   const customerPhone = sessionId.startsWith("wa_") ? sessionId.slice(3) : sessionId;
 
   let orderId: string;
@@ -152,7 +183,7 @@ export async function placeOrder(
     customer_name: thread?.customer_name ?? null,
     session_id: sessionId,
     timestamp: new Date().toISOString(),
-    items_json: revalidated,
+    items_json: itemsJson,
     subtotal: totals.subtotal,
     tax: totals.tax,
     total: totals.total,
@@ -160,7 +191,7 @@ export async function placeOrder(
     fulfillment,
     status: "pending_approval",
     source_channel: "whatsapp",
-    order_mode: "standard",
+    order_mode: orderMode,
   });
   if (error) return { placed: false, reason: "db_error", detail: error.message };
 
@@ -173,6 +204,7 @@ export async function placeOrder(
     subtotal: totals.subtotal,
     tax: totals.tax,
     total: totals.total,
+    has_unpriced: totals.hasUnpriced,
     fulfillment,
     items: revalidated.length,
   };

@@ -1,57 +1,54 @@
-// Postgres cart — Bot Phase 3c (cart slice). One cart per session (carts table,
-// keyed by session_id). Lines are CatalogItem-shaped so place_order can copy
-// them straight into orders.items_json and the panel parses them unchanged.
+// Postgres cart — Bot Phase 3c. One cart per session (carts table, keyed by
+// session_id). The cart holds real catalog items resolved by sku; a line's
+// unit_price is snapshotted from the LIVE catalog at add-time.
 //
-// Money-safety: a line's unit_price is snapshotted from the LIVE catalog at
-// add-time (never model-supplied), and line_total/subtotal are computed here in
-// code. place_order (next slice) RE-validates against live catalog at confirm —
-// these add-time values are for the running display only, never the final total.
+// Pricing is OPTIONAL: an owner may leave items unpriced. An unpriced line has
+// unit_price = null (never a guessed number) — the store team sets the price
+// when they confirm the order. place_order re-validates against live data at
+// confirm; these add-time values are for the running display only.
 
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Store } from "./types.ts";
 
-/** Mirrors lib/orders/types.ts CatalogItem (the panel's line shape). */
+/** Internal cart line: always a real catalog product (has sku), price optional. */
 export interface CartLine {
   sku: string;
-  catalog_matched: true;
   name: string;
   brand: string | null;
   size: string | null;
   unit: string | null;
   quantity: number;
-  notes: string | null;
-  unit_price: number;
-  line_total: number;
+  unit_price: number | null; // null = unpriced (staff prices at confirm)
+  line_total: number | null;
 }
 
 export function round2(n: number): number {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 }
 
+/** Sum of priced lines only; unpriced lines contribute nothing to the running subtotal. */
 export function cartSubtotal(lines: CartLine[]): number {
   return round2(lines.reduce((s, l) => s + (l.line_total ?? 0), 0));
 }
 
-/** Snapshot a catalog row into a cart line (price captured now, in code). */
+/** Snapshot a catalog row into a cart line. price may be null (unpriced item). */
 export function buildLine(
-  p: { sku: string; name: string; brand: string | null; size: string | null; unit: string | null; price: number },
+  p: { sku: string; name: string; brand: string | null; size: string | null; unit: string | null; price: number | null },
   quantity: number,
 ): CartLine {
   return {
     sku: p.sku,
-    catalog_matched: true,
     name: p.name,
     brand: p.brand,
     size: p.size,
     unit: p.unit,
     quantity,
-    notes: null,
     unit_price: p.price,
-    line_total: round2(p.price * quantity),
+    line_total: p.price == null ? null : round2(p.price * quantity),
   };
 }
 
-export type AddStatus = "added" | "removed" | "not_found" | "out_of_stock" | "no_price";
+export type AddStatus = "added" | "removed" | "not_found" | "out_of_stock";
 
 async function readLines(db: SupabaseClient, sessionId: string): Promise<CartLine[]> {
   const { data } = await db.from("carts").select("items").eq("session_id", sessionId).maybeSingle();
@@ -78,10 +75,10 @@ async function writeLines(
 }
 
 /**
- * Set an item's quantity in the cart (not increment — idempotent, retry-safe).
- * quantity <= 0 removes the line. Resolves by exact sku against the LIVE catalog;
- * refuses out-of-stock / unpriced / unknown items so only real, in-stock,
- * priced products enter the cart.
+ * Set an item's quantity in the cart (idempotent, not increment). quantity <= 0
+ * removes it. Resolves by exact sku against the LIVE catalog; refuses unknown or
+ * out-of-stock items. An item with no catalog price is still added (unpriced) —
+ * the price is never invented.
  */
 export async function addToCart(
   db: SupabaseClient,
@@ -107,7 +104,6 @@ export async function addToCart(
     .maybeSingle();
   if (!p) return { status: "not_found", lines };
   if (!p.in_stock) return { status: "out_of_stock", name: p.name, lines };
-  if (p.price == null) return { status: "no_price", name: p.name, lines };
 
   const line = buildLine(p as Parameters<typeof buildLine>[0], qty);
   const idx = lines.findIndex((l) => l.sku === sku);
@@ -129,11 +125,7 @@ export async function removeFromCart(
   return { removed: next.length !== lines.length, lines: next };
 }
 
-export async function clearCart(
-  db: SupabaseClient,
-  store: Store,
-  sessionId: string,
-): Promise<void> {
+export async function clearCart(db: SupabaseClient, store: Store, sessionId: string): Promise<void> {
   await writeLines(db, store, sessionId, []);
 }
 
