@@ -23,6 +23,8 @@ import {
   reindexKnowledge,
   syncSavedQaToIndex,
 } from "../_shared/knowledge.ts";
+import { addToCart } from "../_shared/cart.ts";
+import { placeOrder } from "../_shared/order.ts";
 import { generateTurnReply } from "../_shared/conversation.ts";
 
 const REINDEX_DEFAULT_MAX = 200;
@@ -109,6 +111,20 @@ Deno.serve(async (req) => {
         });
         if (error) return json({ error: error.message }, 500);
         return json({ store: store.slug, query: body.query, results: data });
+      }
+      case "cart_add": {
+        const res = await addToCart(
+          db, store, String(body.session_id ?? ""), String(body.sku ?? ""), Number(body.quantity ?? 1),
+        );
+        return json({ store: store.slug, status: res.status, lines: res.lines });
+      }
+      case "place_order": {
+        const res = await placeOrder(
+          db, store, String(body.session_id ?? ""),
+          body.fulfillment === "delivery" ? "delivery" : "pickup",
+          String(body.confirmation_text ?? "yes"),
+        );
+        return json({ store: store.slug, ...res });
       }
       case "chat": {
         const message = String(body.message ?? "");

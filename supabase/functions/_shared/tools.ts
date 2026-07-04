@@ -17,6 +17,7 @@ import {
   removeFromCart,
   viewCart,
 } from "./cart.ts";
+import { placeOrder } from "./order.ts";
 
 // ── Gemini functionDeclaration shapes ───────────────────────────────────────
 export interface FunctionDeclaration {
@@ -208,6 +209,27 @@ const CLEAR_CART_DECL: FunctionDeclaration = {
   description: "Empty the cart entirely.",
   parameters: { type: "object", properties: {}, required: [] },
 };
+const PLACE_ORDER_DECL: FunctionDeclaration = {
+  name: "place_order",
+  description:
+    "Finalize the cart into an order request for the store team to confirm. ONLY " +
+    "call this after the customer gave a clear, explicit YES to the specific " +
+    "question 'shall I place this order for $TOTAL?'. NEVER for a vague ok, an " +
+    "emoji, a yes bundled with a change, or a yes to a different question. The " +
+    "server re-checks stock and price at this moment — if it reports out_of_stock " +
+    "or price_changed, nothing was placed: tell the customer, adjust, re-confirm.",
+  parameters: {
+    type: "object",
+    properties: {
+      fulfillment: { type: "string", description: "'pickup' or 'delivery'." },
+      confirmation_text: {
+        type: "string",
+        description: "The customer's exact affirmative words that confirmed placement.",
+      },
+    },
+    required: ["fulfillment", "confirmation_text"],
+  },
+};
 
 /** Cart shape returned to the model (subtotal is code-computed, not model math). */
 function formatCart(lines: CartLine[]): Record<string, unknown> {
@@ -251,6 +273,14 @@ export function buildToolset(db: SupabaseClient, store: Store, sessionId: string
       await clearCart(db, store, sessionId);
       return { cleared: true, cart: formatCart([]) };
     },
+    place_order: (args) =>
+      placeOrder(
+        db,
+        store,
+        sessionId,
+        args.fulfillment === "delivery" ? "delivery" : "pickup",
+        String(args.confirmation_text ?? ""),
+      ),
   };
   return {
     declarations: [
@@ -260,6 +290,7 @@ export function buildToolset(db: SupabaseClient, store: Store, sessionId: string
       VIEW_CART_DECL,
       REMOVE_FROM_CART_DECL,
       CLEAR_CART_DECL,
+      PLACE_ORDER_DECL,
     ],
     execute: async (name, args) => {
       const fn = executors[name];
