@@ -75,6 +75,11 @@ const BASE_RULES = [
   "view_cart to show the cart and running subtotal, and remove_from_cart or",
   "clear_cart to edit. Always confirm what you added and read the subtotal from",
   "the tool result — never invent a price or total.",
+  "You CANNOT place, confirm, or finalize an order yet. When a customer is ready",
+  "to order, read back their cart and subtotal and tell them a store team member",
+  "will confirm the order and total with them shortly. NEVER say an order has",
+  "been placed, noted, confirmed, or is being prepared — you have no way to place",
+  "one, so claiming otherwise would be false.",
 ].join(" ");
 
 /**
