@@ -111,7 +111,13 @@ async function executeSearchProducts(
   const query = String(args.query ?? "").trim();
   if (!query) return { products: [], note: "empty query" };
 
-  const embedding = await embedQuery(query);
+  let embedding: number[];
+  try {
+    embedding = await embedQuery(query);
+  } catch (e) {
+    console.error(`[tools] search_products embed failed: ${e instanceof Error ? e.message : e}`);
+    return { products: [], note: "search temporarily unavailable — offer to check with the store" };
+  }
   const { data, error } = await db.rpc("search_products", {
     p_store_id: store.id,
     p_query: query,
@@ -151,7 +157,13 @@ async function executeSearchKnowledge(
   const query = String(args.query ?? "").trim();
   if (!query) return { snippets: [], note: "empty query" };
 
-  const embedding = await embedQuery(query);
+  let embedding: number[];
+  try {
+    embedding = await embedQuery(query);
+  } catch (e) {
+    console.error(`[tools] search_knowledge embed failed: ${e instanceof Error ? e.message : e}`);
+    return { snippets: [], note: "search temporarily unavailable — offer to check with the store" };
+  }
   const { data, error } = await db.rpc("search_knowledge", {
     p_store_id: store.id,
     p_query_embedding: toVectorLiteral(embedding),

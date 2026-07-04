@@ -75,7 +75,15 @@ export async function handleConversation(
   });
   const responseTimeMs = Date.now() - startedAt;
   if (!reply) {
-    console.warn(`[conv] no reply for ${ctx.threadId} (no key or generation failed)`);
+    // A failed generation (transient Gemini/tool error, no key) must NOT leave
+    // the customer with silence — send a graceful fallback so they can retry.
+    console.warn(`[conv] no reply for ${ctx.threadId} — sending fallback`);
+    await sendAndPersist(
+      db,
+      store,
+      ctx,
+      "Sorry, I had a brief hiccup just now — could you send that again? 🙏",
+    );
     return;
   }
   if (toolsUsed.length) console.log(`[conv] ${ctx.threadId} tools: ${toolsUsed.join(", ")}`);
