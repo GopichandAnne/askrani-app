@@ -9,6 +9,14 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Store } from "./types.ts";
 import { embedQuery, toVectorLiteral } from "./embeddings.ts";
+import {
+  addToCart,
+  type CartLine,
+  cartSubtotal,
+  clearCart,
+  removeFromCart,
+  viewCart,
+} from "./cart.ts";
 
 // ── Gemini functionDeclaration shapes ───────────────────────────────────────
 export interface FunctionDeclaration {
@@ -113,13 +121,14 @@ async function executeSearchProducts(
     console.error(`[tools] search_products: ${error.message}`);
     return { products: [], note: "search failed" };
   }
-  // Compact rows for the model (drop ids/scores it doesn't need).
+  // Compact rows for the model. sku is included so it can add_to_cart exactly.
   const products = (data ?? []).map(
     (r: {
-      name: string; brand: string | null; size: string | null;
+      sku: string | null; name: string; brand: string | null; size: string | null;
       unit: string | null; price: number | null; currency: string | null;
       in_stock: boolean; category: string | null;
     }) => ({
+      sku: r.sku,
       name: r.name,
       brand: r.brand,
       size: r.size,
@@ -161,14 +170,97 @@ async function executeSearchKnowledge(
   return { snippets, count: snippets.length };
 }
 
-/** Build the toolset bound to a store's DB context. */
-export function buildToolset(db: SupabaseClient, store: Store): Toolset {
+// ── cart tools ───────────────────────────────────────────────────────────────
+const ADD_TO_CART_DECL: FunctionDeclaration = {
+  name: "add_to_cart",
+  description:
+    "Add a catalog item to the cart, or set its quantity. FIRST call " +
+    "search_products to find the item and its exact `sku`, then call this with " +
+    "that sku. This SETS the quantity (not increments) — to change a quantity, " +
+    "call again with the new total; quantity 0 removes it. Refuses items that " +
+    "are out of stock or not found. Prices are taken from the live catalog, not " +
+    "from you.",
+  parameters: {
+    type: "object",
+    properties: {
+      sku: { type: "string", description: "Exact product sku from search_products." },
+      quantity: { type: "number", description: "Desired quantity (0 removes the item)." },
+    },
+    required: ["sku", "quantity"],
+  },
+};
+const VIEW_CART_DECL: FunctionDeclaration = {
+  name: "view_cart",
+  description: "Show the customer's current cart with line totals and subtotal.",
+  parameters: { type: "object", properties: {}, required: [] },
+};
+const REMOVE_FROM_CART_DECL: FunctionDeclaration = {
+  name: "remove_from_cart",
+  description: "Remove an item from the cart by its sku.",
+  parameters: {
+    type: "object",
+    properties: { sku: { type: "string", description: "Exact product sku to remove." } },
+    required: ["sku"],
+  },
+};
+const CLEAR_CART_DECL: FunctionDeclaration = {
+  name: "clear_cart",
+  description: "Empty the cart entirely.",
+  parameters: { type: "object", properties: {}, required: [] },
+};
+
+/** Cart shape returned to the model (subtotal is code-computed, not model math). */
+function formatCart(lines: CartLine[]): Record<string, unknown> {
+  return {
+    items: lines.map((l) => ({
+      sku: l.sku,
+      name: l.name,
+      quantity: l.quantity,
+      unit: l.unit,
+      unit_price: l.unit_price,
+      line_total: l.line_total,
+    })),
+    subtotal: cartSubtotal(lines),
+    currency: "USD",
+    count: lines.length,
+  };
+}
+
+/** Build the toolset bound to a store + session context. */
+export function buildToolset(db: SupabaseClient, store: Store, sessionId: string): Toolset {
   const executors: Record<string, ToolExecutor> = {
     search_products: (args) => executeSearchProducts(db, store, args),
     search_knowledge: (args) => executeSearchKnowledge(db, store, args),
+    add_to_cart: async (args) => {
+      const res = await addToCart(db, store, sessionId, String(args.sku ?? ""), Number(args.quantity ?? 1));
+      const cart = formatCart(res.lines);
+      switch (res.status) {
+        case "added": return { added: true, item: res.name, cart };
+        case "removed": return { removed: true, cart };
+        case "out_of_stock": return { added: false, reason: "out of stock", item: res.name, cart };
+        case "no_price": return { added: false, reason: "no price on file", item: res.name, cart };
+        default: return { added: false, reason: "not found — search_products first", cart };
+      }
+    },
+    view_cart: async () => formatCart(await viewCart(db, sessionId)),
+    remove_from_cart: async (args) => {
+      const res = await removeFromCart(db, store, sessionId, String(args.sku ?? ""));
+      return { removed: res.removed, cart: formatCart(res.lines) };
+    },
+    clear_cart: async () => {
+      await clearCart(db, store, sessionId);
+      return { cleared: true, cart: formatCart([]) };
+    },
   };
   return {
-    declarations: [SEARCH_PRODUCTS_DECL, SEARCH_KNOWLEDGE_DECL],
+    declarations: [
+      SEARCH_PRODUCTS_DECL,
+      SEARCH_KNOWLEDGE_DECL,
+      ADD_TO_CART_DECL,
+      VIEW_CART_DECL,
+      REMOVE_FROM_CART_DECL,
+      CLEAR_CART_DECL,
+    ],
     execute: async (name, args) => {
       const fn = executors[name];
       if (!fn) return { error: `unknown tool: ${name}` };
