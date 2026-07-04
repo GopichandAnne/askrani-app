@@ -38,7 +38,7 @@ export async function generateTurnReply(
   const history = await loadHistory(db, store.slug, opts.sessionId, config.historyTurns);
   const systemInstruction = buildSystemInstruction(config);
   const contents = buildContents(history, opts.inboundText);
-  const toolset = buildToolset(db, store);
+  const toolset = buildToolset(db, store, opts.sessionId);
   return await generateReply(systemInstruction, contents, toolset);
 }
 

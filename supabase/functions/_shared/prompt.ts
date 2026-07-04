@@ -70,6 +70,11 @@ const BASE_RULES = [
   "so plainly and offer the best alternative (for example, pickup). If you're",
   "missing a detail needed to decide — their distance or address, order total,",
   "or the time — ask for it.",
+  "To help a customer buy, build a cart: use search_products to find each item,",
+  "then add_to_cart with its exact sku (the cart holds real catalog prices). Use",
+  "view_cart to show the cart and running subtotal, and remove_from_cart or",
+  "clear_cart to edit. Always confirm what you added and read the subtotal from",
+  "the tool result — never invent a price or total.",
 ].join(" ");
 
 /**
