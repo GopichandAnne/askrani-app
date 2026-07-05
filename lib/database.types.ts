@@ -536,6 +536,53 @@ export type Database = {
           },
         ]
       }
+      store_responders: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          name: string | null
+          notify_escalations: boolean
+          notify_orders: boolean
+          phone: string
+          role: Database["public"]["Enums"]["staff_role"]
+          store_slug: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          name?: string | null
+          notify_escalations?: boolean
+          notify_orders?: boolean
+          phone: string
+          role?: Database["public"]["Enums"]["staff_role"]
+          store_slug: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          name?: string | null
+          notify_escalations?: boolean
+          notify_orders?: boolean
+          phone?: string
+          role?: Database["public"]["Enums"]["staff_role"]
+          store_slug?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "store_responders_store_slug_fkey"
+            columns: ["store_slug"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["slug"]
+          },
+        ]
+      }
       store_secrets: {
         Row: {
           created_at: string

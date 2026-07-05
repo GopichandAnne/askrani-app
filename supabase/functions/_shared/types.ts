@@ -41,4 +41,5 @@ export interface Store {
   slug: string;
   store_display_name: string | null;
   business_type: string | null;
+  whatsapp_phone_number_id: string | null;
 }

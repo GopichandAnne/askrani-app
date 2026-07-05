@@ -24,6 +24,7 @@ import {
   deriveOrderPrefix,
   placeOrder,
 } from "./order.ts";
+import { notifyResponders } from "./responders.ts";
 
 // ── Gemini functionDeclaration shapes ───────────────────────────────────────
 export interface FunctionDeclaration {
@@ -390,6 +391,12 @@ async function executeEscalate(
     text: `Escalated to store: ${question}`,
     event_payload_json: { ticket_id: ticketId, question },
   });
+
+  // DM the store's responders so they can answer from their own WhatsApp.
+  await notifyResponders(
+    db, store, "escalation",
+    `A customer asked: ${question}\n\nReply to this message to answer them (Rani will pass it along).`,
+  );
 
   return { escalated: true, ticket_id: ticketId };
 }

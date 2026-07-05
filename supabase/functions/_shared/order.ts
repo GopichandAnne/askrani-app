@@ -10,6 +10,7 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Store } from "./types.ts";
 import { buildLine, type CartLine, clearCart, round2, viewCart } from "./cart.ts";
+import { notifyResponders } from "./responders.ts";
 
 export interface OrderTotals {
   subtotal: number;
@@ -202,6 +203,13 @@ export async function placeOrder(
 
   await emitOrderCreated(db, store, customerPhone, orderId, totals, revalidated.length);
   await clearCart(db, store, sessionId); // one-way: cart -> order
+
+  // DM responders who opted into order alerts.
+  const totalLabel = totals.hasUnpriced ? `$${totals.total} + items to price` : `$${totals.total}`;
+  await notifyResponders(
+    db, store, "order",
+    `New WhatsApp order ${orderId} (${fulfillment}) from ${thread?.customer_name ?? customerPhone}: ${revalidated.length} item(s), ${totalLabel}. Review in the panel.`,
+  );
 
   return {
     placed: true,
