@@ -21,6 +21,7 @@ import { generateReply, type GeminiReply } from "./gemini.ts";
 import { buildToolset } from "./tools.ts";
 import { getPendingProposals } from "./order.ts";
 import { buildNowContext } from "./clock.ts";
+import { classifyTurn } from "./analytics.ts";
 import { getStoreAccessToken } from "./config.ts";
 import { sendText } from "./wa.ts";
 
@@ -105,8 +106,17 @@ export async function handleConversation(
   if (toolsUsed.length) console.log(`[conv] ${ctx.threadId} tools: ${toolsUsed.join(", ")}`);
 
   // ── Log the turn + send + persist outbound. ────────────────────────────────
-  await logTurn(db, store, ctx, reply, responseTimeMs);
+  const conversationId = await logTurn(db, store, ctx, reply, responseTimeMs);
   await sendAndPersist(db, store, ctx, reply);
+
+  // Enrich analytics AFTER the reply is sent — never blocks the customer's reply.
+  if (conversationId) {
+    const analytics = await classifyTurn(ctx.inboundText, reply);
+    await db
+      .from("conversations")
+      .update({ analytics_json: JSON.stringify(analytics) })
+      .eq("conversation_id", conversationId);
+  }
 }
 
 async function logTurn(
@@ -115,10 +125,11 @@ async function logTurn(
   ctx: ConversationContext,
   reply: string,
   responseTimeMs: number,
-): Promise<void> {
+): Promise<string | null> {
   const now = new Date().toISOString();
+  const conversationId = `wa-${crypto.randomUUID()}`;
   const { error } = await db.from("conversations").insert({
-    conversation_id: `wa-${crypto.randomUUID()}`,
+    conversation_id: conversationId,
     store_slug: store.slug,
     session_id: ctx.sessionId,
     timestamp: now,
@@ -126,10 +137,15 @@ async function logTurn(
     assistant_response: reply,
     response_time_ms: responseTimeMs,
     device_type: ctx.deviceType,
+    // Provisional language tag; enriched with full analytics after the reply.
     analytics_json: JSON.stringify({ language: detectLanguage(ctx.inboundText) }),
     synced_to_master: false,
   });
-  if (error) console.error(`[conv] log turn: ${error.message}`);
+  if (error) {
+    console.error(`[conv] log turn: ${error.message}`);
+    return null;
+  }
+  return conversationId;
 }
 
 async function sendAndPersist(

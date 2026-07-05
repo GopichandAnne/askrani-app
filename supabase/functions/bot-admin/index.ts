@@ -25,6 +25,7 @@ import {
 } from "../_shared/knowledge.ts";
 import { addToCart } from "../_shared/cart.ts";
 import { placeOrder } from "../_shared/order.ts";
+import { classifyTurn } from "../_shared/analytics.ts";
 import { generateTurnReply } from "../_shared/conversation.ts";
 
 const REINDEX_DEFAULT_MAX = 200;
@@ -125,6 +126,10 @@ Deno.serve(async (req) => {
           String(body.confirmation_text ?? "yes"),
         );
         return json({ store: store.slug, ...res });
+      }
+      case "classify": {
+        const analytics = await classifyTurn(String(body.message ?? ""), String(body.reply ?? ""));
+        return json({ store: store.slug, analytics });
       }
       case "chat": {
         const message = String(body.message ?? "");

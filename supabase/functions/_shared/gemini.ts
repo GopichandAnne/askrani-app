@@ -92,7 +92,14 @@ export async function generateReply(
         systemInstruction: { parts: [{ text: systemInstruction }] },
         contents: convo,
         ...(tools ? { tools } : {}),
-        generationConfig: { temperature: 0.7, maxOutputTokens: 800 },
+        // Disable 2.5-flash "thinking": it consumed the output budget and left
+        // some replies empty (no reply), and it added latency we don't need for a
+        // grocery assistant. thinkingBudget:0 -> the budget goes to the reply.
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 1024,
+          thinkingConfig: { thinkingBudget: 0 },
+        },
       });
       const res = await fetchWithRetry(url, body);
       if (!res.ok) {
