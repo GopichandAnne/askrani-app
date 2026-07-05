@@ -256,6 +256,32 @@ export type Database = {
           },
         ]
       }
+      order_counters: {
+        Row: {
+          seq: number
+          store_slug: string
+          year: number
+        }
+        Insert: {
+          seq?: number
+          store_slug: string
+          year: number
+        }
+        Update: {
+          seq?: number
+          store_slug?: string
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_counters_store_slug_fkey"
+            columns: ["store_slug"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["slug"]
+          },
+        ]
+      }
       orders: {
         Row: {
           created_at: string
@@ -804,6 +830,10 @@ export type Database = {
     }
     Functions: {
       is_platform_admin: { Args: never; Returns: boolean }
+      next_order_seq: {
+        Args: { p_store_slug: string; p_year: number }
+        Returns: number
+      }
       search_knowledge: {
         Args: {
           p_limit?: number
@@ -854,6 +884,9 @@ export type Database = {
         | "suggestion_chips"
         | "tax_rate"
         | "history_turns"
+        | "order_prompt"
+        | "orders_enabled"
+        | "store_layout"
       device_type: "whatsapp" | "web"
       fulfillment_type: "pickup" | "delivery"
       message_direction: "inbound" | "outbound" | "system"
@@ -1007,6 +1040,9 @@ export const Constants = {
         "suggestion_chips",
         "tax_rate",
         "history_turns",
+        "order_prompt",
+        "orders_enabled",
+        "store_layout",
       ],
       device_type: ["whatsapp", "web"],
       fulfillment_type: ["pickup", "delivery"],

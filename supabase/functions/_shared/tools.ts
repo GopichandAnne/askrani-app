@@ -263,8 +263,14 @@ function formatCart(lines: CartLine[]): Record<string, unknown> {
   };
 }
 
-/** Build the toolset bound to a store + session context. */
-export function buildToolset(db: SupabaseClient, store: Store, sessionId: string): Toolset {
+/** Build the toolset bound to a store + session context. Cart/order tools are
+ *  attached only when ordering is enabled for the store (Agent Setup). */
+export function buildToolset(
+  db: SupabaseClient,
+  store: Store,
+  sessionId: string,
+  ordersEnabled: boolean,
+): Toolset {
   const executors: Record<string, ToolExecutor> = {
     search_products: (args) => executeSearchProducts(db, store, args),
     search_knowledge: (args) => executeSearchKnowledge(db, store, args),
@@ -296,16 +302,18 @@ export function buildToolset(db: SupabaseClient, store: Store, sessionId: string
         String(args.confirmation_text ?? ""),
       ),
   };
-  return {
-    declarations: [
-      SEARCH_PRODUCTS_DECL,
-      SEARCH_KNOWLEDGE_DECL,
+  const declarations: FunctionDeclaration[] = [SEARCH_PRODUCTS_DECL, SEARCH_KNOWLEDGE_DECL];
+  if (ordersEnabled) {
+    declarations.push(
       ADD_TO_CART_DECL,
       VIEW_CART_DECL,
       REMOVE_FROM_CART_DECL,
       CLEAR_CART_DECL,
       PLACE_ORDER_DECL,
-    ],
+    );
+  }
+  return {
+    declarations,
     execute: async (name, args) => {
       const fn = executors[name];
       if (!fn) return { error: `unknown tool: ${name}` };

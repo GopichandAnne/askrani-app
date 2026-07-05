@@ -26,6 +26,8 @@ function cfg(over: Partial<AgentConfig> = {}): AgentConfig {
     engageInfo: "Offer to build a cart.",
     storePrompt: "We carry South Asian groceries.",
     historyTurns: 10,
+    orderPrompt: null,
+    ordersEnabled: false,
     ...over,
   };
 }
@@ -43,6 +45,17 @@ Deno.test("system instruction has NO knowledge in the prefix (retrieval-on-deman
   const s = buildSystemInstruction(cfg());
   assert(!s.includes("## Knowledge base"));
   assert(!s.includes("Q:"));
+});
+
+Deno.test("ordering rules + order prompt appear ONLY when ordersEnabled", () => {
+  const off = buildSystemInstruction(cfg({ ordersEnabled: false, orderPrompt: "Pickup only." }));
+  assert(!off.includes("place_order"));
+  assert(!off.includes("## Ordering"));
+
+  const on = buildSystemInstruction(cfg({ ordersEnabled: true, orderPrompt: "Pickup only." }));
+  assert(on.includes("place_order"));
+  assert(on.includes("## Ordering"));
+  assert(on.includes("Pickup only."));
 });
 
 Deno.test("system instruction omits empty sections (stays stable)", () => {

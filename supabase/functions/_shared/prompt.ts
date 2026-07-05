@@ -41,6 +41,10 @@ export interface AgentConfig {
   storePrompt: string | null;
   /** How many prior turns to load into context (agent_config history_turns). */
   historyTurns: number;
+  /** Owner's ordering/checkout instructions (only used when ordersEnabled). */
+  orderPrompt: string | null;
+  /** When false the bot is info/nav/Q&A only — no cart/order tools or rules. */
+  ordersEnabled: boolean;
 }
 
 // Baked-in operating rules — part of the stable prefix, identical across stores.
@@ -70,6 +74,11 @@ const BASE_RULES = [
   "so plainly and offer the best alternative (for example, pickup). If you're",
   "missing a detail needed to decide — their distance or address, order total,",
   "or the time — ask for it.",
+].join(" ");
+
+// Locked ordering/money-safety rules — appended ONLY when ordering is enabled,
+// always on top of the owner's order_prompt. Owners can't edit these away.
+const ORDERING_RULES = [
   "To help a customer buy, build a cart: use search_products to find each item,",
   "then add_to_cart with its exact sku. view_cart shows the cart and running",
   "subtotal; remove_from_cart / clear_cart edit it. Some items may have no price",
@@ -112,6 +121,14 @@ export function buildSystemInstruction(c: AgentConfig): string {
   if (c.engageInfo) out.push(`\n## How to engage\n${c.engageInfo}`);
   if (c.languageHandling) out.push(`\n## Language\n${c.languageHandling}`);
   if (c.offTopicHandling) out.push(`\n## Off-topic requests\n${c.offTopicHandling}`);
+
+  // Ordering is optional per store. When enabled, the owner's order instructions
+  // sit under the locked ordering/money-safety rules; when disabled, the bot has
+  // no cart/order tools (see buildToolset) so these rules would be dead weight.
+  if (c.ordersEnabled) {
+    out.push(`\n${ORDERING_RULES}`);
+    if (c.orderPrompt) out.push(`\n## Ordering\n${c.orderPrompt}`);
+  }
 
   return out.join("\n");
 }
