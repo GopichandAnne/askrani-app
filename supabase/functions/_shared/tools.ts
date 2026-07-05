@@ -18,7 +18,12 @@ import {
   removeFromCart,
   viewCart,
 } from "./cart.ts";
-import { deriveOrderPrefix, placeOrder } from "./order.ts";
+import {
+  cancelProposedOrder,
+  confirmProposedOrder,
+  deriveOrderPrefix,
+  placeOrder,
+} from "./order.ts";
 
 // ── Gemini functionDeclaration shapes ───────────────────────────────────────
 export interface FunctionDeclaration {
@@ -286,6 +291,34 @@ function formatCart(lines: CartLine[]): Record<string, unknown> {
   };
 }
 
+const CONFIRM_PROPOSAL_DECL: FunctionDeclaration = {
+  name: "confirm_proposed_order",
+  description:
+    "Confirm a proposed order the store priced and sent to the customer. Call " +
+    "ONLY when the customer gives a short clear yes to it (yes, confirm, ok, " +
+    "sure, go ahead, looks good, a thumbs-up) with no new request or change.",
+  parameters: {
+    type: "object",
+    properties: { order_id: { type: "string", description: "The proposed order id, e.g. MPL-2026-0007." } },
+    required: ["order_id"],
+  },
+};
+const CANCEL_PROPOSAL_DECL: FunctionDeclaration = {
+  name: "cancel_proposed_order",
+  description:
+    "Cancel a proposed order when the customer clearly wants it gone (cancel, " +
+    "never mind, forget it, I changed my mind). For price/size negotiation (they " +
+    "still want it), use escalate_to_owner instead. For a bare 'no', ask first.",
+  parameters: {
+    type: "object",
+    properties: {
+      order_id: { type: "string", description: "The proposed order id." },
+      reason: { type: "string", description: "The customer's reason, in their words." },
+    },
+    required: ["order_id"],
+  },
+};
+
 const ESCALATE_DECL: FunctionDeclaration = {
   name: "escalate_to_owner",
   description:
@@ -368,6 +401,7 @@ export function buildToolset(
   store: Store,
   sessionId: string,
   ordersEnabled: boolean,
+  hasProposal = false,
 ): Toolset {
   const executors: Record<string, ToolExecutor> = {
     search_products: (args) => executeSearchProducts(db, store, args),
@@ -410,6 +444,10 @@ export function buildToolset(
         args.fulfillment === "delivery" ? "delivery" : "pickup",
         String(args.confirmation_text ?? ""),
       ),
+    confirm_proposed_order: (args) =>
+      confirmProposedOrder(db, store, sessionId, String(args.order_id ?? "")),
+    cancel_proposed_order: (args) =>
+      cancelProposedOrder(db, store, sessionId, String(args.order_id ?? ""), String(args.reason ?? "customer request")),
   };
   const declarations: FunctionDeclaration[] = [SEARCH_PRODUCTS_DECL, SEARCH_KNOWLEDGE_DECL, ESCALATE_DECL];
   if (ordersEnabled) {
@@ -421,6 +459,7 @@ export function buildToolset(
       CLEAR_CART_DECL,
       PLACE_ORDER_DECL,
     );
+    if (hasProposal) declarations.push(CONFIRM_PROPOSAL_DECL, CANCEL_PROPOSAL_DECL);
   }
   return {
     declarations,

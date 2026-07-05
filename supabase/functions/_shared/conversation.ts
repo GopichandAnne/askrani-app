@@ -19,6 +19,7 @@ import {
 } from "./prompt.ts";
 import { generateReply, type GeminiReply } from "./gemini.ts";
 import { buildToolset } from "./tools.ts";
+import { getPendingProposals } from "./order.ts";
 import { buildNowContext } from "./clock.ts";
 import { getStoreAccessToken } from "./config.ts";
 import { sendText } from "./wa.ts";
@@ -39,10 +40,21 @@ export async function generateTurnReply(
   const history = await loadHistory(db, store.slug, opts.sessionId, config.historyTurns);
   const systemInstruction = buildSystemInstruction(config);
   // Prefix the CURRENT message (volatile — not the cached prefix) with store-local
-  // date/time + open/closed so today/tomorrow/pickup answers are grounded.
+  // date/time + open/closed, and any pending priced proposal awaiting a decision.
   const nowCtx = buildNowContext(config.timezone, config.storeHours);
-  const contents = buildContents(history, `${nowCtx}\n${opts.inboundText}`);
-  const toolset = buildToolset(db, store, opts.sessionId, config.ordersEnabled);
+  let proposalCtx = "";
+  let hasProposal = false;
+  if (config.ordersEnabled) {
+    const proposals = await getPendingProposals(db, store, opts.sessionId);
+    if (proposals.length > 0) {
+      hasProposal = true;
+      proposalCtx = "\n" + proposals
+        .map((p) => `[PENDING PROPOSAL: order ${p.order_id}, total ${p.total != null ? "$" + p.total : "to be confirmed"}, awaiting the customer's decision]`)
+        .join("\n");
+    }
+  }
+  const contents = buildContents(history, `${nowCtx}${proposalCtx}\n${opts.inboundText}`);
+  const toolset = buildToolset(db, store, opts.sessionId, config.ordersEnabled, hasProposal);
   return await generateReply(systemInstruction, contents, toolset);
 }
 

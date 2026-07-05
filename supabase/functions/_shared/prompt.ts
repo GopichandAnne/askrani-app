@@ -125,6 +125,18 @@ const ORDERING_RULES = [
   "re-confirm. On success, give the order number; if the order has unpriced items",
   "or is delivery, say the store team will confirm the final total (with any",
   "pricing, delivery, or other charges) shortly.",
+  "If a message begins with [PENDING PROPOSAL: order X, total $Y ...], the store",
+  "has priced an order and is awaiting the customer's decision. If their reply is",
+  "a short clear yes with no new request (yes, confirm, ok, sure, go ahead, looks",
+  "good, thanks, a thumbs-up), call confirm_proposed_order(X) and reply briefly",
+  "and warmly (order confirmed, see you for pickup). If they clearly want it gone",
+  "(cancel, never mind, forget it, I changed my mind), call",
+  "cancel_proposed_order(X). If they want to negotiate — too expensive, a",
+  "different size or brand — but still want it, call escalate_to_owner with their",
+  "concern; do NOT negotiate prices yourself. If their reply mixes a yes with a",
+  "change or a question, or is a bare 'no', ask them to clarify before calling any",
+  "tool. If they change the subject, answer normally and leave the proposal",
+  "pending.",
 ].join(" ");
 
 /**

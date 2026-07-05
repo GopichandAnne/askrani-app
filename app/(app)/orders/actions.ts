@@ -3,7 +3,9 @@
 import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { computeTotals } from "@/lib/orders/totals";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { sendWhatsAppText } from "@/lib/wa/send";
+import { computeTotals, formatMoney } from "@/lib/orders/totals";
 import { isRequestItem, parseItems } from "@/lib/orders/types";
 import type { OrderItem, OrderStatus } from "@/lib/orders/types";
 import {
@@ -73,14 +75,59 @@ async function transition(
   return { ok: true, status: next };
 }
 
-/** Approve a placed/submitted/pending order → propose it back to the customer. */
+/** Approve a placed/submitted/pending order → propose it to the customer, and
+ *  send them the priced proposal on WhatsApp so they can confirm/negotiate. */
 export async function approveOrder(orderId: string): Promise<ActionResult> {
-  return transition(
+  const res = await transition(
     orderId,
     canApprove,
     "proposed",
     "This order can no longer be approved.",
   );
+  if (res.ok) await sendProposalToCustomer(orderId); // best-effort; approval already saved
+  return res;
+}
+
+/** Message the customer their priced order on WhatsApp + persist it to the thread. */
+async function sendProposalToCustomer(orderId: string): Promise<void> {
+  const admin = createAdminClient();
+  const { data: o } = await admin
+    .from("orders")
+    .select("order_id, store_slug, customer_phone, items_json, total, currency")
+    .eq("order_id", orderId)
+    .maybeSingle();
+  if (!o || !o.customer_phone) return;
+
+  const currency = o.currency ?? "USD";
+  const lines = parseItems(o.items_json).map((it) => {
+    const name =
+      (it.name && it.name.trim()) ||
+      (isRequestItem(it) ? it.description?.trim() : "") ||
+      "Item";
+    const lt = it.line_total;
+    return `- ${it.quantity}x ${name} — ${lt != null ? formatMoney(lt, currency) : "price to be confirmed"}`;
+  });
+  const body = [
+    `Here is your order ${o.order_id}, priced by the store:`,
+    ...lines,
+    `Total: ${o.total != null ? formatMoney(o.total, currency) : "to be confirmed"}`,
+    "Reply yes to confirm for pickup, or let us know if you would like a change.",
+  ].join("\n");
+
+  const sent = await sendWhatsAppText(o.store_slug, o.customer_phone, body);
+  if (!sent.ok) console.error(`[approve] proposal send ${orderId}: ${sent.error}`);
+
+  // Persist the outbound message so it shows in Conversations (append-only).
+  await admin.from("thread_messages").insert({
+    message_id: `msg_out_${randomUUID()}`,
+    thread_id: `thr_${o.customer_phone}_${o.store_slug}`,
+    store_slug: o.store_slug,
+    customer_phone: o.customer_phone,
+    direction: "outbound",
+    sender: "owner",
+    kind: "message",
+    text: body,
+  });
 }
 
 /** Confirm a proposed order. */

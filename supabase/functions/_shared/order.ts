@@ -214,3 +214,94 @@ export async function placeOrder(
     items: revalidated.length,
   };
 }
+
+// ── Proposal-acceptance loop ──────────────────────────────────────────────────
+// After the owner prices/approves an order in the panel (status -> proposed) and
+// it is sent to the customer, the customer's reply comes back here.
+
+async function emitOrderEvent(
+  db: SupabaseClient,
+  store: Store,
+  customerPhone: string,
+  orderId: string,
+  eventType: string,
+  text: string,
+): Promise<void> {
+  const threadId = `thr_${customerPhone}_${store.slug}`;
+  await db.from("thread_messages").insert({
+    message_id: `evt_${crypto.randomUUID()}`,
+    thread_id: threadId,
+    store_slug: store.slug,
+    customer_phone: customerPhone,
+    direction: "system",
+    sender: "customer",
+    kind: "event",
+    event_type: eventType,
+    related_order_id: orderId,
+    text,
+  }).then(({ error }) => { if (error) console.error(`[order] event ${orderId}: ${error.message}`); });
+}
+
+/** Orders currently proposed to (awaiting a decision from) this session. */
+export async function getPendingProposals(
+  db: SupabaseClient,
+  store: Store,
+  sessionId: string,
+): Promise<{ order_id: string; total: number | null }[]> {
+  const { data } = await db
+    .from("orders")
+    .select("order_id, total")
+    .eq("store_slug", store.slug)
+    .eq("session_id", sessionId)
+    .eq("status", "proposed");
+  return (data ?? []).map((o) => ({ order_id: o.order_id, total: o.total }));
+}
+
+async function loadOwnProposal(db: SupabaseClient, store: Store, sessionId: string, orderId: string) {
+  const { data } = await db
+    .from("orders")
+    .select("status, session_id, total")
+    .eq("order_id", orderId)
+    .eq("store_slug", store.slug)
+    .maybeSingle();
+  if (!data) return { err: "not_found" as const };
+  if (data.session_id !== sessionId) return { err: "not_your_order" as const };
+  return { order: data };
+}
+
+export async function confirmProposedOrder(
+  db: SupabaseClient,
+  store: Store,
+  sessionId: string,
+  orderId: string,
+): Promise<Record<string, unknown>> {
+  const r = await loadOwnProposal(db, store, sessionId, orderId);
+  if ("err" in r) return { ok: false, reason: r.err };
+  if (r.order.status !== "proposed") return { ok: false, reason: `not_proposed (${r.order.status})` };
+
+  const { error } = await db.from("orders").update({ status: "confirmed" }).eq("order_id", orderId);
+  if (error) return { ok: false, reason: "db_error" };
+  const phone = sessionId.startsWith("wa_") ? sessionId.slice(3) : sessionId;
+  await emitOrderEvent(db, store, phone, orderId, "order_confirmed", `Order ${orderId} confirmed by customer`);
+  return { ok: true, order_id: orderId, total: r.order.total };
+}
+
+export async function cancelProposedOrder(
+  db: SupabaseClient,
+  store: Store,
+  sessionId: string,
+  orderId: string,
+  reason: string,
+): Promise<Record<string, unknown>> {
+  const r = await loadOwnProposal(db, store, sessionId, orderId);
+  if ("err" in r) return { ok: false, reason: r.err };
+  // Only pre-confirmation orders auto-cancel; a confirmed order needs the owner.
+  if (!["proposed", "submitted", "pending_approval", "placed"].includes(r.order.status)) {
+    return { ok: false, reason: "needs_owner", status: r.order.status };
+  }
+  const { error } = await db.from("orders").update({ status: "cancelled" }).eq("order_id", orderId);
+  if (error) return { ok: false, reason: "db_error" };
+  const phone = sessionId.startsWith("wa_") ? sessionId.slice(3) : sessionId;
+  await emitOrderEvent(db, store, phone, orderId, "order_cancelled", `Order ${orderId} cancelled by customer: ${reason}`);
+  return { ok: true, order_id: orderId };
+}
