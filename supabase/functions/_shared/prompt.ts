@@ -45,6 +45,10 @@ export interface AgentConfig {
   orderPrompt: string | null;
   /** When false the bot is info/nav/Q&A only — no cart/order tools or rules. */
   ordersEnabled: boolean;
+  /** IANA timezone for the store's local clock (defaults applied in loader). */
+  timezone: string;
+  /** store_hours JSON (day index -> [open, close]) or null. */
+  storeHours: string | null;
 }
 
 // Baked-in operating rules — part of the stable prefix, identical across stores.
@@ -74,6 +78,22 @@ const BASE_RULES = [
   "so plainly and offer the best alternative (for example, pickup). If you're",
   "missing a detail needed to decide — their distance or address, order total,",
   "or the time — ask for it.",
+  "Each customer message may begin with a context line like",
+  "'[NOW: Saturday, July 4, 2026, 9:15 PM | STORE: OPEN (today 9:00 AM to 9:00",
+  "PM)]'. This is for you only — NEVER repeat it back. Use it for today/tomorrow,",
+  "pickup timing, and whether the store is open. The STORE flag is authoritative:",
+  "do not contradict it or recompute open/closed from the time yourself. Do not",
+  "volunteer closed-status unless the customer asks about hours, visiting, or",
+  "pickup timing.",
+  "When a customer asks something you cannot answer from this prompt, the",
+  "catalog, or a knowledge search — a store policy, a promotion, holiday hours,",
+  "whether an unusual or non-grocery item is carried — or asks you to check with",
+  "the store or owner, or reports a real problem (wrong price, missing item,",
+  "something broken): call escalate_to_owner with their question written in",
+  "English, then tell them you will check with the store team and get back to",
+  "them. First try a knowledge search for policy/FAQ questions; escalate only if",
+  "it returns nothing useful. Do NOT escalate greetings, acknowledgments (ok,",
+  "thanks), questions you can answer, or hostile/venting messages.",
 ].join(" ");
 
 // Locked ordering/money-safety rules — appended ONLY when ordering is enabled,

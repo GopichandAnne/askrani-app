@@ -17,7 +17,7 @@ import {
   removeFromCart,
   viewCart,
 } from "./cart.ts";
-import { placeOrder } from "./order.ts";
+import { deriveOrderPrefix, placeOrder } from "./order.ts";
 
 // ── Gemini functionDeclaration shapes ───────────────────────────────────────
 export interface FunctionDeclaration {
@@ -263,6 +263,81 @@ function formatCart(lines: CartLine[]): Record<string, unknown> {
   };
 }
 
+const ESCALATE_DECL: FunctionDeclaration = {
+  name: "escalate_to_owner",
+  description:
+    "Route a question or problem to the store team when you genuinely cannot " +
+    "answer it — a store policy/promotion not in the knowledge base, an unusual " +
+    "or non-grocery item, a customer asking you to check with the store/owner, " +
+    "or a reported problem (wrong price, missing item). Try a knowledge search " +
+    "first. After calling this, tell the customer you'll check and get back to " +
+    "them. Do NOT use it for greetings, acknowledgments, or hostile messages.",
+  parameters: {
+    type: "object",
+    properties: {
+      question: {
+        type: "string",
+        description: "The customer's question or problem, written in English for the owner.",
+      },
+    },
+    required: ["question"],
+  },
+};
+
+async function executeEscalate(
+  db: SupabaseClient,
+  store: Store,
+  sessionId: string,
+  args: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const question = String(args.question ?? "").trim();
+  if (!question) return { escalated: false, reason: "no question" };
+
+  const customerPhone = sessionId.startsWith("wa_") ? sessionId.slice(3) : sessionId;
+  const threadId = `thr_${customerPhone}_${store.slug}`;
+  const ticketId = `${deriveOrderPrefix(store.slug)}-Q-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
+
+  const { data: thread } = await db
+    .from("threads")
+    .select("customer_name")
+    .eq("thread_id", threadId)
+    .maybeSingle();
+
+  const { error } = await db.from("tickets").insert({
+    ticket_id: ticketId,
+    store_slug: store.slug,
+    session_id: sessionId,
+    customer_phone: customerPhone,
+    customer_name: thread?.customer_name ?? null,
+    question,
+    status: "sent_to_owner",
+  });
+  if (error) {
+    console.error(`[tools] escalate: ${error.message}`);
+    return { escalated: false, reason: "could not create ticket" };
+  }
+
+  // Timeline event so it shows in Conversations + Tickets.
+  await db.from("threads").upsert(
+    { thread_id: threadId, store_slug: store.slug, customer_phone: customerPhone },
+    { onConflict: "thread_id", ignoreDuplicates: true },
+  );
+  await db.from("thread_messages").insert({
+    message_id: `evt_${crypto.randomUUID()}`,
+    thread_id: threadId,
+    store_slug: store.slug,
+    customer_phone: customerPhone,
+    direction: "system",
+    sender: "bot",
+    kind: "event",
+    event_type: "ticket_opened",
+    text: `Escalated to store: ${question}`,
+    event_payload_json: { ticket_id: ticketId, question },
+  });
+
+  return { escalated: true, ticket_id: ticketId };
+}
+
 /** Build the toolset bound to a store + session context. Cart/order tools are
  *  attached only when ordering is enabled for the store (Agent Setup). */
 export function buildToolset(
@@ -274,6 +349,7 @@ export function buildToolset(
   const executors: Record<string, ToolExecutor> = {
     search_products: (args) => executeSearchProducts(db, store, args),
     search_knowledge: (args) => executeSearchKnowledge(db, store, args),
+    escalate_to_owner: (args) => executeEscalate(db, store, sessionId, args),
     add_to_cart: async (args) => {
       const res = await addToCart(db, store, sessionId, String(args.sku ?? ""), Number(args.quantity ?? 1));
       const cart = formatCart(res.lines);
@@ -302,7 +378,7 @@ export function buildToolset(
         String(args.confirmation_text ?? ""),
       ),
   };
-  const declarations: FunctionDeclaration[] = [SEARCH_PRODUCTS_DECL, SEARCH_KNOWLEDGE_DECL];
+  const declarations: FunctionDeclaration[] = [SEARCH_PRODUCTS_DECL, SEARCH_KNOWLEDGE_DECL, ESCALATE_DECL];
   if (ordersEnabled) {
     declarations.push(
       ADD_TO_CART_DECL,

@@ -38,5 +38,7 @@ export async function loadAgentConfig(
     orderPrompt: m.get("order_prompt") ?? null,
     // Ordering is off unless explicitly enabled in Agent Setup.
     ordersEnabled: (m.get("orders_enabled") ?? "").toLowerCase() === "true",
+    timezone: m.get("timezone") || "America/Chicago",
+    storeHours: m.get("store_hours") ?? null,
   };
 }

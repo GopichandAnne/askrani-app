@@ -28,6 +28,8 @@ function cfg(over: Partial<AgentConfig> = {}): AgentConfig {
     historyTurns: 10,
     orderPrompt: null,
     ordersEnabled: false,
+    timezone: "America/Chicago",
+    storeHours: null,
     ...over,
   };
 }

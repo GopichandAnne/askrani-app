@@ -19,6 +19,7 @@ import {
 } from "./prompt.ts";
 import { generateReply, type GeminiReply } from "./gemini.ts";
 import { buildToolset } from "./tools.ts";
+import { buildNowContext } from "./clock.ts";
 import { getStoreAccessToken } from "./config.ts";
 import { sendText } from "./wa.ts";
 
@@ -37,7 +38,10 @@ export async function generateTurnReply(
   const config = await loadAgentConfig(db, store);
   const history = await loadHistory(db, store.slug, opts.sessionId, config.historyTurns);
   const systemInstruction = buildSystemInstruction(config);
-  const contents = buildContents(history, opts.inboundText);
+  // Prefix the CURRENT message (volatile — not the cached prefix) with store-local
+  // date/time + open/closed so today/tomorrow/pickup answers are grounded.
+  const nowCtx = buildNowContext(config.timezone, config.storeHours);
+  const contents = buildContents(history, `${nowCtx}\n${opts.inboundText}`);
   const toolset = buildToolset(db, store, opts.sessionId, config.ordersEnabled);
   return await generateReply(systemInstruction, contents, toolset);
 }
