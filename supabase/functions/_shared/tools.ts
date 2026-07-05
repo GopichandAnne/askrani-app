@@ -10,6 +10,7 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Store } from "./types.ts";
 import { embedQuery, toVectorLiteral } from "./embeddings.ts";
 import {
+  addRequestItem,
   addToCart,
   type CartLine,
   cartSubtotal,
@@ -17,6 +18,12 @@ import {
   removeFromCart,
   viewCart,
 } from "./cart.ts";
+import {
+  cancelProposedOrder,
+  confirmProposedOrder,
+  deriveOrderPrefix,
+  placeOrder,
+} from "./order.ts";
 
 // ── Gemini functionDeclaration shapes ───────────────────────────────────────
 export interface FunctionDeclaration {
@@ -110,7 +117,13 @@ async function executeSearchProducts(
   const query = String(args.query ?? "").trim();
   if (!query) return { products: [], note: "empty query" };
 
-  const embedding = await embedQuery(query);
+  let embedding: number[];
+  try {
+    embedding = await embedQuery(query);
+  } catch (e) {
+    console.error(`[tools] search_products embed failed: ${e instanceof Error ? e.message : e}`);
+    return { products: [], note: "search temporarily unavailable — offer to check with the store" };
+  }
   const { data, error } = await db.rpc("search_products", {
     p_store_id: store.id,
     p_query: query,
@@ -150,7 +163,13 @@ async function executeSearchKnowledge(
   const query = String(args.query ?? "").trim();
   if (!query) return { snippets: [], note: "empty query" };
 
-  const embedding = await embedQuery(query);
+  let embedding: number[];
+  try {
+    embedding = await embedQuery(query);
+  } catch (e) {
+    console.error(`[tools] search_knowledge embed failed: ${e instanceof Error ? e.message : e}`);
+    return { snippets: [], note: "search temporarily unavailable — offer to check with the store" };
+  }
   const { data, error } = await db.rpc("search_knowledge", {
     p_store_id: store.id,
     p_query_embedding: toVectorLiteral(embedding),
@@ -177,16 +196,36 @@ const ADD_TO_CART_DECL: FunctionDeclaration = {
     "Add a catalog item to the cart, or set its quantity. FIRST call " +
     "search_products to find the item and its exact `sku`, then call this with " +
     "that sku. This SETS the quantity (not increments) — to change a quantity, " +
-    "call again with the new total; quantity 0 removes it. Refuses items that " +
-    "are out of stock or not found. Prices are taken from the live catalog, not " +
-    "from you.",
+    "call again with the new total; quantity 0 removes it. Optionally pass a " +
+    "`notes` preference the customer stated (e.g. 'small pack', 'ripe ones'). " +
+    "Refuses items out of stock or not found. Prices come from the live catalog.",
   parameters: {
     type: "object",
     properties: {
       sku: { type: "string", description: "Exact product sku from search_products." },
       quantity: { type: "number", description: "Desired quantity (0 removes the item)." },
+      notes: { type: "string", description: "Optional customer preference for this item." },
     },
     required: ["sku", "quantity"],
+  },
+};
+const ADD_REQUEST_ITEM_DECL: FunctionDeclaration = {
+  name: "add_request_item",
+  description:
+    "Add an item that is NOT cleanly in the catalog — fresh produce with no " +
+    "clean match, an unusual item, or a WEIGHT/VOLUME request (e.g. '5 kg of " +
+    "jamun'). The store team sources and prices it. A number with a weight or " +
+    "volume unit is a TOTAL amount, not a count: use quantity 1 and put the " +
+    "weight in the description ('5 kg fresh jamun'), NOT quantity 5. Never refuse " +
+    "a fresh-produce request — capture it here.",
+  parameters: {
+    type: "object",
+    properties: {
+      description: { type: "string", description: "The item as the customer described it, including any weight/volume." },
+      quantity: { type: "number", description: "Count of units (default 1). For a weight request, keep this 1." },
+      notes: { type: "string", description: "Optional customer preference." },
+    },
+    required: ["description"],
   },
 };
 const VIEW_CART_DECL: FunctionDeclaration = {
@@ -208,8 +247,31 @@ const CLEAR_CART_DECL: FunctionDeclaration = {
   description: "Empty the cart entirely.",
   parameters: { type: "object", properties: {}, required: [] },
 };
+const PLACE_ORDER_DECL: FunctionDeclaration = {
+  name: "place_order",
+  description:
+    "Finalize the cart into an order request for the store team to confirm. ONLY " +
+    "call this after the customer gave a clear, explicit YES to the specific " +
+    "question 'shall I place this order for $TOTAL?'. NEVER for a vague ok, an " +
+    "emoji, a yes bundled with a change, or a yes to a different question. The " +
+    "server re-checks stock and price at this moment — if it reports out_of_stock " +
+    "or price_changed, nothing was placed: tell the customer, adjust, re-confirm.",
+  parameters: {
+    type: "object",
+    properties: {
+      fulfillment: { type: "string", description: "'pickup' or 'delivery'." },
+      confirmation_text: {
+        type: "string",
+        description: "The customer's exact affirmative words that confirmed placement.",
+      },
+    },
+    required: ["fulfillment", "confirmation_text"],
+  },
+};
 
-/** Cart shape returned to the model (subtotal is code-computed, not model math). */
+/** Cart shape returned to the model (subtotal is code-computed, not model math).
+ *  unit_price/line_total are null for unpriced items — the model must say the
+ *  store team will confirm that price, never guess it. */
 function formatCart(lines: CartLine[]): Record<string, unknown> {
   return {
     items: lines.map((l) => ({
@@ -217,30 +279,153 @@ function formatCart(lines: CartLine[]): Record<string, unknown> {
       name: l.name,
       quantity: l.quantity,
       unit: l.unit,
-      unit_price: l.unit_price,
+      unit_price: l.unit_price, // null = unpriced
       line_total: l.line_total,
+      request: l.request || undefined,
+      notes: l.notes || undefined,
     })),
-    subtotal: cartSubtotal(lines),
+    subtotal: cartSubtotal(lines), // priced items only
     currency: "USD",
     count: lines.length,
+    has_unpriced: lines.some((l) => l.unit_price == null),
   };
 }
 
-/** Build the toolset bound to a store + session context. */
-export function buildToolset(db: SupabaseClient, store: Store, sessionId: string): Toolset {
+const CONFIRM_PROPOSAL_DECL: FunctionDeclaration = {
+  name: "confirm_proposed_order",
+  description:
+    "Confirm a proposed order the store priced and sent to the customer. Call " +
+    "ONLY when the customer gives a short clear yes to it (yes, confirm, ok, " +
+    "sure, go ahead, looks good, a thumbs-up) with no new request or change.",
+  parameters: {
+    type: "object",
+    properties: { order_id: { type: "string", description: "The proposed order id, e.g. MPL-2026-0007." } },
+    required: ["order_id"],
+  },
+};
+const CANCEL_PROPOSAL_DECL: FunctionDeclaration = {
+  name: "cancel_proposed_order",
+  description:
+    "Cancel a proposed order when the customer clearly wants it gone (cancel, " +
+    "never mind, forget it, I changed my mind). For price/size negotiation (they " +
+    "still want it), use escalate_to_owner instead. For a bare 'no', ask first.",
+  parameters: {
+    type: "object",
+    properties: {
+      order_id: { type: "string", description: "The proposed order id." },
+      reason: { type: "string", description: "The customer's reason, in their words." },
+    },
+    required: ["order_id"],
+  },
+};
+
+const ESCALATE_DECL: FunctionDeclaration = {
+  name: "escalate_to_owner",
+  description:
+    "Route a question or problem to the store team when you genuinely cannot " +
+    "answer it — a store policy/promotion not in the knowledge base, an unusual " +
+    "or non-grocery item, a customer asking you to check with the store/owner, " +
+    "or a reported problem (wrong price, missing item). Try a knowledge search " +
+    "first. After calling this, tell the customer you'll check and get back to " +
+    "them. Do NOT use it for greetings, acknowledgments, or hostile messages.",
+  parameters: {
+    type: "object",
+    properties: {
+      question: {
+        type: "string",
+        description: "The customer's question or problem, written in English for the owner.",
+      },
+    },
+    required: ["question"],
+  },
+};
+
+async function executeEscalate(
+  db: SupabaseClient,
+  store: Store,
+  sessionId: string,
+  args: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const question = String(args.question ?? "").trim();
+  if (!question) return { escalated: false, reason: "no question" };
+
+  const customerPhone = sessionId.startsWith("wa_") ? sessionId.slice(3) : sessionId;
+  const threadId = `thr_${customerPhone}_${store.slug}`;
+  const ticketId = `${deriveOrderPrefix(store.slug)}-Q-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
+
+  const { data: thread } = await db
+    .from("threads")
+    .select("customer_name")
+    .eq("thread_id", threadId)
+    .maybeSingle();
+
+  const { error } = await db.from("tickets").insert({
+    ticket_id: ticketId,
+    store_slug: store.slug,
+    session_id: sessionId,
+    customer_phone: customerPhone,
+    customer_name: thread?.customer_name ?? null,
+    question,
+    status: "sent_to_owner",
+  });
+  if (error) {
+    console.error(`[tools] escalate: ${error.message}`);
+    return { escalated: false, reason: "could not create ticket" };
+  }
+
+  // Timeline event so it shows in Conversations + Tickets.
+  await db.from("threads").upsert(
+    { thread_id: threadId, store_slug: store.slug, customer_phone: customerPhone },
+    { onConflict: "thread_id", ignoreDuplicates: true },
+  );
+  await db.from("thread_messages").insert({
+    message_id: `evt_${crypto.randomUUID()}`,
+    thread_id: threadId,
+    store_slug: store.slug,
+    customer_phone: customerPhone,
+    direction: "system",
+    sender: "bot",
+    kind: "event",
+    event_type: "ticket_opened",
+    text: `Escalated to store: ${question}`,
+    event_payload_json: { ticket_id: ticketId, question },
+  });
+
+  return { escalated: true, ticket_id: ticketId };
+}
+
+/** Build the toolset bound to a store + session context. Cart/order tools are
+ *  attached only when ordering is enabled for the store (Agent Setup). */
+export function buildToolset(
+  db: SupabaseClient,
+  store: Store,
+  sessionId: string,
+  ordersEnabled: boolean,
+  hasProposal = false,
+): Toolset {
   const executors: Record<string, ToolExecutor> = {
     search_products: (args) => executeSearchProducts(db, store, args),
     search_knowledge: (args) => executeSearchKnowledge(db, store, args),
+    escalate_to_owner: (args) => executeEscalate(db, store, sessionId, args),
     add_to_cart: async (args) => {
-      const res = await addToCart(db, store, sessionId, String(args.sku ?? ""), Number(args.quantity ?? 1));
+      const res = await addToCart(
+        db, store, sessionId, String(args.sku ?? ""), Number(args.quantity ?? 1),
+        args.notes ? String(args.notes) : null,
+      );
       const cart = formatCart(res.lines);
       switch (res.status) {
         case "added": return { added: true, item: res.name, cart };
         case "removed": return { removed: true, cart };
         case "out_of_stock": return { added: false, reason: "out of stock", item: res.name, cart };
-        case "no_price": return { added: false, reason: "no price on file", item: res.name, cart };
         default: return { added: false, reason: "not found — search_products first", cart };
       }
+    },
+    add_request_item: async (args) => {
+      const res = await addRequestItem(
+        db, store, sessionId, String(args.description ?? ""), Number(args.quantity ?? 1),
+        args.notes ? String(args.notes) : null,
+      );
+      return { added: true, item: res.name, request: true, cart: formatCart(res.lines) };
     },
     view_cart: async () => formatCart(await viewCart(db, sessionId)),
     remove_from_cart: async (args) => {
@@ -251,16 +436,33 @@ export function buildToolset(db: SupabaseClient, store: Store, sessionId: string
       await clearCart(db, store, sessionId);
       return { cleared: true, cart: formatCart([]) };
     },
+    place_order: (args) =>
+      placeOrder(
+        db,
+        store,
+        sessionId,
+        args.fulfillment === "delivery" ? "delivery" : "pickup",
+        String(args.confirmation_text ?? ""),
+      ),
+    confirm_proposed_order: (args) =>
+      confirmProposedOrder(db, store, sessionId, String(args.order_id ?? "")),
+    cancel_proposed_order: (args) =>
+      cancelProposedOrder(db, store, sessionId, String(args.order_id ?? ""), String(args.reason ?? "customer request")),
   };
-  return {
-    declarations: [
-      SEARCH_PRODUCTS_DECL,
-      SEARCH_KNOWLEDGE_DECL,
+  const declarations: FunctionDeclaration[] = [SEARCH_PRODUCTS_DECL, SEARCH_KNOWLEDGE_DECL, ESCALATE_DECL];
+  if (ordersEnabled) {
+    declarations.push(
       ADD_TO_CART_DECL,
+      ADD_REQUEST_ITEM_DECL,
       VIEW_CART_DECL,
       REMOVE_FROM_CART_DECL,
       CLEAR_CART_DECL,
-    ],
+      PLACE_ORDER_DECL,
+    );
+    if (hasProposal) declarations.push(CONFIRM_PROPOSAL_DECL, CANCEL_PROPOSAL_DECL);
+  }
+  return {
+    declarations,
     execute: async (name, args) => {
       const fn = executors[name];
       if (!fn) return { error: `unknown tool: ${name}` };

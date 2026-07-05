@@ -35,5 +35,10 @@ export async function loadAgentConfig(
     engageInfo: m.get("engage_info") ?? null,
     storePrompt: m.get("store_prompt") ?? null,
     historyTurns: Number.isFinite(turns) && turns > 0 ? turns : DEFAULT_HISTORY_TURNS,
+    orderPrompt: m.get("order_prompt") ?? null,
+    // Ordering is off unless explicitly enabled in Agent Setup.
+    ordersEnabled: (m.get("orders_enabled") ?? "").toLowerCase() === "true",
+    timezone: m.get("timezone") || "America/Chicago",
+    storeHours: m.get("store_hours") ?? null,
   };
 }

@@ -39,6 +39,30 @@ export interface GeminiReply {
   toolsUsed: string[];
 }
 
+/** POST with retry on transient failures (network error, 429, 5xx). */
+async function fetchWithRetry(url: string, body: string): Promise<Response> {
+  const MAX = 2;
+  let last: unknown;
+  for (let i = 0; i <= MAX; i++) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+      });
+      if (res.ok || (res.status !== 429 && res.status < 500)) return res; // done or non-retryable
+      last = res;
+      console.warn(`[gemini] transient ${res.status}, retry ${i + 1}/${MAX}`);
+    } catch (e) {
+      last = e;
+      console.warn(`[gemini] fetch error, retry ${i + 1}/${MAX}`);
+    }
+    if (i < MAX) await new Promise((r) => setTimeout(r, 400 * (i + 1)));
+  }
+  if (last instanceof Response) return last;
+  throw last;
+}
+
 /**
  * Generate a reply, running the tool loop if a toolset is given. Returns the
  * final text (null on no-key/failure) and the ordered list of tools invoked.
@@ -64,16 +88,20 @@ export async function generateReply(
 
   try {
     for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: systemInstruction }] },
-          contents: convo,
-          ...(tools ? { tools } : {}),
-          generationConfig: { temperature: 0.7, maxOutputTokens: 800 },
-        }),
+      const body = JSON.stringify({
+        systemInstruction: { parts: [{ text: systemInstruction }] },
+        contents: convo,
+        ...(tools ? { tools } : {}),
+        // Disable 2.5-flash "thinking": it consumed the output budget and left
+        // some replies empty (no reply), and it added latency we don't need for a
+        // grocery assistant. thinkingBudget:0 -> the budget goes to the reply.
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 1024,
+          thinkingConfig: { thinkingBudget: 0 },
+        },
       });
+      const res = await fetchWithRetry(url, body);
       if (!res.ok) {
         console.error(`[gemini] ${res.status}: ${await res.text()}`);
         return { text: null, toolsUsed };

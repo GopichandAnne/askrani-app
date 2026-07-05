@@ -41,6 +41,14 @@ export interface AgentConfig {
   storePrompt: string | null;
   /** How many prior turns to load into context (agent_config history_turns). */
   historyTurns: number;
+  /** Owner's ordering/checkout instructions (only used when ordersEnabled). */
+  orderPrompt: string | null;
+  /** When false the bot is info/nav/Q&A only — no cart/order tools or rules. */
+  ordersEnabled: boolean;
+  /** IANA timezone for the store's local clock (defaults applied in loader). */
+  timezone: string;
+  /** store_hours JSON (day index -> [open, close]) or null. */
+  storeHours: string | null;
 }
 
 // Baked-in operating rules — part of the stable prefix, identical across stores.
@@ -70,16 +78,65 @@ const BASE_RULES = [
   "so plainly and offer the best alternative (for example, pickup). If you're",
   "missing a detail needed to decide — their distance or address, order total,",
   "or the time — ask for it.",
+  "Each customer message may begin with a context line like",
+  "'[NOW: Saturday, July 4, 2026, 9:15 PM | STORE: OPEN (today 9:00 AM to 9:00",
+  "PM)]'. This is for you only — NEVER repeat it back. Use it for today/tomorrow,",
+  "pickup timing, and whether the store is open. The STORE flag is authoritative:",
+  "do not contradict it or recompute open/closed from the time yourself. Do not",
+  "volunteer closed-status unless the customer asks about hours, visiting, or",
+  "pickup timing.",
+  "When a customer asks something you cannot answer from this prompt, the",
+  "catalog, or a knowledge search — a store policy, a promotion, holiday hours,",
+  "whether an unusual or non-grocery item is carried — or asks you to check with",
+  "the store or owner, or reports a real problem (wrong price, missing item,",
+  "something broken): call escalate_to_owner with their question written in",
+  "English, then tell them you will check with the store team and get back to",
+  "them. First try a knowledge search for policy/FAQ questions; escalate only if",
+  "it returns nothing useful. Do NOT escalate greetings, acknowledgments (ok,",
+  "thanks), questions you can answer, or hostile/venting messages.",
+].join(" ");
+
+// Locked ordering/money-safety rules — appended ONLY when ordering is enabled,
+// always on top of the owner's order_prompt. Owners can't edit these away.
+const ORDERING_RULES = [
   "To help a customer buy, build a cart: use search_products to find each item,",
-  "then add_to_cart with its exact sku (the cart holds real catalog prices). Use",
-  "view_cart to show the cart and running subtotal, and remove_from_cart or",
-  "clear_cart to edit. Always confirm what you added and read the subtotal from",
-  "the tool result — never invent a price or total.",
-  "You CANNOT place, confirm, or finalize an order yet. When a customer is ready",
-  "to order, read back their cart and subtotal and tell them a store team member",
-  "will confirm the order and total with them shortly. NEVER say an order has",
-  "been placed, noted, confirmed, or is being prepared — you have no way to place",
-  "one, so claiming otherwise would be false.",
+  "then add_to_cart with its exact sku. view_cart shows the cart and running",
+  "subtotal; remove_from_cart / clear_cart edit it. Some items may have no price",
+  "set — that's fine, add them anyway and say the store team will confirm that",
+  "price. Read prices and the subtotal from the tool result — NEVER invent a",
+  "price or total for any item.",
+  "For an item not cleanly in the catalog — fresh produce with no match, an",
+  "unusual item, or a weight/volume request — use add_request_item; never refuse",
+  "a fresh-produce request. A number with a weight or volume unit is a TOTAL, not",
+  "a count: '5 kg of jamun' is quantity 1 with '5 kg' in the description, not",
+  "quantity 5. Capture a stated preference (ripe ones, small pack) as notes.",
+  "To take an order: when done, call view_cart and show the itemized cart — show",
+  "each priced item's price and the subtotal, and for any item with no price say",
+  "its price will be confirmed by the store team (never quote a number you didn't",
+  "get from a cart tool). Ask pickup or delivery, then ask ONE explicit question:",
+  "if every item is priced — 'Shall I place this order for $TOTAL for [pickup/",
+  "delivery]? (yes/no)'; if any item is unpriced — 'Shall I place this order for",
+  "[pickup/delivery]? Our team will confirm the price and your total. (yes/no)'.",
+  "Call place_order ONLY on a clear, standalone yes to THAT question (yes / place",
+  "it / haan kar do / avunu) — not on a vague ok or emoji (re-ask), not on a yes",
+  "bundled with a change (make it, re-quote, ask again), not on a yes to another",
+  "question. Pass the exact words as confirmation_text. If place_order reports",
+  "out_of_stock or price_changed, nothing was placed — tell the customer, adjust,",
+  "re-confirm. On success, give the order number; if the order has unpriced items",
+  "or is delivery, say the store team will confirm the final total (with any",
+  "pricing, delivery, or other charges) shortly.",
+  "If a message begins with [PENDING PROPOSAL: order X, total $Y ...], the store",
+  "has priced an order and is awaiting the customer's decision. If their reply is",
+  "a short clear yes with no new request (yes, confirm, ok, sure, go ahead, looks",
+  "good, thanks, a thumbs-up), call confirm_proposed_order(X) and reply briefly",
+  "and warmly (order confirmed, see you for pickup). If they clearly want it gone",
+  "(cancel, never mind, forget it, I changed my mind), call",
+  "cancel_proposed_order(X). If they want to negotiate — too expensive, a",
+  "different size or brand — but still want it, call escalate_to_owner with their",
+  "concern; do NOT negotiate prices yourself. If their reply mixes a yes with a",
+  "change or a question, or is a bare 'no', ask them to clarify before calling any",
+  "tool. If they change the subject, answer normally and leave the proposal",
+  "pending.",
 ].join(" ");
 
 /**
@@ -101,6 +158,14 @@ export function buildSystemInstruction(c: AgentConfig): string {
   if (c.engageInfo) out.push(`\n## How to engage\n${c.engageInfo}`);
   if (c.languageHandling) out.push(`\n## Language\n${c.languageHandling}`);
   if (c.offTopicHandling) out.push(`\n## Off-topic requests\n${c.offTopicHandling}`);
+
+  // Ordering is optional per store. When enabled, the owner's order instructions
+  // sit under the locked ordering/money-safety rules; when disabled, the bot has
+  // no cart/order tools (see buildToolset) so these rules would be dead weight.
+  if (c.ordersEnabled) {
+    out.push(`\n${ORDERING_RULES}`);
+    if (c.orderPrompt) out.push(`\n## Ordering\n${c.orderPrompt}`);
+  }
 
   return out.join("\n");
 }
