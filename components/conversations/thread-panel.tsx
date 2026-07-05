@@ -10,10 +10,11 @@ import {
   type RoutingState,
   type Thread,
 } from "@/lib/conversations/types";
-import { setRouting } from "@/app/(app)/conversations/actions";
+import { sendMessage, setRouting } from "@/app/(app)/conversations/actions";
 import { MessageList } from "./message-list";
 import { Button } from "@/components/ui/button";
-import { Loader2, MessagesSquare } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Loader2, MessagesSquare, Send } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function ThreadPanel({
@@ -25,6 +26,8 @@ export function ThreadPanel({
 }) {
   const [messages, setMessages] = useState<ConversationMessage[] | null>(null);
   const [pending, startTransition] = useTransition();
+  const [draft, setDraft] = useState("");
+  const [sending, startSend] = useTransition();
 
   const threadId = thread?.thread_id;
 
@@ -62,6 +65,20 @@ export function ThreadPanel({
   }
 
   const active = isActive(thread.routing_state);
+
+  function send() {
+    const body = draft.trim();
+    if (!body) return;
+    startSend(async () => {
+      const res = await sendMessage(thread!.thread_id, body);
+      if (res.ok) {
+        setMessages((prev) => [...(prev ?? []), res.message]);
+        setDraft("");
+      } else {
+        toast.error("Couldn't send", { description: res.error });
+      }
+    });
+  }
 
   function toggle(next: RoutingState) {
     startTransition(async () => {
@@ -131,14 +148,45 @@ export function ThreadPanel({
       {active && (
         <div className="bg-teal-mist text-teal-deep dark:bg-secondary dark:text-secondary-foreground border-b px-4 py-2 text-xs">
           You&apos;re handling this conversation — Rani is paused. Mark it
-          resolved to hand it back. (Sending replies from here lands in a later
-          update.)
+          resolved to hand it back.
         </div>
       )}
 
       <div className="flex-1 overflow-y-auto">
         <MessageList messages={messages} />
       </div>
+
+      {active ? (
+        <form
+          className="flex items-end gap-2 border-t p-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            send();
+          }}
+        >
+          <Textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                send();
+              }
+            }}
+            rows={1}
+            placeholder="Message the customer as Rani…  (Enter to send, Shift+Enter for a new line)"
+            className="max-h-32 min-h-9 flex-1 resize-none"
+            disabled={sending}
+          />
+          <Button type="submit" size="icon" disabled={sending || !draft.trim()} aria-label="Send">
+            {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+          </Button>
+        </form>
+      ) : (
+        <div className="text-muted-foreground border-t px-4 py-3 text-center text-xs">
+          Rani is handling this conversation. Click “Start messaging” to take over and reply.
+        </div>
+      )}
     </div>
   );
 }
