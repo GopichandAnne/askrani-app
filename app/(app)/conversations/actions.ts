@@ -3,7 +3,66 @@
 import { randomUUID } from "crypto";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import type { RoutingState } from "@/lib/conversations/types";
+import { sendWhatsAppText } from "@/lib/wa/send";
+import type { ConversationMessage, RoutingState } from "@/lib/conversations/types";
+
+const MSG_COLUMNS =
+  "message_id, created_at, direction, sender, text, kind, event_type, related_order_id";
+
+export type SendResult =
+  | { ok: true; message: ConversationMessage }
+  | { ok: false; error: string };
+
+/**
+ * Send a manual reply to the customer as Rani (used while an owner/staff has
+ * taken over a conversation). Delivers over WhatsApp from the store's number,
+ * then persists the outbound message to the thread. RLS scopes the thread load
+ * to the caller's stores, so only a member of the store can reply.
+ */
+export async function sendMessage(threadId: string, text: string): Promise<SendResult> {
+  const body = text.trim();
+  if (!body) return { ok: false, error: "Message is empty." };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const actor = user?.email ?? user?.id ?? "staff";
+
+  const { data: thread } = await supabase
+    .from("threads")
+    .select("store_slug, customer_phone")
+    .eq("thread_id", threadId)
+    .maybeSingle();
+  if (!thread) return { ok: false, error: "Thread not found." };
+  if (!thread.customer_phone) return { ok: false, error: "No customer phone on this thread." };
+
+  const sent = await sendWhatsAppText(thread.store_slug, thread.customer_phone, body);
+  if (!sent.ok) return { ok: false, error: sent.error ?? "WhatsApp send failed." };
+
+  const { data: row, error } = await supabase
+    .from("thread_messages")
+    .insert({
+      message_id: `msg_out_${randomUUID()}`,
+      thread_id: threadId,
+      store_slug: thread.store_slug,
+      customer_phone: thread.customer_phone,
+      direction: "outbound",
+      sender: actor,
+      text: body,
+      kind: "message",
+    })
+    .select(MSG_COLUMNS)
+    .single();
+  if (error) return { ok: false, error: error.message };
+
+  await supabase
+    .from("threads")
+    .update({ last_message_at: new Date().toISOString() })
+    .eq("thread_id", threadId);
+  revalidatePath("/conversations");
+  return { ok: true, message: row as ConversationMessage };
+}
 
 export type RoutingResult =
   | { ok: true; routing_state: RoutingState }
