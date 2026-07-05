@@ -10,6 +10,7 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Store } from "./types.ts";
 import { embedQuery, toVectorLiteral } from "./embeddings.ts";
 import {
+  addRequestItem,
   addToCart,
   type CartLine,
   cartSubtotal,
@@ -190,16 +191,36 @@ const ADD_TO_CART_DECL: FunctionDeclaration = {
     "Add a catalog item to the cart, or set its quantity. FIRST call " +
     "search_products to find the item and its exact `sku`, then call this with " +
     "that sku. This SETS the quantity (not increments) — to change a quantity, " +
-    "call again with the new total; quantity 0 removes it. Refuses items that " +
-    "are out of stock or not found. Prices are taken from the live catalog, not " +
-    "from you.",
+    "call again with the new total; quantity 0 removes it. Optionally pass a " +
+    "`notes` preference the customer stated (e.g. 'small pack', 'ripe ones'). " +
+    "Refuses items out of stock or not found. Prices come from the live catalog.",
   parameters: {
     type: "object",
     properties: {
       sku: { type: "string", description: "Exact product sku from search_products." },
       quantity: { type: "number", description: "Desired quantity (0 removes the item)." },
+      notes: { type: "string", description: "Optional customer preference for this item." },
     },
     required: ["sku", "quantity"],
+  },
+};
+const ADD_REQUEST_ITEM_DECL: FunctionDeclaration = {
+  name: "add_request_item",
+  description:
+    "Add an item that is NOT cleanly in the catalog — fresh produce with no " +
+    "clean match, an unusual item, or a WEIGHT/VOLUME request (e.g. '5 kg of " +
+    "jamun'). The store team sources and prices it. A number with a weight or " +
+    "volume unit is a TOTAL amount, not a count: use quantity 1 and put the " +
+    "weight in the description ('5 kg fresh jamun'), NOT quantity 5. Never refuse " +
+    "a fresh-produce request — capture it here.",
+  parameters: {
+    type: "object",
+    properties: {
+      description: { type: "string", description: "The item as the customer described it, including any weight/volume." },
+      quantity: { type: "number", description: "Count of units (default 1). For a weight request, keep this 1." },
+      notes: { type: "string", description: "Optional customer preference." },
+    },
+    required: ["description"],
   },
 };
 const VIEW_CART_DECL: FunctionDeclaration = {
@@ -255,6 +276,8 @@ function formatCart(lines: CartLine[]): Record<string, unknown> {
       unit: l.unit,
       unit_price: l.unit_price, // null = unpriced
       line_total: l.line_total,
+      request: l.request || undefined,
+      notes: l.notes || undefined,
     })),
     subtotal: cartSubtotal(lines), // priced items only
     currency: "USD",
@@ -351,7 +374,10 @@ export function buildToolset(
     search_knowledge: (args) => executeSearchKnowledge(db, store, args),
     escalate_to_owner: (args) => executeEscalate(db, store, sessionId, args),
     add_to_cart: async (args) => {
-      const res = await addToCart(db, store, sessionId, String(args.sku ?? ""), Number(args.quantity ?? 1));
+      const res = await addToCart(
+        db, store, sessionId, String(args.sku ?? ""), Number(args.quantity ?? 1),
+        args.notes ? String(args.notes) : null,
+      );
       const cart = formatCart(res.lines);
       switch (res.status) {
         case "added": return { added: true, item: res.name, cart };
@@ -359,6 +385,13 @@ export function buildToolset(
         case "out_of_stock": return { added: false, reason: "out of stock", item: res.name, cart };
         default: return { added: false, reason: "not found — search_products first", cart };
       }
+    },
+    add_request_item: async (args) => {
+      const res = await addRequestItem(
+        db, store, sessionId, String(args.description ?? ""), Number(args.quantity ?? 1),
+        args.notes ? String(args.notes) : null,
+      );
+      return { added: true, item: res.name, request: true, cart: formatCart(res.lines) };
     },
     view_cart: async () => formatCart(await viewCart(db, sessionId)),
     remove_from_cart: async (args) => {
@@ -382,6 +415,7 @@ export function buildToolset(
   if (ordersEnabled) {
     declarations.push(
       ADD_TO_CART_DECL,
+      ADD_REQUEST_ITEM_DECL,
       VIEW_CART_DECL,
       REMOVE_FROM_CART_DECL,
       CLEAR_CART_DECL,

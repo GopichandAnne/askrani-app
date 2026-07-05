@@ -34,13 +34,14 @@ export function computeTotals(lines: CartLine[], taxRate: number): OrderTotals {
   return { subtotal, tax, total, hasUnpriced };
 }
 
-/** Map a cart line to the panel's items_json shape: priced -> CatalogItem,
- *  unpriced -> RequestItem (which staff may price in the Orders module). */
+/** Map a cart line to the panel's items_json shape: a priced catalog line ->
+ *  CatalogItem; a request item OR an unpriced catalog line -> RequestItem (which
+ *  staff price in the Orders module). Notes carry through. */
 function toOrderItem(l: CartLine): Record<string, unknown> {
-  if (l.unit_price != null && l.line_total != null) {
+  if (!l.request && l.unit_price != null && l.line_total != null) {
     return {
       sku: l.sku, catalog_matched: true, name: l.name, brand: l.brand,
-      size: l.size, unit: l.unit, quantity: l.quantity, notes: null,
+      size: l.size, unit: l.unit, quantity: l.quantity, notes: l.notes,
       unit_price: l.unit_price, line_total: l.line_total,
     };
   }
@@ -48,7 +49,7 @@ function toOrderItem(l: CartLine): Record<string, unknown> {
   return {
     sku: "", item_id: crypto.randomUUID(), catalog_matched: false,
     description: desc, name: l.name, brand: l.brand, size: l.size, unit: l.unit,
-    quantity: l.quantity, notes: null, unit_price: null, line_total: null,
+    quantity: l.quantity, notes: l.notes, unit_price: null, line_total: null,
   };
 }
 
@@ -129,32 +130,36 @@ export async function placeOrder(
   const lines = await viewCart(db, sessionId);
   if (lines.length === 0) return { placed: false, reason: "empty_cart" };
 
-  // ── Fresh LIVE re-validation (never the cart snapshot) ──────────────────────
+  // ── Fresh LIVE re-validation of CATALOG lines (never the cart snapshot).
+  //    Request items have no sku to check — they pass through unpriced. ─────────
+  const catalogLines = lines.filter((l) => !l.request);
+  const requestLines = lines.filter((l) => l.request);
+
   const { data: live } = await db
     .from("products")
     .select("sku, name, brand, size, unit, price, in_stock")
     .eq("store_id", store.id)
-    .in("sku", lines.map((l) => l.sku));
+    .in("sku", catalogLines.map((l) => l.sku));
   const bySku = new Map((live ?? []).map((p) => [p.sku, p]));
 
   const outOfStock: string[] = [];
   const priceChanges: { name: string; was: number; now: number }[] = [];
   const revalidated: CartLine[] = [];
-  for (const line of lines) {
+  for (const line of catalogLines) {
     const p = bySku.get(line.sku);
     if (!p || !p.in_stock) {
-      outOfStock.push(line.name); // stock is checked for every item, priced or not
+      outOfStock.push(line.name); // stock is checked for every catalog item
       continue;
     }
-    // Surface a price change only for an item the customer was quoted a price for
-    // (both cart and live priced, and they differ). Unpriced stays unpriced.
+    // Surface a price change only for an item the customer was quoted a price for.
     if (line.unit_price != null && p.price != null && round2(p.price) !== round2(line.unit_price)) {
       priceChanges.push({ name: line.name, was: line.unit_price, now: p.price });
     }
-    revalidated.push(buildLine(p as Parameters<typeof buildLine>[0], line.quantity));
+    revalidated.push(buildLine(p as Parameters<typeof buildLine>[0], line.quantity, line.notes));
   }
   if (outOfStock.length > 0) return { placed: false, reason: "out_of_stock", items: outOfStock };
   if (priceChanges.length > 0) return { placed: false, reason: "price_changed", changes: priceChanges };
+  revalidated.push(...requestLines); // unpriced request items pass through
 
   // ── Totals from LIVE prices (priced lines); write the order the panel expects ─
   const taxRate = await loadTaxRate(db, store.id);
