@@ -82,3 +82,88 @@ export async function saveAgentConfig(
   revalidatePath("/agent");
   return { ok: true };
 }
+
+// ── Escalation responders ─────────────────────────────────────────────────────
+export type Responder = Database["public"]["Tables"]["store_responders"]["Row"];
+export type ResponderResult =
+  | { ok: true; responder: Responder }
+  | { ok: false; error: string };
+
+/** Normalize a phone to digits only (E.164 without '+', matching WhatsApp 'from'). */
+function normalizePhone(raw: string): string {
+  return (raw || "").replace(/[^0-9]/g, "");
+}
+
+export async function listResponders(): Promise<Responder[]> {
+  const ctx = await getActiveStore();
+  if (!ctx?.active) return [];
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("store_responders")
+    .select("*")
+    .eq("store_slug", ctx.active.slug)
+    .order("created_at", { ascending: true });
+  return (data ?? []) as Responder[];
+}
+
+export async function addResponder(input: {
+  phone: string;
+  name?: string;
+  role?: "owner" | "staff";
+  notify_escalations?: boolean;
+  notify_orders?: boolean;
+}): Promise<ResponderResult> {
+  const phone = normalizePhone(input.phone);
+  if (phone.length < 7) return { ok: false, error: "Enter a valid phone number (country code + number)." };
+
+  const ctx = await getActiveStore();
+  if (!ctx?.active) return { ok: false, error: "No active store." };
+  const supabase = await createClient();
+  const { data: isOwner } = await supabase.rpc("user_is_owner", { p_store_id: ctx.active.id });
+  if (!isOwner) return { ok: false, error: "Only owners can manage responders." };
+
+  const { data, error } = await supabase
+    .from("store_responders")
+    .upsert(
+      {
+        store_slug: ctx.active.slug,
+        phone,
+        name: (input.name ?? "").trim() || null,
+        role: input.role ?? "staff",
+        notify_escalations: input.notify_escalations ?? true,
+        notify_orders: input.notify_orders ?? false,
+        active: true,
+      },
+      { onConflict: "store_slug,phone" },
+    )
+    .select("*")
+    .single();
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/agent");
+  return { ok: true, responder: data as Responder };
+}
+
+export async function updateResponder(
+  id: string,
+  patch: Partial<Pick<Responder, "notify_escalations" | "notify_orders" | "active">>,
+): Promise<ResponderResult> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("store_responders")
+    .update(patch)
+    .eq("id", id)
+    .select("*")
+    .maybeSingle();
+  if (error) return { ok: false, error: error.message };
+  if (!data) return { ok: false, error: "Responder not found (owners only)." };
+  revalidatePath("/agent");
+  return { ok: true, responder: data as Responder };
+}
+
+export async function removeResponder(id: string): Promise<SaveResult> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("store_responders").delete().eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/agent");
+  return { ok: true };
+}

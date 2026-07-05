@@ -2,7 +2,8 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { saveAgentConfig } from "@/app/(app)/agent/actions";
+import { saveAgentConfig, type Responder } from "@/app/(app)/agent/actions";
+import { RespondersSection } from "./responders-section";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,9 +25,11 @@ const SECTIONS: Section[] = [
 
 export function AgentView({
   initialConfig,
+  initialResponders,
   storeName,
 }: {
   initialConfig: Record<string, string>;
+  initialResponders: Responder[];
   storeName: string;
 }) {
   const [values, setValues] = useState<Record<string, string>>(initialConfig);
@@ -140,6 +143,8 @@ export function AgentView({
           </div>
         </div>
       </div>
+
+      <RespondersSection initial={initialResponders} />
     </div>
   );
 }

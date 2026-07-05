@@ -26,6 +26,7 @@ import {
 import { addToCart } from "../_shared/cart.ts";
 import { placeOrder } from "../_shared/order.ts";
 import { classifyTurn } from "../_shared/analytics.ts";
+import { findResponder, relayStaffAnswer } from "../_shared/responders.ts";
 import { generateTurnReply } from "../_shared/conversation.ts";
 
 const REINDEX_DEFAULT_MAX = 200;
@@ -126,6 +127,15 @@ Deno.serve(async (req) => {
           String(body.confirmation_text ?? "yes"),
         );
         return json({ store: store.slug, ...res });
+      }
+      case "staff_reply": {
+        const phone = String(body.phone ?? "");
+        const responder = await findResponder(db, store.slug, phone);
+        if (!responder) return json({ error: "not a responder for this store" }, 400);
+        const res = await relayStaffAnswer(
+          db, store, store.whatsapp_phone_number_id ?? "", responder, String(body.text ?? ""),
+        );
+        return json({ store: store.slug, responder: responder.name ?? phone, ...res });
       }
       case "classify": {
         const analytics = await classifyTurn(String(body.message ?? ""), String(body.reply ?? ""));

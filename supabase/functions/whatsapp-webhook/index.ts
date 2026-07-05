@@ -8,8 +8,10 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { serviceClient } from "../_shared/supabase.ts";
 import { verifySignature } from "../_shared/signature.ts";
-import { getStoreByPhoneNumberId } from "../_shared/config.ts";
+import { getStoreAccessToken, getStoreByPhoneNumberId } from "../_shared/config.ts";
 import { handleConversation } from "../_shared/conversation.ts";
+import { findResponder, relayStaffAnswer, type Responder } from "../_shared/responders.ts";
+import { sendText } from "../_shared/wa.ts";
 import type { Store, WaContact, WaMessage, WaWebhook } from "../_shared/types.ts";
 
 // deno-lint-ignore no-explicit-any
@@ -102,6 +104,15 @@ async function handleMessage(
   const messageId = `msg_${wamid}`; // deterministic -> idempotent on retries
   const threadId = `thr_${from}_${store.slug}`;
   const text = extractText(msg);
+
+  // Staff-reply branch: if the sender is a registered responder, this is an
+  // answer to an escalation — relay it to the customer, not a customer message.
+  const responder = await findResponder(db, store.slug, from);
+  if (responder) {
+    await handleStaffReply(db, store, phoneNumberId, responder, from, text);
+    return;
+  }
+
   const customerName =
     contacts.find((c) => c.wa_id === from)?.profile?.name ?? null;
   const createdAt = msg.timestamp
@@ -161,6 +172,32 @@ async function handleMessage(
     inboundText: text ?? "",
     deviceType: "whatsapp",
   });
+}
+
+/** A responder replied to Rani's number: relay to the customer + ack the staffer.
+ *  (The atomic ticket claim in relayStaffAnswer dedups Meta retries for the
+ *  customer-facing relay; a retry only re-acks the staffer.) */
+async function handleStaffReply(
+  db: SupabaseClient,
+  store: Store,
+  phoneNumberId: string,
+  responder: Responder,
+  from: string,
+  text: string,
+): Promise<void> {
+  const res = await relayStaffAnswer(db, store, phoneNumberId, responder, text);
+  const token = await getStoreAccessToken(db, store.id);
+  if (!token) return;
+  const ack = res.handled
+    ? "Thanks — I've sent that to the customer."
+    : res.note === "no_open_tickets"
+      ? "There are no open customer questions right now."
+      : res.note === "multiple_open"
+        ? "There are several open questions — please answer them from the control panel."
+        : res.note === "already_answered"
+          ? "That one was already handled by a teammate."
+          : "Sorry, I couldn't process that.";
+  await sendText(token, phoneNumberId, from, ack);
 }
 
 function extractText(msg: WaMessage): string {
