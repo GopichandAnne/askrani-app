@@ -23,6 +23,7 @@ import {
   reindexKnowledge,
   syncSavedQaToIndex,
 } from "../_shared/knowledge.ts";
+import { extractFileText } from "../_shared/extract.ts";
 import { addToCart } from "../_shared/cart.ts";
 import { placeOrder } from "../_shared/order.ts";
 import { classifyTurn } from "../_shared/analytics.ts";
@@ -83,6 +84,20 @@ Deno.serve(async (req) => {
         const reindex = await reindexKnowledge(db, store.id, Number(body.max_rows ?? 200));
         return json({ store: store.slug, title, chunks, ...reindex });
       }
+      case "ingest_file": {
+        const title = String(body.title ?? "").trim();
+        const path = String(body.storage_path ?? "");
+        const mime = String(body.mime ?? "");
+        if (!title || !path) return json({ error: "title and storage_path required" }, 400);
+        const { data: blob, error: dlErr } = await db.storage.from("kb").download(path);
+        if (dlErr || !blob) return json({ error: `download failed: ${dlErr?.message ?? "no file"}` }, 500);
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        const text = await extractFileText(bytes, mime, path);
+        if (!text.trim()) return json({ error: "no text could be extracted from the file" }, 422);
+        const { chunks } = await ingestDocument(db, store.id, title, text, path, mime);
+        const reindex = await reindexKnowledge(db, store.id, Number(body.max_rows ?? 500));
+        return json({ store: store.slug, title, chunks, chars: text.length, ...reindex });
+      }
       case "sync_saved_qa": {
         const { synced } = await syncSavedQaToIndex(db, store.id);
         const reindex = await reindexKnowledge(db, store.id, Number(body.max_rows ?? 200));
@@ -95,6 +110,14 @@ Deno.serve(async (req) => {
       case "delete_document": {
         const title = String(body.title ?? "").trim();
         if (!title) return json({ error: "title required" }, 400);
+        const { data: paths } = await db
+          .from("knowledge_index")
+          .select("source_path")
+          .eq("store_id", store.id)
+          .eq("kind", "document_chunk")
+          .eq("source_ref", title)
+          .not("source_path", "is", null)
+          .limit(1);
         const { error } = await db
           .from("knowledge_index")
           .delete()
@@ -102,6 +125,8 @@ Deno.serve(async (req) => {
           .eq("kind", "document_chunk")
           .eq("source_ref", title);
         if (error) return json({ error: error.message }, 500);
+        const path = paths?.[0]?.source_path;
+        if (path) await db.storage.from("kb").remove([path]); // remove the original
         return json({ store: store.slug, deleted: title });
       }
       case "search_knowledge": {

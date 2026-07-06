@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getActiveStore } from "@/lib/store/active-store";
 import { callBotAdmin } from "@/lib/knowledge/bot-admin";
 import type {
@@ -163,22 +164,74 @@ export async function listDocuments(): Promise<KnowledgeDoc[]> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("knowledge_index")
-    .select("source_ref, embedding_stale, updated_at")
+    .select("source_ref, embedding_stale, updated_at, source_path, source_mime")
     .eq("store_id", ctx.active.id)
     .eq("kind", "document_chunk");
 
   const byTitle = new Map<string, KnowledgeDoc>();
   for (const row of data ?? []) {
     const title = row.source_ref ?? "(untitled)";
-    const doc = byTitle.get(title) ?? { title, chunks: 0, indexed: true, updatedAt: null };
+    const doc = byTitle.get(title) ??
+      { title, chunks: 0, indexed: true, updatedAt: null, sourcePath: null, sourceMime: null };
     doc.chunks += 1;
     if (row.embedding_stale) doc.indexed = false;
     if (!doc.updatedAt || (row.updated_at && row.updated_at > doc.updatedAt)) {
       doc.updatedAt = row.updated_at;
     }
+    if (row.source_path) { doc.sourcePath = row.source_path; doc.sourceMime = row.source_mime; }
     byTitle.set(title, doc);
   }
   return [...byTitle.values()].sort((a, b) => a.title.localeCompare(b.title));
+}
+
+/** Upload a file, extract its text (Gemini for PDF/images), and index it. */
+export async function ingestFile(formData: FormData): Promise<RefreshResult> {
+  const title = cleanStr(String(formData.get("title") ?? ""));
+  const file = formData.get("file");
+  if (!title) return { ok: false, error: "A title is required." };
+  if (!(file instanceof File) || file.size === 0) return { ok: false, error: "Pick a file to upload." };
+  if (file.size > 20 * 1024 * 1024) return { ok: false, error: "File too large (max 20 MB)." };
+
+  const supabase = await createClient();
+  const gate = await requireActiveOwner(supabase);
+  if (!gate.ok) return gate;
+
+  const admin = createAdminClient();
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const path = `${gate.slug}/${crypto.randomUUID()}-${safeName}`;
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const { error: upErr } = await admin.storage
+    .from("kb")
+    .upload(path, bytes, { contentType: file.type || "application/octet-stream", upsert: false });
+  if (upErr) return { ok: false, error: `Upload failed: ${upErr.message}` };
+
+  const res = await callBotAdmin({
+    action: "ingest_file",
+    store_slug: gate.slug,
+    title,
+    storage_path: path,
+    mime: file.type,
+  });
+  if (!res.ok) {
+    await admin.storage.from("kb").remove([path]); // roll back the orphaned upload
+    return { ok: false, error: res.error };
+  }
+  revalidatePath("/knowledge");
+  const chunks = Number(res.data.chunks ?? 0);
+  return { ok: true, message: `Indexed "${title}" (${chunks} ${chunks === 1 ? "chunk" : "chunks"}).` };
+}
+
+/** Signed URL to view/download a document's original uploaded file. */
+export async function documentFileUrl(sourcePath: string): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+  const ctx = await getActiveStore();
+  if (!ctx?.active) return { ok: false, error: "No active store." };
+  // Path is prefixed with the store slug — enforce it so a member can't fetch
+  // another store's file.
+  if (!sourcePath.startsWith(`${ctx.active.slug}/`)) return { ok: false, error: "Not found." };
+  const admin = createAdminClient();
+  const { data, error } = await admin.storage.from("kb").createSignedUrl(sourcePath, 3600);
+  if (error || !data) return { ok: false, error: error?.message ?? "Could not create link." };
+  return { ok: true, url: data.signedUrl };
 }
 
 /** Ingest (chunk + embed) a pasted document into the KB (owners only). */

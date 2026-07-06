@@ -213,6 +213,8 @@ export type Database = {
           embedding_stale: boolean
           id: string
           kind: string
+          source_mime: string | null
+          source_path: string | null
           source_ref: string | null
           store_id: string
           token_count: number | null
@@ -227,6 +229,8 @@ export type Database = {
           embedding_stale?: boolean
           id?: string
           kind: string
+          source_mime?: string | null
+          source_path?: string | null
           source_ref?: string | null
           store_id: string
           token_count?: number | null
@@ -241,6 +245,8 @@ export type Database = {
           embedding_stale?: boolean
           id?: string
           kind?: string
+          source_mime?: string | null
+          source_path?: string | null
           source_ref?: string | null
           store_id?: string
           token_count?: number | null

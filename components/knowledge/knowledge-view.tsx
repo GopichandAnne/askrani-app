@@ -6,6 +6,7 @@ import type { KnowledgeDoc, SavedQA } from "@/lib/knowledge/types";
 import {
   deleteDocument,
   deleteQA,
+  documentFileUrl,
   listDocuments,
   refreshKnowledgeBase,
 } from "@/app/(app)/knowledge/actions";
@@ -28,6 +29,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   BookOpen,
+  ExternalLink,
   FileText,
   Loader2,
   Pencil,
@@ -55,6 +57,12 @@ export function KnowledgeView({
 
   async function reloadDocs() {
     setDocs(await listDocuments());
+  }
+
+  async function viewDoc(sourcePath: string) {
+    const res = await documentFileUrl(sourcePath);
+    if (res.ok) window.open(res.url, "_blank", "noopener");
+    else toast.error("Couldn't open file", { description: res.error });
   }
 
   async function removeDoc(title: string) {
@@ -183,6 +191,17 @@ export function KnowledgeView({
                     )}
                   </div>
                 </div>
+                {d.sourcePath && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-muted-foreground size-8 shrink-0"
+                    aria-label="View original file"
+                    onClick={() => viewDoc(d.sourcePath!)}
+                  >
+                    <ExternalLink className="size-4" />
+                  </Button>
+                )}
                 {isOwner && (
                   <AlertDialog>
                     <AlertDialogTrigger asChild>

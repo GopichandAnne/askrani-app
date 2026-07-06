@@ -50,12 +50,15 @@ export function chunkText(
   return chunks;
 }
 
-/** Ingest one document: replace its existing chunks, insert new ones (stale). */
+/** Ingest one document: replace its existing chunks, insert new ones (stale).
+ *  sourcePath/sourceMime link the chunks back to an uploaded original file. */
 export async function ingestDocument(
   db: SupabaseClient,
   storeId: string,
   title: string,
   text: string,
+  sourcePath: string | null = null,
+  sourceMime: string | null = null,
 ): Promise<{ chunks: number }> {
   await db
     .from("knowledge_index")
@@ -75,6 +78,8 @@ export async function ingestDocument(
     chunk_text: c,
     token_count: estimateTokens(c),
     embedding_stale: true,
+    source_path: sourcePath,
+    source_mime: sourceMime,
   }));
   const { error } = await db.from("knowledge_index").insert(rows);
   if (error) throw new Error(error.message);
