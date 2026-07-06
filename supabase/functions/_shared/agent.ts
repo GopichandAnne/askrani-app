@@ -40,5 +40,7 @@ export async function loadAgentConfig(
     ordersEnabled: (m.get("orders_enabled") ?? "").toLowerCase() === "true",
     timezone: m.get("timezone") || "America/Chicago",
     storeHours: m.get("store_hours") ?? null,
+    // Request mode by default (generic + price-safe) unless a catalogue is set.
+    catalogEnabled: (m.get("catalog_enabled") ?? "").toLowerCase() === "true",
   };
 }

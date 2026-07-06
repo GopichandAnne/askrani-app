@@ -40,6 +40,7 @@ export function AgentView({
     [values, initialConfig],
   );
   const ordersEnabled = (values.orders_enabled ?? "false") === "true";
+  const catalogEnabled = (values.catalog_enabled ?? "false") === "true";
 
   function set(key: string, v: string) {
     setValues((prev) => ({ ...prev, [key]: v }));
@@ -89,6 +90,23 @@ export function AgentView({
           id="orders-toggle"
           checked={ordersEnabled}
           onCheckedChange={(c) => set("orders_enabled", c ? "true" : "false")}
+        />
+      </div>
+
+      {/* Catalogue / pricing mode */}
+      <div className="bg-card flex items-start justify-between gap-4 rounded-lg border p-4">
+        <div className="space-y-0.5">
+          <Label htmlFor="catalog-toggle" className="text-sm font-medium">Structured catalogue (show prices)</Label>
+          <p className="text-muted-foreground text-sm">
+            On: Rani looks up products and shows prices. Off (request mode): the
+            catalogue lives in your knowledge base, Rani never quotes a price, and
+            every order is a request your team prices at confirmation.
+          </p>
+        </div>
+        <Switch
+          id="catalog-toggle"
+          checked={catalogEnabled}
+          onCheckedChange={(c) => set("catalog_enabled", c ? "true" : "false")}
         />
       </div>
 
