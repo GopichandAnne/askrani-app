@@ -20,4 +20,7 @@ export type KnowledgeDoc = {
   /** true when every chunk has been embedded (none stale). */
   indexed: boolean;
   updatedAt: string | null;
+  /** Storage path of the original uploaded file, if it came from an upload. */
+  sourcePath: string | null;
+  sourceMime: string | null;
 };
