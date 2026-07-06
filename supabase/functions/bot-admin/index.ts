@@ -24,6 +24,7 @@ import {
   syncSavedQaToIndex,
 } from "../_shared/knowledge.ts";
 import { extractFileText } from "../_shared/extract.ts";
+import { encodeBase64 } from "jsr:@std/encoding@1/base64";
 import { addToCart } from "../_shared/cart.ts";
 import { placeOrder } from "../_shared/order.ts";
 import { classifyTurn } from "../_shared/analytics.ts";
@@ -169,9 +170,24 @@ Deno.serve(async (req) => {
       case "chat": {
         const message = String(body.message ?? "");
         const sessionId = String(body.session_id ?? "admin_debug");
+        // Optional image for testing the customer-photo path: pull from Storage
+        // (image_path) or accept inline base64 (image_b64).
+        let image: { base64: string; mime: string } | undefined;
+        if (body.image_path) {
+          const { data: blob } = await db.storage.from("kb").download(String(body.image_path));
+          if (blob) {
+            image = {
+              base64: encodeBase64(new Uint8Array(await blob.arrayBuffer())),
+              mime: String(body.image_mime ?? "image/png"),
+            };
+          }
+        } else if (body.image_b64) {
+          image = { base64: String(body.image_b64), mime: String(body.image_mime ?? "image/png") };
+        }
         const { text, toolsUsed } = await generateTurnReply(db, store, {
           sessionId,
           inboundText: message,
+          image,
         });
         return json({ store: store.slug, message, reply: text, toolsUsed });
       }

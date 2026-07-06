@@ -11,7 +11,8 @@ import { verifySignature } from "../_shared/signature.ts";
 import { getStoreAccessToken, getStoreByPhoneNumberId } from "../_shared/config.ts";
 import { handleConversation } from "../_shared/conversation.ts";
 import { findResponder, relayStaffAnswer, type Responder } from "../_shared/responders.ts";
-import { sendText } from "../_shared/wa.ts";
+import { downloadMedia, sendText } from "../_shared/wa.ts";
+import { encodeBase64 } from "jsr:@std/encoding@1/base64";
 import type { Store, WaContact, WaMessage, WaWebhook } from "../_shared/types.ts";
 
 // deno-lint-ignore no-explicit-any
@@ -163,6 +164,17 @@ async function handleMessage(
 
   console.log(`[webhook] ${store.slug} <- ${from}: ${text?.slice(0, 80)}`);
 
+  // If the customer sent a photo, download it (Meta media API) so the model can
+  // see it. Best-effort: on failure we proceed text-only with the caption.
+  let image: { base64: string; mime: string } | undefined;
+  if (msg.type === "image" && msg.image?.id) {
+    const token = await getStoreAccessToken(db, store.id);
+    if (token) {
+      const media = await downloadMedia(token, msg.image.id);
+      if (media) image = { base64: encodeBase64(media.bytes), mime: media.mime };
+    }
+  }
+
   // Phase 2: hand off to the conversation core (routing gate + Gemini + reply).
   await handleConversation(db, store, {
     threadId,
@@ -170,6 +182,7 @@ async function handleMessage(
     customerPhone: from,
     phoneNumberId,
     inboundText: text ?? "",
+    image,
     deviceType: "whatsapp",
   });
 }
@@ -204,6 +217,8 @@ function extractText(msg: WaMessage): string {
   switch (msg.type) {
     case "text":
       return msg.text?.body ?? "";
+    case "image":
+      return msg.image?.caption?.trim() || "[photo]";
     case "button":
       return msg.button?.text ?? "[button]";
     case "interactive":

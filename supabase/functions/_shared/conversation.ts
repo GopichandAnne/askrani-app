@@ -35,7 +35,11 @@ import { sendText } from "./wa.ts";
 export async function generateTurnReply(
   db: SupabaseClient,
   store: Store,
-  opts: { sessionId: string; inboundText: string },
+  opts: {
+    sessionId: string;
+    inboundText: string;
+    image?: { base64: string; mime: string }; // a photo the customer just sent
+  },
 ): Promise<GeminiReply> {
   const config = await loadAgentConfig(db, store);
   const history = await loadHistory(db, store.slug, opts.sessionId, config.historyTurns);
@@ -55,6 +59,12 @@ export async function generateTurnReply(
     }
   }
   const contents = buildContents(history, `${nowCtx}${proposalCtx}\n${opts.inboundText}`);
+  // Attach the customer's photo (if any) to the current user turn so the model sees it.
+  if (opts.image && contents.length > 0) {
+    contents[contents.length - 1].parts.unshift({
+      inlineData: { mimeType: opts.image.mime, data: opts.image.base64 },
+    });
+  }
   const toolset = buildToolset(
     db, store, opts.sessionId, config.ordersEnabled, hasProposal, config.catalogEnabled,
   );
@@ -67,6 +77,7 @@ export interface ConversationContext {
   customerPhone: string;
   phoneNumberId: string;
   inboundText: string;
+  image?: { base64: string; mime: string }; // a photo the customer sent, if any
   deviceType: "whatsapp" | "web";
 }
 
@@ -91,6 +102,7 @@ export async function handleConversation(
   const { text: reply, toolsUsed } = await generateTurnReply(db, store, {
     sessionId: ctx.sessionId,
     inboundText: ctx.inboundText,
+    image: ctx.image,
   });
   const responseTimeMs = Date.now() - startedAt;
   if (!reply) {

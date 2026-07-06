@@ -25,6 +25,8 @@ import {
   placeOrder,
 } from "./order.ts";
 import { notifyResponders } from "./responders.ts";
+import { getStoreAccessToken } from "./config.ts";
+import { sendImage } from "./wa.ts";
 
 // ── Gemini functionDeclaration shapes ───────────────────────────────────────
 export interface FunctionDeclaration {
@@ -401,6 +403,73 @@ async function executeEscalate(
   return { escalated: true, ticket_id: ticketId };
 }
 
+const SEND_IMAGE_DECL: FunctionDeclaration = {
+  name: "send_image",
+  description:
+    "Send the customer a picture the store has on file — its menu, a flyer, or a " +
+    "product photo — when they ask to see one ('show me the menu', 'do you have " +
+    "a picture of X?'). Pass a short query describing what they want to see. Only " +
+    "works if the store uploaded a matching image: if it returns sent:false, tell " +
+    "the customer you don't have that picture — never claim you sent one.",
+  parameters: {
+    type: "object",
+    properties: {
+      query: {
+        type: "string",
+        description: "What the customer wants to see, e.g. 'menu', 'sweets photo', 'store front'.",
+      },
+    },
+    required: ["query"],
+  },
+};
+
+/** Find the best-matching image the store uploaded and send it over WhatsApp.
+ *  Only image-sourced KB docs qualify (a PDF can't go as a WhatsApp image). */
+async function executeSendImage(
+  db: SupabaseClient,
+  store: Store,
+  sessionId: string,
+  args: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const query = String(args.query ?? "").trim().toLowerCase();
+  const { data: docs } = await db
+    .from("knowledge_index")
+    .select("source_ref, source_path, chunk_text")
+    .eq("store_id", store.id)
+    .eq("kind", "document_chunk")
+    .not("source_path", "is", null)
+    .like("source_mime", "image/%");
+  if (!docs || docs.length === 0) {
+    return { sent: false, note: "the store has no picture on file to send" };
+  }
+
+  // Small set of image docs — pick the best by word overlap on title + text.
+  const words = query.split(/\s+/).filter((w) => w.length > 2);
+  let best = docs[0];
+  let bestScore = -1;
+  for (const d of docs) {
+    const hay = `${d.source_ref} ${d.chunk_text}`.toLowerCase();
+    const score = words.reduce((n, w) => n + (hay.includes(w) ? 1 : 0), 0);
+    if (score > bestScore) {
+      bestScore = score;
+      best = d;
+    }
+  }
+
+  const { data: signed } = await db.storage.from("kb").createSignedUrl(best.source_path, 600);
+  if (!signed?.signedUrl) return { sent: false, note: "could not prepare the image" };
+
+  const token = await getStoreAccessToken(db, store.id);
+  const to = sessionId.startsWith("wa_") ? sessionId.slice(3) : sessionId;
+  if (!token || !store.whatsapp_phone_number_id) {
+    return { sent: false, note: "messaging not configured", image: best.source_ref };
+  }
+  const ok = await sendImage(token, store.whatsapp_phone_number_id, to, signed.signedUrl, best.source_ref);
+  return ok
+    ? { sent: true, image: best.source_ref }
+    : { sent: false, note: "send failed", image: best.source_ref };
+}
+
 /** Build the toolset bound to a store + session context. Cart/order tools are
  *  attached only when ordering is enabled for the store (Agent Setup). */
 export function buildToolset(
@@ -414,6 +483,7 @@ export function buildToolset(
   const executors: Record<string, ToolExecutor> = {
     search_products: (args) => executeSearchProducts(db, store, args),
     search_knowledge: (args) => executeSearchKnowledge(db, store, args),
+    send_image: (args) => executeSendImage(db, store, sessionId, args),
     escalate_to_owner: (args) => executeEscalate(db, store, sessionId, args),
     add_to_cart: async (args) => {
       const res = await addToCart(
@@ -459,7 +529,7 @@ export function buildToolset(
   };
   // search_products (which returns prices) is attached ONLY in catalogue mode —
   // in request mode the bot has no price-returning tool, so it cannot quote a price.
-  const declarations: FunctionDeclaration[] = [SEARCH_KNOWLEDGE_DECL, ESCALATE_DECL];
+  const declarations: FunctionDeclaration[] = [SEARCH_KNOWLEDGE_DECL, SEND_IMAGE_DECL, ESCALATE_DECL];
   if (catalogEnabled) declarations.push(SEARCH_PRODUCTS_DECL);
   if (ordersEnabled) {
     if (catalogEnabled) declarations.push(ADD_TO_CART_DECL); // priced catalog add

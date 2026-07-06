@@ -29,6 +29,7 @@ export interface WaMessage {
   timestamp?: string; // unix seconds (string)
   type?: string; // text | image | interactive | ...
   text?: { body?: string };
+  image?: { id?: string; mime_type?: string; caption?: string; sha256?: string };
   button?: { text?: string };
   interactive?: {
     button_reply?: { id?: string; title?: string };
