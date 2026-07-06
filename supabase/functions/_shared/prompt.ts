@@ -21,7 +21,8 @@
 
 /** A Gemini content part. */
 export interface Part {
-  text: string;
+  text?: string;
+  inlineData?: { mimeType: string; data: string }; // base64 media on the current turn
 }
 
 /** A Gemini content turn. role "user" = customer, "model" = the bot. */
@@ -93,6 +94,14 @@ const BASE_RULES = [
   "them. First try a knowledge search for policy/FAQ questions; escalate only if",
   "it returns nothing useful. Do NOT escalate greetings, acknowledgments (ok,",
   "thanks), questions you can answer, or hostile/venting messages.",
+  "The customer may send a PHOTO. Look at it and respond to what it actually",
+  "shows — identify the item, read a label or handwritten list, answer their",
+  "question about it — and search the catalog or knowledge base as needed. Never",
+  "pretend to see a photo that wasn't sent.",
+  "When the customer asks to SEE something the store may have a picture of — its",
+  "menu, a flyer, a product photo — call send_image with a short query. If it",
+  "returns sent:false, tell them you don't have that picture; never claim you",
+  "sent an image when you did not.",
 ].join(" ");
 
 // CATALOGUE mode only: the store has a live priced product catalogue.

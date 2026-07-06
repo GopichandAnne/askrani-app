@@ -26,6 +26,7 @@ export interface FunctionCall {
 }
 export interface GeminiPart {
   text?: string;
+  inlineData?: { mimeType: string; data: string }; // base64 media (e.g. a customer's photo)
   functionCall?: FunctionCall;
   functionResponse?: { name: string; response: Record<string, unknown> };
 }
