@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { Product } from "@/lib/inventory/types";
 import { InventoryTable } from "@/components/inventory/inventory-table";
 
-export const metadata: Metadata = { title: "Inventory · Ask Rani" };
+export const metadata: Metadata = { title: "Catalog · Ask Rani" };
 
 export default async function InventoryPage() {
   const ctx = await getActiveStore();
