@@ -49,6 +49,9 @@ export interface AgentConfig {
   timezone: string;
   /** store_hours JSON (day index -> [open, close]) or null. */
   storeHours: string | null;
+  /** true = structured catalogue set (bot may look up + show prices); false =
+   *  request mode (KB-only; bot NEVER quotes a price; all orders are requests). */
+  catalogEnabled: boolean;
 }
 
 // Baked-in operating rules — part of the stable prefix, identical across stores.
@@ -61,16 +64,12 @@ const BASE_RULES = [
   "Do NOT use markdown: no #, no * or ** emphasis, no bullet characters or",
   "tables. Write plain sentences; to list items, put each on its own line like",
   "'Name — $price'.",
-  "You MUST call search_products BEFORE stating whether the store has an item,",
-  "or giving any price or in-stock status — never answer that from memory or",
-  "assumption, even for common items you think you know. Trust ONLY the tool",
-  "result: if it shows an item out of stock, say it's currently out; if the",
-  "search returns nothing, say you'll check with the store — never claim",
-  "availability you haven't verified with a search.",
-  "When a customer asks what to buy or what you'd recommend — including for",
-  "comfort needs like a cold or a party — search the catalog and suggest",
-  "relevant products the store actually sells. You may suggest groceries",
-  "(teas, honey, ginger, etc.), but do not give medical or professional advice.",
+  "Never claim an item is available or unavailable unless you actually verified",
+  "it (a product or knowledge search) — otherwise say you'll check with the",
+  "store. When a customer asks what to buy or what you'd recommend (including for",
+  "comfort needs like a cold, or a party), look up and suggest relevant items the",
+  "store actually sells; you may suggest products but never give medical or",
+  "professional advice.",
   "When a policy has a limit or condition — a delivery radius, a free-delivery",
   "threshold, a same-day cutoff time, a return window — APPLY it to the",
   "customer's specific situation and give them the answer; don't just recite the",
@@ -96,9 +95,27 @@ const BASE_RULES = [
   "thanks), questions you can answer, or hostile/venting messages.",
 ].join(" ");
 
+// CATALOGUE mode only: the store has a live priced product catalogue.
+const CATALOG_RULES = [
+  "You have a live product catalogue. You MUST call search_products BEFORE stating",
+  "whether the store has an item, its price, or its stock — never from memory.",
+  "Trust only the tool result: if it shows out of stock, say it's currently out;",
+  "if the search returns nothing, say you'll check with the store.",
+].join(" ");
+
+// REQUEST mode only: no priced catalogue — the bot must never surface a price.
+const REQUEST_PRICING_RULE = [
+  "IMPORTANT: this store has no price list available to you. NEVER state,",
+  "estimate, or read out a price or a total — not from your knowledge, not from",
+  "any document, menu, or image, not from memory — even if the customer insists.",
+  "If asked a price or total, say the store team confirms pricing when the order",
+  "is placed. You may tell them what the store carries, but always without prices.",
+].join(" ");
+
 // Locked ordering/money-safety rules — appended ONLY when ordering is enabled,
 // always on top of the owner's order_prompt. Owners can't edit these away.
-const ORDERING_RULES = [
+// CATALOGUE-mode ordering (priced cart).
+const CATALOG_ORDERING_RULES = [
   "To help a customer buy, build a cart: use search_products to find each item,",
   "then add_to_cart with its exact sku. view_cart shows the cart and running",
   "subtotal; remove_from_cart / clear_cart edit it. Some items may have no price",
@@ -125,6 +142,27 @@ const ORDERING_RULES = [
   "re-confirm. On success, give the order number; if the order has unpriced items",
   "or is delivery, say the store team will confirm the final total (with any",
   "pricing, delivery, or other charges) shortly.",
+].join(" ");
+
+// REQUEST-mode ordering (no prices — every line is a request the store prices).
+const REQUEST_ORDERING_RULES = [
+  "To take an order here, capture every item the customer wants with",
+  "add_request_item (description + quantity, plus any preference as notes) — you",
+  "have no product catalogue or prices in this mode. A number with a weight or",
+  "volume unit is a TOTAL, not a count: '5 kg jamun' is quantity 1 with '5 kg' in",
+  "the description. Never refuse an item; the store sources and prices everything.",
+  "view_cart shows the list; remove_from_cart / clear_cart edit it. When the",
+  "customer is done, show the itemized list WITHOUT any prices and ask ONE explicit",
+  "question: 'Shall I place this order for [pickup/delivery]? The store team will",
+  "confirm the items, prices, and your total. (yes/no)'. Call place_order ONLY on",
+  "a clear standalone yes to THAT question — not a vague ok or emoji (re-ask), not",
+  "a yes with a change (make it, re-ask), not a yes to another question. Pass the",
+  "exact words as confirmation_text. On success, give the order number and say the",
+  "store team will confirm the items and total shortly.",
+].join(" ");
+
+// Shared across modes: handling the customer's reply to a priced proposal.
+const PROPOSAL_RULES = [
   "If a message begins with [PENDING PROPOSAL: order X, total $Y ...], the store",
   "has priced an order and is awaiting the customer's decision. If their reply is",
   "a short clear yes with no new request (yes, confirm, ok, sure, go ahead, looks",
@@ -152,6 +190,9 @@ export function buildSystemInstruction(c: AgentConfig): string {
     : c.storeName;
   out.push(`You are Rani, the AI shopping assistant for ${who}.`);
   out.push(BASE_RULES);
+  // Catalogue mode -> priced product tools + rules. Request mode -> never quote
+  // a price (the price-returning tools aren't attached either; see buildToolset).
+  out.push(c.catalogEnabled ? CATALOG_RULES : REQUEST_PRICING_RULE);
 
   if (c.personality) out.push(`\n## Personality\n${c.personality}`);
   if (c.storePrompt) out.push(`\n## About this store\n${c.storePrompt}`);
@@ -159,11 +200,11 @@ export function buildSystemInstruction(c: AgentConfig): string {
   if (c.languageHandling) out.push(`\n## Language\n${c.languageHandling}`);
   if (c.offTopicHandling) out.push(`\n## Off-topic requests\n${c.offTopicHandling}`);
 
-  // Ordering is optional per store. When enabled, the owner's order instructions
-  // sit under the locked ordering/money-safety rules; when disabled, the bot has
-  // no cart/order tools (see buildToolset) so these rules would be dead weight.
+  // Ordering is optional per store; when on, the mode picks the checkout rules,
+  // the shared proposal rules apply, and the owner's order_prompt sits on top.
   if (c.ordersEnabled) {
-    out.push(`\n${ORDERING_RULES}`);
+    out.push(`\n${c.catalogEnabled ? CATALOG_ORDERING_RULES : REQUEST_ORDERING_RULES}`);
+    out.push(`\n${PROPOSAL_RULES}`);
     if (c.orderPrompt) out.push(`\n## Ordering\n${c.orderPrompt}`);
   }
 

@@ -55,7 +55,9 @@ export async function generateTurnReply(
     }
   }
   const contents = buildContents(history, `${nowCtx}${proposalCtx}\n${opts.inboundText}`);
-  const toolset = buildToolset(db, store, opts.sessionId, config.ordersEnabled, hasProposal);
+  const toolset = buildToolset(
+    db, store, opts.sessionId, config.ordersEnabled, hasProposal, config.catalogEnabled,
+  );
   return await generateReply(systemInstruction, contents, toolset);
 }
 

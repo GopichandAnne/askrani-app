@@ -30,6 +30,7 @@ function cfg(over: Partial<AgentConfig> = {}): AgentConfig {
     ordersEnabled: false,
     timezone: "America/Chicago",
     storeHours: null,
+    catalogEnabled: true,
     ...over,
   };
 }
@@ -47,6 +48,16 @@ Deno.test("system instruction has NO knowledge in the prefix (retrieval-on-deman
   const s = buildSystemInstruction(cfg());
   assert(!s.includes("## Knowledge base"));
   assert(!s.includes("Q:"));
+});
+
+Deno.test("request mode: no-price rule present, catalogue rule absent", () => {
+  const req = buildSystemInstruction(cfg({ catalogEnabled: false }));
+  assert(req.includes("no price list"));
+  assert(!req.includes("MUST call search_products"));
+
+  const cat = buildSystemInstruction(cfg({ catalogEnabled: true }));
+  assert(cat.includes("MUST call search_products"));
+  assert(!cat.includes("no price list"));
 });
 
 Deno.test("ordering rules + order prompt appear ONLY when ordersEnabled", () => {

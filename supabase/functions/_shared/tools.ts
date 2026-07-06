@@ -409,6 +409,7 @@ export function buildToolset(
   sessionId: string,
   ordersEnabled: boolean,
   hasProposal = false,
+  catalogEnabled = false,
 ): Toolset {
   const executors: Record<string, ToolExecutor> = {
     search_products: (args) => executeSearchProducts(db, store, args),
@@ -456,10 +457,13 @@ export function buildToolset(
     cancel_proposed_order: (args) =>
       cancelProposedOrder(db, store, sessionId, String(args.order_id ?? ""), String(args.reason ?? "customer request")),
   };
-  const declarations: FunctionDeclaration[] = [SEARCH_PRODUCTS_DECL, SEARCH_KNOWLEDGE_DECL, ESCALATE_DECL];
+  // search_products (which returns prices) is attached ONLY in catalogue mode —
+  // in request mode the bot has no price-returning tool, so it cannot quote a price.
+  const declarations: FunctionDeclaration[] = [SEARCH_KNOWLEDGE_DECL, ESCALATE_DECL];
+  if (catalogEnabled) declarations.push(SEARCH_PRODUCTS_DECL);
   if (ordersEnabled) {
+    if (catalogEnabled) declarations.push(ADD_TO_CART_DECL); // priced catalog add
     declarations.push(
-      ADD_TO_CART_DECL,
       ADD_REQUEST_ITEM_DECL,
       VIEW_CART_DECL,
       REMOVE_FROM_CART_DECL,

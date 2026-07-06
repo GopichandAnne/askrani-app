@@ -19,6 +19,7 @@ const EDITABLE: AgentKey[] = [
   "off_topic_handling",
   "order_prompt",
   "orders_enabled",
+  "catalog_enabled",
   "tax_rate",
   "history_turns",
 ];
