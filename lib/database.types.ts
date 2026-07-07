@@ -877,6 +877,51 @@ export type Database = {
           },
         ]
       }
+      waitlist: {
+        Row: {
+          business_name: string
+          business_type: string | null
+          city: string | null
+          comments: string | null
+          created_at: string
+          email: string
+          full_name: string
+          hear_about: string | null
+          id: string
+          phone: string | null
+          source: string
+          state: string | null
+        }
+        Insert: {
+          business_name: string
+          business_type?: string | null
+          city?: string | null
+          comments?: string | null
+          created_at?: string
+          email: string
+          full_name: string
+          hear_about?: string | null
+          id?: string
+          phone?: string | null
+          source?: string
+          state?: string | null
+        }
+        Update: {
+          business_name?: string
+          business_type?: string | null
+          city?: string | null
+          comments?: string | null
+          created_at?: string
+          email?: string
+          full_name?: string
+          hear_about?: string | null
+          id?: string
+          phone?: string | null
+          source?: string
+          state?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
