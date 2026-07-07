@@ -2,6 +2,8 @@ import {
   BarChart3,
   BookOpen,
   Bot,
+  Building2,
+  ClipboardList,
   LifeBuoy,
   MessagesSquare,
   Package,
@@ -17,6 +19,8 @@ export type NavItem = {
   available: boolean;
   /** owner/platform-admin only. */
   ownerOnly?: boolean;
+  /** platform-admin (super admin) only — store-agnostic tools. */
+  platformAdminOnly?: boolean;
 };
 
 /** Information architecture for the panel (built in order across phases). */
@@ -28,4 +32,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Knowledge", href: "/knowledge", icon: BookOpen, available: true, ownerOnly: false },
   { label: "Tickets", href: "/tickets", icon: LifeBuoy, available: true },
   { label: "Dashboard", href: "/dashboard", icon: BarChart3, available: true, ownerOnly: true },
+  // ── Platform admin (super admin) — store-agnostic ──
+  { label: "Stores", href: "/admin/stores", icon: Building2, available: true, platformAdminOnly: true },
+  { label: "Waitlist", href: "/admin/waitlist", icon: ClipboardList, available: true, platformAdminOnly: true },
 ];

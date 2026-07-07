@@ -1,5 +1,6 @@
 "use client";
 
+import { Fragment } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -22,31 +23,37 @@ export function Sidebar() {
       </div>
 
       <nav className="flex-1 space-y-0.5 px-3 py-2">
-        {NAV_ITEMS.map((item) => {
+        {NAV_ITEMS.map((item, i) => {
           if (item.ownerOnly && !isOwner) return null;
+          if (item.platformAdminOnly && !isPlatformAdmin) return null;
           const Icon = item.icon;
           const isActive =
             pathname === item.href || pathname.startsWith(`${item.href}/`);
+          // Divider label above the first platform-admin item.
+          const startsAdminSection =
+            item.platformAdminOnly && !NAV_ITEMS[i - 1]?.platformAdminOnly;
+          const adminLabel = startsAdminSection ? (
+            <p
+              key="admin-label"
+              className="text-muted-foreground/70 mt-3 px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide"
+            >
+              Admin
+            </p>
+          ) : null;
 
-          if (!item.available) {
-            return (
-              <div
-                key={item.href}
-                className="text-muted-foreground/60 flex cursor-default items-center gap-3 rounded-md px-3 py-2 text-sm"
-                aria-disabled
-              >
-                <Icon className="size-4" />
-                <span className="flex-1">{item.label}</span>
-                <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
-                  Soon
-                </Badge>
-              </div>
-            );
-          }
-
-          return (
+          const content = !item.available ? (
+            <div
+              className="text-muted-foreground/60 flex cursor-default items-center gap-3 rounded-md px-3 py-2 text-sm"
+              aria-disabled
+            >
+              <Icon className="size-4" />
+              <span className="flex-1">{item.label}</span>
+              <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
+                Soon
+              </Badge>
+            </div>
+          ) : (
             <Link
-              key={item.href}
               href={item.href}
               className={cn(
                 "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
@@ -58,6 +65,13 @@ export function Sidebar() {
               <Icon className="size-4" />
               {item.label}
             </Link>
+          );
+
+          return (
+            <Fragment key={item.href}>
+              {adminLabel}
+              {content}
+            </Fragment>
           );
         })}
       </nav>
