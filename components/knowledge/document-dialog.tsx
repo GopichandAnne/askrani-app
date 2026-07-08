@@ -96,10 +96,10 @@ export function DocumentDialog({
             <Input
               id="doc-file"
               type="file"
-              accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.md,.csv,.tsv,.json,image/*,application/pdf,text/*"
+              accept=".pdf,.png,.jpg,.jpeg,.webp,.txt,.md,.csv,.tsv,.json,.xlsx,.xls,image/*,application/pdf,text/*,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             />
-            <p className="text-muted-foreground text-xs">PDF, image (menu/flyer photo), CSV, or text — up to 20 MB.</p>
+            <p className="text-muted-foreground text-xs">Excel (.xlsx), CSV, PDF, image (menu/flyer photo), or text — up to 20 MB.</p>
           </div>
           {!file && (
             <div className="space-y-1.5">

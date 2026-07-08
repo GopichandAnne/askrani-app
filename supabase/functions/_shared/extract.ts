@@ -1,9 +1,11 @@
 // File → text extraction for KB uploads — Bot Phase 3g.
 //   text / csv / md / json  → decode directly.
+//   xlsx / xls              → SheetJS reads every sheet to CSV.
 //   pdf / images            → Gemini multimodal transcribes (and describes photos).
 // Returns "" on failure (caller treats as "nothing extracted").
 
 import { encodeBase64 } from "jsr:@std/encoding@1/base64";
+import * as XLSX from "https://esm.sh/xlsx@0.18.5";
 
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
@@ -16,11 +18,38 @@ function isTextLike(mime: string, filename: string): boolean {
   );
 }
 
+function isSpreadsheet(mime: string, filename: string): boolean {
+  return (
+    mime.includes("spreadsheetml") || // .xlsx
+    mime === "application/vnd.ms-excel" || // .xls
+    /\.(xlsx|xlsm|xls)$/i.test(filename)
+  );
+}
+
+/** Read every sheet of an Excel workbook into CSV text (one block per sheet). */
+function extractSpreadsheet(bytes: Uint8Array): string {
+  try {
+    const wb = XLSX.read(bytes, { type: "array" });
+    const parts: string[] = [];
+    for (const name of wb.SheetNames) {
+      const csv = XLSX.utils.sheet_to_csv(wb.Sheets[name]).trim();
+      if (csv) parts.push(wb.SheetNames.length > 1 ? `Sheet: ${name}\n${csv}` : csv);
+    }
+    return parts.join("\n\n").trim();
+  } catch (e) {
+    console.error("[extract] xlsx error:", e);
+    return "";
+  }
+}
+
 export async function extractFileText(
   bytes: Uint8Array,
   mime: string,
   filename = "",
 ): Promise<string> {
+  if (isSpreadsheet(mime, filename)) {
+    return extractSpreadsheet(bytes);
+  }
   if (isTextLike(mime, filename)) {
     return new TextDecoder().decode(bytes).trim();
   }
