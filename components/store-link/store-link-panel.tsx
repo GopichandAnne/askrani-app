@@ -8,11 +8,14 @@ import {
   setLinkActive,
   regenerateLink,
   setWebChatPaused,
+  setWhatsappNumber,
+  setWhatsappRedirect,
 } from "@/app/(app)/link/actions";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { Check, Copy, Download, Loader2, QrCode, RefreshCw } from "lucide-react";
+import { Check, Copy, Download, Loader2, MessageCircle, QrCode, RefreshCw } from "lucide-react";
 
 const SITE = "https://askrani.ai";
 
@@ -28,6 +31,9 @@ export function StoreLinkPanel({
   const [token, setToken] = useState<string | null>(null);
   const [active, setActive] = useState(true);
   const [paused, setPaused] = useState(false);
+  const [waNumber, setWaNumber] = useState<string | null>(null);
+  const [waRedirect, setWaRedirect] = useState(false);
+  const [waInput, setWaInput] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -43,6 +49,9 @@ export function StoreLinkPanel({
         setToken(res.token);
         setActive(res.active);
         setPaused(res.paused);
+        setWaNumber(res.waNumber);
+        setWaInput(res.waNumber ?? "");
+        setWaRedirect(res.waRedirect);
       } else {
         toast.error("Couldn't load link", { description: res.error });
       }
@@ -76,6 +85,33 @@ export function StoreLinkPanel({
       toast.error("Couldn't update", { description: res.error });
     } else {
       toast.success(next ? "Break mode on — chat is paused" : "Break mode off — chat is live");
+    }
+  }
+
+  async function saveWaNumber() {
+    setBusy(true);
+    const res = await setWhatsappNumber(storeId, waInput);
+    setBusy(false);
+    if (res.ok) {
+      setWaNumber(res.waNumber);
+      setWaInput(res.waNumber ?? "");
+      if (!res.waNumber) setWaRedirect(false);
+      toast.success(res.waNumber ? "WhatsApp number saved" : "WhatsApp number cleared");
+    } else {
+      toast.error("Couldn't save", { description: res.error });
+    }
+  }
+
+  async function toggleWaRedirect(next: boolean) {
+    setBusy(true);
+    setWaRedirect(next); // optimistic
+    const res = await setWhatsappRedirect(storeId, next);
+    setBusy(false);
+    if (!res.ok) {
+      setWaRedirect(!next);
+      toast.error("Couldn't update", { description: res.error });
+    } else {
+      toast.success(next ? "QR now opens WhatsApp for everyone" : "QR now opens web chat");
     }
   }
 
@@ -145,6 +181,47 @@ export function StoreLinkPanel({
           {paused && <Badge className="bg-coral text-white">On break</Badge>}
           <Switch checked={paused} onCheckedChange={toggleBreak} disabled={busy} aria-label="Break mode" />
         </div>
+      </div>
+
+      <div className="space-y-3 rounded-lg border p-3">
+        <div className="flex items-center gap-2">
+          <MessageCircle className="text-teal-deep size-4" />
+          <p className="text-sm font-medium">WhatsApp</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            value={waInput}
+            onChange={(e) => setWaInput(e.target.value)}
+            placeholder="+1 555 123 4567"
+            inputMode="tel"
+            className="h-9 max-w-[200px]"
+          />
+          <Button size="sm" variant="outline" onClick={saveWaNumber} disabled={busy || waInput.trim() === (waNumber ?? "")}>
+            Save number
+          </Button>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm">Redirect QR to WhatsApp</p>
+            <p className="text-muted-foreground text-xs">
+              {waRedirect
+                ? "On — every scan of the in-store QR opens WhatsApp."
+                : "Off — the QR opens web chat. Test WhatsApp privately first, then flip this on to go live."}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {waRedirect && <Badge className="bg-[#25D366] text-white">Live on WhatsApp</Badge>}
+            <Switch
+              checked={waRedirect}
+              onCheckedChange={toggleWaRedirect}
+              disabled={busy || !waNumber}
+              aria-label="Redirect to WhatsApp"
+            />
+          </div>
+        </div>
+        {!waNumber && (
+          <p className="text-muted-foreground text-xs">Add a number above to enable the redirect.</p>
+        )}
       </div>
 
       <div className={active ? "" : "pointer-events-none opacity-50"}>

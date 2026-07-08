@@ -683,6 +683,7 @@ export type Database = {
           web_chat_paused: boolean
           whatsapp_display_number: string | null
           whatsapp_phone_number_id: string | null
+          whatsapp_redirect_enabled: boolean
           whatsapp_status: string | null
           whatsapp_waba_id: string | null
         }
@@ -709,6 +710,7 @@ export type Database = {
           web_chat_paused?: boolean
           whatsapp_display_number?: string | null
           whatsapp_phone_number_id?: string | null
+          whatsapp_redirect_enabled?: boolean
           whatsapp_status?: string | null
           whatsapp_waba_id?: string | null
         }
@@ -735,6 +737,7 @@ export type Database = {
           web_chat_paused?: boolean
           whatsapp_display_number?: string | null
           whatsapp_phone_number_id?: string | null
+          whatsapp_redirect_enabled?: boolean
           whatsapp_status?: string | null
           whatsapp_waba_id?: string | null
         }
