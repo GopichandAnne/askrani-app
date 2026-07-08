@@ -25,7 +25,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Building2, Plus, UserPlus } from "lucide-react";
+import { StoreLinkPanel } from "@/components/store-link/store-link-panel";
+import { Building2, Plus, QrCode, UserPlus } from "lucide-react";
 
 export type StoreRow = {
   id: string;
@@ -56,6 +57,7 @@ const BUSINESS_TYPES = [
 export function StoresView({ initial }: { initial: StoreRow[] }) {
   const router = useRouter();
   const [assignFor, setAssignFor] = useState<StoreRow | null>(null);
+  const [linkFor, setLinkFor] = useState<StoreRow | null>(null);
 
   return (
     <div className="mx-auto max-w-5xl space-y-5 p-6">
@@ -110,14 +112,37 @@ export function StoresView({ initial }: { initial: StoreRow[] }) {
                     )}
                   </p>
                 </div>
-                <Button variant="outline" size="sm" onClick={() => setAssignFor(s)}>
-                  <UserPlus className="size-4" /> Assign owner
-                </Button>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setLinkFor(s)}>
+                    <QrCode className="size-4" /> Link &amp; QR
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setAssignFor(s)}>
+                    <UserPlus className="size-4" /> Assign owner
+                  </Button>
+                </div>
               </div>
             </li>
           ))}
         </ul>
       )}
+
+      <Dialog open={!!linkFor} onOpenChange={(o) => !o && setLinkFor(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Web chat link</DialogTitle>
+            <DialogDescription>
+              {linkFor ? `${linkFor.displayName ?? linkFor.slug} — in-store QR + shareable link` : ""}
+            </DialogDescription>
+          </DialogHeader>
+          {linkFor && (
+            <StoreLinkPanel
+              storeId={linkFor.id}
+              storeSlug={linkFor.slug}
+              storeName={linkFor.displayName ?? linkFor.slug}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
 
       <AssignOwnerDialog
         store={assignFor}

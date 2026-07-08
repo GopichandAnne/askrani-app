@@ -621,6 +621,44 @@ export type Database = {
           },
         ]
       }
+      store_tokens: {
+        Row: {
+          active: boolean
+          created_at: string
+          expires_at: string | null
+          id: string
+          label: string | null
+          store_id: string
+          token: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          label?: string | null
+          store_id: string
+          token: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          label?: string | null
+          store_id?: string
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "store_tokens_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       stores: {
         Row: {
           active: boolean
@@ -637,10 +675,12 @@ export type Database = {
           pricing_folder_id: string | null
           product_source: string | null
           prompt_file_id: string | null
+          session_minutes: number
           slug: string
           store_display_name: string | null
           store_folder_id: string | null
           updated_at: string
+          whatsapp_display_number: string | null
           whatsapp_phone_number_id: string | null
           whatsapp_status: string | null
           whatsapp_waba_id: string | null
@@ -660,10 +700,12 @@ export type Database = {
           pricing_folder_id?: string | null
           product_source?: string | null
           prompt_file_id?: string | null
+          session_minutes?: number
           slug: string
           store_display_name?: string | null
           store_folder_id?: string | null
           updated_at?: string
+          whatsapp_display_number?: string | null
           whatsapp_phone_number_id?: string | null
           whatsapp_status?: string | null
           whatsapp_waba_id?: string | null
@@ -683,10 +725,12 @@ export type Database = {
           pricing_folder_id?: string | null
           product_source?: string | null
           prompt_file_id?: string | null
+          session_minutes?: number
           slug?: string
           store_display_name?: string | null
           store_folder_id?: string | null
           updated_at?: string
+          whatsapp_display_number?: string | null
           whatsapp_phone_number_id?: string | null
           whatsapp_status?: string | null
           whatsapp_waba_id?: string | null
@@ -702,6 +746,7 @@ export type Database = {
           event_type: string | null
           id: string
           kind: Database["public"]["Enums"]["message_kind"]
+          media_url: string | null
           message_id: string
           related_order_id: string | null
           sender: string | null
@@ -718,6 +763,7 @@ export type Database = {
           event_type?: string | null
           id?: string
           kind?: Database["public"]["Enums"]["message_kind"]
+          media_url?: string | null
           message_id: string
           related_order_id?: string | null
           sender?: string | null
@@ -734,6 +780,7 @@ export type Database = {
           event_type?: string | null
           id?: string
           kind?: Database["public"]["Enums"]["message_kind"]
+          media_url?: string | null
           message_id?: string
           related_order_id?: string | null
           sender?: string | null
@@ -927,6 +974,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_public_store: { Args: { p_slug: string }; Returns: Json }
       is_platform_admin: { Args: never; Returns: boolean }
       next_order_seq: {
         Args: { p_store_slug: string; p_year: number }
@@ -971,6 +1019,10 @@ export type Database = {
       user_is_owner: { Args: { p_store_id: string }; Returns: boolean }
       user_store_ids: { Args: never; Returns: string[] }
       user_store_slugs: { Args: never; Returns: string[] }
+      validate_store_token: {
+        Args: { p_slug: string; p_token: string }
+        Returns: Json
+      }
     }
     Enums: {
       agent_config_key:
