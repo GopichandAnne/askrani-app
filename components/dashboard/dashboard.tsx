@@ -149,6 +149,69 @@ function LanguageBars({
   );
 }
 
+function SentimentBars({
+  s,
+}: {
+  s: { positive: number; neutral: number; negative: number };
+}) {
+  const total = s.positive + s.neutral + s.negative;
+  if (total === 0) return <p className="text-muted-foreground text-sm">No conversation data yet.</p>;
+  const rows: { label: string; count: number; color: string }[] = [
+    { label: "Positive", count: s.positive, color: "var(--teal)" },
+    { label: "Neutral", count: s.neutral, color: "var(--muted)" },
+    { label: "Negative", count: s.negative, color: "var(--coral)" },
+  ];
+  return (
+    <div className="space-y-2">
+      {rows.map((r) => {
+        const pct = Math.round((r.count / total) * 100);
+        return (
+          <div key={r.label} className="flex items-center gap-3 text-sm">
+            <span className="w-16 shrink-0">{r.label}</span>
+            <div className="bg-muted h-2 flex-1 overflow-hidden rounded-full">
+              <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: r.color }} />
+            </div>
+            <span className="text-muted-foreground w-16 text-right tabular-nums">
+              {r.count} · {pct}%
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ItemList({
+  items,
+  empty,
+  accent,
+}: {
+  items: { item: string; count: number }[];
+  empty: string;
+  accent?: string;
+}) {
+  if (items.length === 0) return <p className="text-muted-foreground text-sm">{empty}</p>;
+  const max = Math.max(1, ...items.map((i) => i.count));
+  return (
+    <div className="space-y-2">
+      {items.map((i) => (
+        <div key={i.item} className="flex items-center gap-3 text-sm">
+          <span className="w-40 shrink-0 truncate capitalize" title={i.item}>
+            {i.item}
+          </span>
+          <div className="bg-muted h-2 flex-1 overflow-hidden rounded-full">
+            <div
+              className="h-full rounded-full"
+              style={{ width: `${(i.count / max) * 100}%`, backgroundColor: accent ?? "var(--teal)" }}
+            />
+          </div>
+          <span className="text-muted-foreground w-8 text-right tabular-nums">{i.count}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function Dashboard({
   metrics,
   storeName,
@@ -198,9 +261,36 @@ export function Dashboard({
         </Card>
       </div>
 
-      <Card title="Languages">
-        <LanguageBars languages={m.languages} total={m.totalConversations} />
-      </Card>
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card title="Languages">
+          <LanguageBars languages={m.languages} total={m.totalConversations} />
+        </Card>
+        <Card title="Sentiment">
+          <SentimentBars s={m.sentiment} />
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        <StatCard label="Complaints" value={m.signals.complaints} />
+        <StatCard label="Frustrated" value={m.signals.frustrated} />
+        <StatCard label="Feedback" value={m.signals.feedback} />
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <Card title="Most requested products">
+          <ItemList
+            items={m.requestedItems}
+            empty="No product requests yet."
+          />
+        </Card>
+        <Card title="Requested but not available">
+          <ItemList
+            items={m.missingItems}
+            empty="Nothing flagged as missing — nice."
+            accent="var(--coral)"
+          />
+        </Card>
+      </div>
     </div>
   );
 }

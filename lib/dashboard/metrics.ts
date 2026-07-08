@@ -120,6 +120,88 @@ export function languageLabel(code: string): string {
   return LANGUAGE_LABEL[code] ?? code.toUpperCase();
 }
 
+// ── Conversation insights (sentiment, signals, products) ─────────────────────
+type Analytics = {
+  sentiment?: string;
+  frustrated?: boolean;
+  complaint?: boolean;
+  feedback?: boolean;
+  requested_items?: unknown;
+  missing_items?: unknown;
+  items?: unknown;
+};
+
+function parseA(json: string | null): Analytics {
+  if (!json) return {};
+  try {
+    return JSON.parse(json) as Analytics;
+  } catch {
+    return {};
+  }
+}
+
+export function sentimentCounts(convs: ConvRow[]): {
+  positive: number;
+  neutral: number;
+  negative: number;
+} {
+  const c = { positive: 0, neutral: 0, negative: 0 };
+  for (const row of convs) {
+    const s = parseA(row.analytics_json).sentiment;
+    if (s === "positive" || s === "neutral" || s === "negative") c[s]++;
+  }
+  return c;
+}
+
+export function signalCounts(convs: ConvRow[]): {
+  complaints: number;
+  frustrated: number;
+  feedback: number;
+} {
+  const c = { complaints: 0, frustrated: 0, feedback: 0 };
+  for (const row of convs) {
+    const a = parseA(row.analytics_json);
+    if (a.complaint) c.complaints++;
+    if (a.frustrated) c.frustrated++;
+    if (a.feedback) c.feedback++;
+  }
+  return c;
+}
+
+function toStrings(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && x.trim() !== "") : [];
+}
+
+/** Top product mentions from a chosen field, grouped case-insensitively. */
+function topItemsBy(
+  convs: ConvRow[],
+  pick: (a: Analytics) => string[],
+  limit = 8,
+): { item: string; count: number }[] {
+  const m = new Map<string, { item: string; count: number }>();
+  for (const row of convs) {
+    for (const raw of pick(parseA(row.analytics_json))) {
+      const key = raw.trim().toLowerCase();
+      const cur = m.get(key);
+      if (cur) cur.count++;
+      else m.set(key, { item: raw.trim(), count: 1 });
+    }
+  }
+  return [...m.values()].sort((a, b) => b.count - a.count).slice(0, limit);
+}
+
+export function topRequested(convs: ConvRow[], limit = 8) {
+  return topItemsBy(
+    convs,
+    (a) => [...toStrings(a.requested_items), ...toStrings(a.items)],
+    limit,
+  );
+}
+
+export function topMissing(convs: ConvRow[], limit = 8) {
+  return topItemsBy(convs, (a) => toStrings(a.missing_items), limit);
+}
+
 /** Everything the dashboard needs, computed over the last DASHBOARD_DAYS. */
 export function computeDashboard(orders: OrderRow[], convs: ConvRow[]) {
   const days = lastNDays(DASHBOARD_DAYS);
@@ -145,6 +227,10 @@ export function computeDashboard(orders: OrderRow[], convs: ConvRow[]) {
     ordersPerDay: countPerDay(o, days),
     convsPerDay: countPerDay(c, days),
     languages: languageCounts(c),
+    sentiment: sentimentCounts(c),
+    signals: signalCounts(c),
+    requestedItems: topRequested(c),
+    missingItems: topMissing(c),
   };
 }
 
