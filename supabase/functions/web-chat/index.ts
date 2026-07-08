@@ -38,6 +38,7 @@ Deno.serve(async (req) => {
   }
 
   const slug = String(body.slug ?? "").trim();
+  const token = String(body.token ?? "").trim();
   const sessionId = String(body.session_id ?? "").trim();
   const message = String(body.message ?? "").trim().slice(0, MAX_MSG_LEN);
   if (!slug || !sessionId || !message) {
@@ -48,6 +49,19 @@ Deno.serve(async (req) => {
   const db = serviceClient();
   const store = await getStoreBySlug(db, slug);
   if (!store) return json({ error: "unknown store" }, 404);
+
+  // Validate the visitor token server-side (the client check is not enough).
+  const { data: tok } = await db
+    .from("store_tokens")
+    .select("id")
+    .eq("store_id", store.id)
+    .eq("token", token)
+    .eq("active", true)
+    .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
+    .limit(1);
+  if (!tok || tok.length === 0) {
+    return json({ error: "This session link is invalid or expired — please scan the QR again." }, 403);
+  }
 
   const threadId = `thr_${sessionId}_${store.slug}`;
 
@@ -93,8 +107,9 @@ Deno.serve(async (req) => {
 
   // ── Persist outbound + conversation. ──
   const outNow = new Date().toISOString();
+  const outMessageId = `msg_web_out_${crypto.randomUUID()}`;
   await db.from("thread_messages").insert({
-    message_id: `msg_web_out_${crypto.randomUUID()}`,
+    message_id: outMessageId,
     thread_id: threadId,
     store_slug: store.slug,
     customer_phone: sessionId,
@@ -131,7 +146,7 @@ Deno.serve(async (req) => {
     .catch((e) => console.error("[web-chat] analytics:", e));
   if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) EdgeRuntime.waitUntil(enrich);
 
-  return json({ reply: finalReply, toolsUsed });
+  return json({ reply: finalReply, message_id: outMessageId, toolsUsed });
 });
 
 function json(obj: unknown, status = 200): Response {

@@ -94,9 +94,13 @@ export async function relayStaffAnswer(
     .select("ticket_id");
   if (!claimed || claimed.length === 0) return { handled: false, note: "already_answered" };
 
-  // Relay to the customer as Rani.
+  // Relay to the customer as Rani. Web sessions (customer_phone = web_<uuid>)
+  // have no phone — the thread write below is delivered live via Realtime instead.
+  const isWeb = (t.customer_phone ?? "").startsWith("web_");
   const token = await getStoreAccessToken(db, store.id);
-  if (token && t.customer_phone) await sendText(token, phoneNumberId, t.customer_phone, answerText);
+  if (token && t.customer_phone && !isWeb) {
+    await sendText(token, phoneNumberId, t.customer_phone, answerText);
+  }
 
   // Persist to the customer's thread: the answer + an event.
   const threadId = `thr_${t.customer_phone}_${store.slug}`;
