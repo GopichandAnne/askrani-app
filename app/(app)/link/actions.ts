@@ -11,6 +11,7 @@ export type LinkResult =
       paused: boolean;
       waNumber: string | null;
       waRedirect: boolean;
+      sessionMinutes: number;
     }
   | { ok: false; error: string };
 
@@ -45,16 +46,25 @@ export async function getStoreLink(storeId: string): Promise<LinkResult> {
       .limit(1),
     db
       .from("stores")
-      .select("web_chat_paused, whatsapp_display_number, whatsapp_redirect_enabled")
+      .select("web_chat_paused, whatsapp_display_number, whatsapp_redirect_enabled, session_minutes")
       .eq("id", storeId)
       .single(),
   ]);
   const paused = !!store?.web_chat_paused;
   const waNumber = store?.whatsapp_display_number ?? null;
   const waRedirect = !!store?.whatsapp_redirect_enabled;
+  const sessionMinutes = store?.session_minutes ?? 30;
 
   if (existing && existing.length > 0) {
-    return { ok: true, token: existing[0].token, active: existing[0].active, paused, waNumber, waRedirect };
+    return {
+      ok: true,
+      token: existing[0].token,
+      active: existing[0].active,
+      paused,
+      waNumber,
+      waRedirect,
+      sessionMinutes,
+    };
   }
 
   const token = newToken();
@@ -62,7 +72,23 @@ export async function getStoreLink(storeId: string): Promise<LinkResult> {
     .from("store_tokens")
     .insert({ store_id: storeId, token, label: "primary QR", active: true });
   if (error) return { ok: false, error: error.message };
-  return { ok: true, token, active: true, paused, waNumber, waRedirect };
+  return { ok: true, token, active: true, paused, waNumber, waRedirect, sessionMinutes };
+}
+
+/** Set how long a web chat visitor session lasts (minutes). */
+export async function setSessionMinutes(
+  storeId: string,
+  minutes: number,
+): Promise<{ ok: true; sessionMinutes: number } | { ok: false; error: string }> {
+  await requireStoreAccess(storeId);
+  const m = Math.round(Number(minutes));
+  if (!Number.isFinite(m) || m < 5 || m > 1440) {
+    return { ok: false, error: "Choose a timeout between 5 minutes and 24 hours." };
+  }
+  const db = createAdminClient();
+  const { error } = await db.from("stores").update({ session_minutes: m }).eq("id", storeId);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, sessionMinutes: m };
 }
 
 /** Set (or clear) the store's public WhatsApp number for the wa.me redirect. */
