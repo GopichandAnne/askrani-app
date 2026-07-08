@@ -10,12 +10,30 @@ import {
   setWebChatPaused,
   setWhatsappNumber,
   setWhatsappRedirect,
+  setSessionMinutes,
 } from "@/app/(app)/link/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { Check, Copy, Download, Loader2, MessageCircle, QrCode, RefreshCw } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Check, Clock, Copy, Download, Loader2, MessageCircle, QrCode, RefreshCw } from "lucide-react";
+
+const TIMEOUTS: [number, string][] = [
+  [15, "15 minutes"],
+  [30, "30 minutes"],
+  [60, "1 hour"],
+  [120, "2 hours"],
+  [240, "4 hours"],
+  [480, "8 hours"],
+  [1440, "24 hours"],
+];
 
 const SITE = "https://askrani.ai";
 
@@ -34,6 +52,7 @@ export function StoreLinkPanel({
   const [waNumber, setWaNumber] = useState<string | null>(null);
   const [waRedirect, setWaRedirect] = useState(false);
   const [waInput, setWaInput] = useState("");
+  const [sessionMinutes, setSessionMins] = useState(30);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -52,6 +71,7 @@ export function StoreLinkPanel({
         setWaNumber(res.waNumber);
         setWaInput(res.waNumber ?? "");
         setWaRedirect(res.waRedirect);
+        setSessionMins(res.sessionMinutes);
       } else {
         toast.error("Couldn't load link", { description: res.error });
       }
@@ -112,6 +132,20 @@ export function StoreLinkPanel({
       toast.error("Couldn't update", { description: res.error });
     } else {
       toast.success(next ? "QR now opens WhatsApp for everyone" : "QR now opens web chat");
+    }
+  }
+
+  async function changeTimeout(next: number) {
+    const prev = sessionMinutes;
+    setSessionMins(next); // optimistic
+    setBusy(true);
+    const res = await setSessionMinutes(storeId, next);
+    setBusy(false);
+    if (!res.ok) {
+      setSessionMins(prev);
+      toast.error("Couldn't update", { description: res.error });
+    } else {
+      toast.success("Session timeout updated");
     }
   }
 
@@ -181,6 +215,33 @@ export function StoreLinkPanel({
           {paused && <Badge className="bg-coral text-white">On break</Badge>}
           <Switch checked={paused} onCheckedChange={toggleBreak} disabled={busy} aria-label="Break mode" />
         </div>
+      </div>
+
+      <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
+        <div>
+          <p className="flex items-center gap-1.5 text-sm font-medium">
+            <Clock className="text-muted-foreground size-3.5" /> Session timeout
+          </p>
+          <p className="text-muted-foreground text-xs">
+            How long a visitor&apos;s chat stays active before a fresh scan starts a new one.
+          </p>
+        </div>
+        <Select
+          value={String(sessionMinutes)}
+          onValueChange={(v) => changeTimeout(Number(v))}
+          disabled={busy}
+        >
+          <SelectTrigger className="w-[130px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {TIMEOUTS.map(([m, label]) => (
+              <SelectItem key={m} value={String(m)}>
+                {label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="space-y-3 rounded-lg border p-3">
