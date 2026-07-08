@@ -456,8 +456,27 @@ async function executeSendImage(
     }
   }
 
-  const { data: signed } = await db.storage.from("kb").createSignedUrl(best.source_path, 600);
+  const { data: signed } = await db.storage.from("kb").createSignedUrl(best.source_path, 3600);
   if (!signed?.signedUrl) return { sent: false, note: "could not prepare the image" };
+
+  // Web session: deliver the image into the chat via a thread message (Realtime
+  // pushes it to the browser, which renders it inline). No WhatsApp send.
+  if (sessionId.startsWith("web_")) {
+    const { error } = await db.from("thread_messages").insert({
+      message_id: `msg_web_img_${crypto.randomUUID()}`,
+      thread_id: `thr_${sessionId}_${store.slug}`,
+      store_slug: store.slug,
+      customer_phone: sessionId,
+      direction: "outbound",
+      sender: "agent",
+      text: best.source_ref,
+      media_url: signed.signedUrl,
+      kind: "message",
+    });
+    return error
+      ? { sent: false, note: "could not send the image", image: best.source_ref }
+      : { sent: true, image: best.source_ref };
+  }
 
   const token = await getStoreAccessToken(db, store.id);
   const to = sessionId.startsWith("wa_") ? sessionId.slice(3) : sessionId;
