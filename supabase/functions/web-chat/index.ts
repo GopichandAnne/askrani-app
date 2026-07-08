@@ -75,6 +75,20 @@ Deno.serve(async (req) => {
     return json({ error: "This session link is invalid or expired — please scan the QR again." }, 403);
   }
 
+  // Break mode: the store paused its web chat — do nothing, just say so.
+  const { data: pausedRow } = await db
+    .from("stores")
+    .select("web_chat_paused")
+    .eq("id", store.id)
+    .single();
+  if (pausedRow?.web_chat_paused) {
+    return json({
+      reply:
+        "🌙 Rani is taking a break right now and will be back soon. In the meantime, please ask a store associate for help. Thanks for your patience!",
+      paused: true,
+    });
+  }
+
   const threadId = `thr_${sessionId}_${store.slug}`;
 
   // ── Rate limit: inbound messages in the last minute for this session. ──
