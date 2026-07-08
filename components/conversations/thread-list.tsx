@@ -1,15 +1,38 @@
 "use client";
 
 import { isActive, threadTitle, type Thread } from "@/lib/conversations/types";
+import type { ThreadSignal } from "@/lib/conversations/signals";
 import { formatRelative } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
+function SignalBadges({ sig }: { sig: ThreadSignal | undefined }) {
+  if (!sig) return null;
+  const badges: { label: string; className: string }[] = [];
+  if (sig.complaint) badges.push({ label: "Complaint", className: "bg-coral/15 text-coral-dark" });
+  if (sig.frustrated) badges.push({ label: "Frustrated", className: "bg-coral/15 text-coral-dark" });
+  if (sig.feedback) badges.push({ label: "Feedback", className: "bg-teal-mist text-teal-deep" });
+  if (badges.length === 0 && sig.sentiment === "negative")
+    badges.push({ label: "Negative", className: "bg-coral/15 text-coral-dark" });
+  if (badges.length === 0) return null;
+  return (
+    <div className="mt-1.5 flex flex-wrap gap-1">
+      {badges.map((b) => (
+        <span key={b.label} className={cn("rounded px-1.5 py-0.5 text-[10px] font-medium", b.className)}>
+          {b.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export function ThreadList({
   threads,
+  signals,
   selectedId,
   onSelect,
 }: {
   threads: Thread[];
+  signals: Record<string, ThreadSignal>;
   selectedId: string | null;
   onSelect: (thread: Thread) => void;
 }) {
@@ -59,6 +82,7 @@ export function ThreadList({
                   )}
                 </span>
               </div>
+              <SignalBadges sig={signals[t.thread_id]} />
             </button>
           </li>
         );
