@@ -3,7 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { QRCodeCanvas } from "qrcode.react";
 import { toast } from "sonner";
-import { getStoreLink, setLinkActive, regenerateLink } from "@/app/(app)/link/actions";
+import {
+  getStoreLink,
+  setLinkActive,
+  regenerateLink,
+  setWebChatPaused,
+} from "@/app/(app)/link/actions";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
@@ -22,6 +27,7 @@ export function StoreLinkPanel({
 }) {
   const [token, setToken] = useState<string | null>(null);
   const [active, setActive] = useState(true);
+  const [paused, setPaused] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -36,6 +42,7 @@ export function StoreLinkPanel({
       if (res.ok) {
         setToken(res.token);
         setActive(res.active);
+        setPaused(res.paused);
       } else {
         toast.error("Couldn't load link", { description: res.error });
       }
@@ -56,6 +63,19 @@ export function StoreLinkPanel({
       toast.error("Couldn't update", { description: res.error });
     } else {
       toast.success(next ? "Link enabled" : "Link disabled");
+    }
+  }
+
+  async function toggleBreak(next: boolean) {
+    setBusy(true);
+    setPaused(next); // optimistic
+    const res = await setWebChatPaused(storeId, next);
+    setBusy(false);
+    if (!res.ok) {
+      setPaused(!next);
+      toast.error("Couldn't update", { description: res.error });
+    } else {
+      toast.success(next ? "Break mode on — chat is paused" : "Break mode off — chat is live");
     }
   }
 
@@ -109,6 +129,21 @@ export function StoreLinkPanel({
             {active ? "Enabled" : "Disabled"}
           </Badge>
           <Switch checked={active} onCheckedChange={toggle} disabled={busy} aria-label="Enable link" />
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
+        <div>
+          <p className="text-sm font-medium">Break mode</p>
+          <p className="text-muted-foreground text-xs">
+            {paused
+              ? "On — visitors see “Rani is taking a break”; no chatting."
+              : "Off — pause the web chat without changing the QR."}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {paused && <Badge className="bg-coral text-white">On break</Badge>}
+          <Switch checked={paused} onCheckedChange={toggleBreak} disabled={busy} aria-label="Break mode" />
         </div>
       </div>
 

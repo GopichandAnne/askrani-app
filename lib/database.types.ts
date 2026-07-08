@@ -680,6 +680,7 @@ export type Database = {
           store_display_name: string | null
           store_folder_id: string | null
           updated_at: string
+          web_chat_paused: boolean
           whatsapp_display_number: string | null
           whatsapp_phone_number_id: string | null
           whatsapp_status: string | null
@@ -705,6 +706,7 @@ export type Database = {
           store_display_name?: string | null
           store_folder_id?: string | null
           updated_at?: string
+          web_chat_paused?: boolean
           whatsapp_display_number?: string | null
           whatsapp_phone_number_id?: string | null
           whatsapp_status?: string | null
@@ -730,6 +732,7 @@ export type Database = {
           store_display_name?: string | null
           store_folder_id?: string | null
           updated_at?: string
+          web_chat_paused?: boolean
           whatsapp_display_number?: string | null
           whatsapp_phone_number_id?: string | null
           whatsapp_status?: string | null

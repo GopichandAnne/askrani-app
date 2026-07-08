@@ -4,6 +4,10 @@ import { getSessionContext } from "@/lib/auth/session";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export type LinkResult =
+  | { ok: true; token: string; active: boolean; paused: boolean }
+  | { ok: false; error: string };
+
+export type TokenResult =
   | { ok: true; token: string; active: boolean }
   | { ok: false; error: string };
 
@@ -25,15 +29,19 @@ export async function getStoreLink(storeId: string): Promise<LinkResult> {
   await requireStoreAccess(storeId);
   const db = createAdminClient();
 
-  const { data: existing } = await db
-    .from("store_tokens")
-    .select("token, active")
-    .eq("store_id", storeId)
-    .order("created_at", { ascending: false })
-    .limit(1);
+  const [{ data: existing }, { data: store }] = await Promise.all([
+    db
+      .from("store_tokens")
+      .select("token, active")
+      .eq("store_id", storeId)
+      .order("created_at", { ascending: false })
+      .limit(1),
+    db.from("stores").select("web_chat_paused").eq("id", storeId).single(),
+  ]);
+  const paused = !!store?.web_chat_paused;
 
   if (existing && existing.length > 0) {
-    return { ok: true, token: existing[0].token, active: existing[0].active };
+    return { ok: true, token: existing[0].token, active: existing[0].active, paused };
   }
 
   const token = newToken();
@@ -41,11 +49,23 @@ export async function getStoreLink(storeId: string): Promise<LinkResult> {
     .from("store_tokens")
     .insert({ store_id: storeId, token, label: "primary QR", active: true });
   if (error) return { ok: false, error: error.message };
-  return { ok: true, token, active: true };
+  return { ok: true, token, active: true, paused };
+}
+
+/** Put the store's web chat into (or out of) "Rani is taking a break" mode. */
+export async function setWebChatPaused(
+  storeId: string,
+  paused: boolean,
+): Promise<{ ok: true; paused: boolean } | { ok: false; error: string }> {
+  await requireStoreAccess(storeId);
+  const db = createAdminClient();
+  const { error } = await db.from("stores").update({ web_chat_paused: paused }).eq("id", storeId);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, paused };
 }
 
 /** Enable / disable the store's current link token. */
-export async function setLinkActive(storeId: string, active: boolean): Promise<LinkResult> {
+export async function setLinkActive(storeId: string, active: boolean): Promise<TokenResult> {
   await requireStoreAccess(storeId);
   const db = createAdminClient();
 
@@ -63,7 +83,7 @@ export async function setLinkActive(storeId: string, active: boolean): Promise<L
 }
 
 /** Issue a fresh link and retire all previous tokens (use if a QR leaks). */
-export async function regenerateLink(storeId: string): Promise<LinkResult> {
+export async function regenerateLink(storeId: string): Promise<TokenResult> {
   await requireStoreAccess(storeId);
   const db = createAdminClient();
 
