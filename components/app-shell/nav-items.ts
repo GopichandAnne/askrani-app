@@ -7,6 +7,7 @@ import {
   LifeBuoy,
   MessagesSquare,
   Package,
+  QrCode,
   ShoppingCart,
   type LucideIcon,
 } from "lucide-react";
@@ -30,6 +31,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Catalog", href: "/inventory", icon: Package, available: true },
   { label: "Agent", href: "/agent", icon: Bot, available: true, ownerOnly: true },
   { label: "Knowledge", href: "/knowledge", icon: BookOpen, available: true, ownerOnly: false },
+  { label: "Web Chat", href: "/link", icon: QrCode, available: true, ownerOnly: true },
   { label: "Tickets", href: "/tickets", icon: LifeBuoy, available: true },
   { label: "Dashboard", href: "/dashboard", icon: BarChart3, available: true, ownerOnly: true },
   // ── Platform admin (super admin) — store-agnostic ──
