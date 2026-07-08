@@ -23,6 +23,7 @@ const CORS = {
 };
 
 const MAX_MSG_LEN = 1000;
+const MAX_IMAGE_B64 = 3_500_000; // ~2.6 MB decoded — client downscales before sending
 const RATE_WINDOW_MS = 60_000;
 const RATE_MAX = 20; // inbound messages per session per minute
 
@@ -41,8 +42,19 @@ Deno.serve(async (req) => {
   const token = String(body.token ?? "").trim();
   const sessionId = String(body.session_id ?? "").trim();
   const message = String(body.message ?? "").trim().slice(0, MAX_MSG_LEN);
-  if (!slug || !sessionId || !message) {
-    return json({ error: "slug, session_id and message are required" }, 400);
+
+  // Optional inbound photo (base64) — the model sees it (Gemini vision).
+  let image: { base64: string; mime: string } | undefined;
+  const rawImage = body.image as { base64?: string; mime?: string } | undefined;
+  if (rawImage?.base64 && typeof rawImage.base64 === "string") {
+    if (rawImage.base64.length > MAX_IMAGE_B64) {
+      return json({ error: "That image is too large — please send a smaller photo." }, 413);
+    }
+    image = { base64: rawImage.base64, mime: String(rawImage.mime ?? "image/jpeg") };
+  }
+
+  if (!slug || !sessionId || (!message && !image)) {
+    return json({ error: "slug, session_id and a message or image are required" }, 400);
   }
   if (!sessionId.startsWith("web_")) return json({ error: "invalid session" }, 400);
 
@@ -91,7 +103,7 @@ Deno.serve(async (req) => {
     customer_phone: sessionId,
     direction: "inbound",
     sender: "customer",
-    text: message,
+    text: message || "[photo]",
     kind: "message",
     created_at: now,
   });
@@ -100,7 +112,8 @@ Deno.serve(async (req) => {
   const startedAt = Date.now();
   const { text: reply, toolsUsed } = await generateTurnReply(db, store, {
     sessionId,
-    inboundText: message,
+    inboundText: message || "[photo]",
+    image,
   });
   const responseTimeMs = Date.now() - startedAt;
   const finalReply = reply || "Sorry, I had a brief hiccup — could you send that again? 🙏";
