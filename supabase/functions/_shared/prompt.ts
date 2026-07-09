@@ -231,13 +231,16 @@ export function buildSystemInstruction(c: AgentConfig): string {
   if (c.promotions && c.promotions.trim()) {
     out.push(
       `\n## Promotions\n${c.promotions.trim()}\n\n` +
-        "Weave these in naturally and sparingly — only when they genuinely fit " +
-        "what the customer is asking about or buying, and at most once in a " +
-        "conversation unless they ask. Never let a promotion delay or replace " +
-        "answering their actual question, and never be pushy. Follow the store's " +
-        "pricing rules: if you can't quote prices, describe the offer without exact " +
-        "totals and let the team confirm. If a promotion has a matching picture on " +
-        "file, you may show it with send_image.",
+        "Be intelligent about WHEN to bring these up — do NOT tack a promotion onto " +
+        "every message. Pick the ONE right moment: a natural opening when you first " +
+        "greet them, when they're wrapping up or saying goodbye (or just after), or a " +
+        "genuine opening mid-conversation where it truly fits what they're asking about " +
+        "or buying. Mention it at most once in a conversation unless they ask, and if " +
+        "no moment fits, skip it entirely — a chat with no promotion beats a forced " +
+        "one. Never let a promotion delay or replace answering their actual question, " +
+        "and never be pushy. Follow the store's pricing rules: if you can't quote " +
+        "prices, describe the offer without exact totals and let the team confirm. If a " +
+        "promotion has a matching picture on file, you may show it with send_image.",
     );
   }
 

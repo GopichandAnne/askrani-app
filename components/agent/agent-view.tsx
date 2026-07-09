@@ -42,6 +42,8 @@ export function AgentView({
   );
   const ordersEnabled = (values.orders_enabled ?? "false") === "true";
   const catalogEnabled = (values.catalog_enabled ?? "false") === "true";
+  // Silence check-back is opt-out: absent/blank = on.
+  const followupEnabled = (values.followup_enabled ?? "true") !== "false";
 
   function set(key: string, v: string) {
     setValues((prev) => ({ ...prev, [key]: v }));
@@ -111,6 +113,23 @@ export function AgentView({
         />
       </div>
 
+      {/* Silence check-back */}
+      <div className="bg-card flex items-start justify-between gap-4 rounded-lg border p-4">
+        <div className="space-y-0.5">
+          <Label htmlFor="followup-toggle" className="text-sm font-medium">Check back if a chat goes quiet</Label>
+          <p className="text-muted-foreground text-sm">
+            If a customer stops replying mid-chat, Rani sends one gentle check-back
+            after a few minutes. She skips it when the chat already wrapped up (a
+            goodbye or a finished request).
+          </p>
+        </div>
+        <Switch
+          id="followup-toggle"
+          checked={followupEnabled}
+          onCheckedChange={(c) => set("followup_enabled", c ? "true" : "false")}
+        />
+      </div>
+
       {/* Big prompt sections */}
       <div className="space-y-5">
         {SECTIONS.map((s) => {
@@ -160,6 +179,19 @@ export function AgentView({
             />
             <p className="text-muted-foreground text-xs">How many prior turns Rani remembers in a chat.</p>
           </div>
+          {followupEnabled && (
+            <div className="space-y-1.5">
+              <Label htmlFor="followup_minutes">Check-back delay (minutes)</Label>
+              <Input
+                id="followup_minutes"
+                value={values.followup_minutes ?? ""}
+                onChange={(e) => set("followup_minutes", e.target.value)}
+                placeholder="5"
+                inputMode="numeric"
+              />
+              <p className="text-muted-foreground text-xs">How long to wait after silence before checking back (1–180).</p>
+            </div>
+          )}
         </div>
       </div>
 

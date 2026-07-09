@@ -24,6 +24,12 @@ import { buildNowContext } from "./clock.ts";
 import { classifyTurn } from "./analytics.ts";
 import { getStoreAccessToken } from "./config.ts";
 import { sendText } from "./wa.ts";
+import {
+  cancelFollowup,
+  getFollowupSettings,
+  isLikelyClosing,
+  scheduleFollowup,
+} from "./followup.ts";
 
 /**
  * Produce Rani's reply for one turn: load config + history, assemble the
@@ -97,6 +103,10 @@ export async function handleConversation(
     return;
   }
 
+  // The customer just messaged — clear any pending silence check-back (a fresh
+  // one is scheduled after this reply if the chat is still open).
+  await cancelFollowup(db, store.id, ctx.sessionId);
+
   // ── Generate the reply (tool loop; no-op without GEMINI_API_KEY). ───────────
   const startedAt = Date.now();
   const { text: reply, toolsUsed } = await generateTurnReply(db, store, {
@@ -122,6 +132,25 @@ export async function handleConversation(
   // ── Log the turn + send + persist outbound. ────────────────────────────────
   const conversationId = await logTurn(db, store, ctx, reply, responseTimeMs);
   await sendAndPersist(db, store, ctx, reply);
+
+  // Schedule a single silence check-back unless the customer is clearly wrapping up.
+  try {
+    const fu = await getFollowupSettings(db, store.id);
+    if (fu.enabled && !isLikelyClosing(ctx.inboundText) && !isLikelyClosing(reply)) {
+      await scheduleFollowup(db, {
+        storeId: store.id,
+        storeSlug: store.slug,
+        sessionId: ctx.sessionId,
+        channel: "whatsapp",
+        threadId: ctx.threadId,
+        customerRef: ctx.customerPhone,
+        phoneNumberId: ctx.phoneNumberId,
+        minutes: fu.minutes,
+      });
+    }
+  } catch (e) {
+    console.error("[conv] followup schedule:", e);
+  }
 
   // Enrich analytics AFTER the reply is sent — never blocks the customer's reply.
   if (conversationId) {

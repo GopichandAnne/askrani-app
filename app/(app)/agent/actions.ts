@@ -21,6 +21,8 @@ const EDITABLE: AgentKey[] = [
   "order_prompt",
   "orders_enabled",
   "catalog_enabled",
+  "followup_enabled",
+  "followup_minutes",
   "tax_rate",
   "history_turns",
 ];

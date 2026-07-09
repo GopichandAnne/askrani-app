@@ -58,3 +58,7 @@ enabled = true
 # is the X-Hub-Signature-256 HMAC check inside the function, not the gateway.
 [functions.whatsapp-webhook]
 verify_jwt = false
+
+# Called by pg_cron (no user JWT); idempotent — only processes already-due rows.
+[functions.followup]
+verify_jwt = false

@@ -12,6 +12,12 @@ import { serviceClient } from "../_shared/supabase.ts";
 import { getStoreBySlug } from "../_shared/config.ts";
 import { generateTurnReply } from "../_shared/conversation.ts";
 import { classifyTurn } from "../_shared/analytics.ts";
+import {
+  cancelFollowup,
+  getFollowupSettings,
+  isLikelyClosing,
+  scheduleFollowup,
+} from "../_shared/followup.ts";
 
 // deno-lint-ignore no-explicit-any
 declare const EdgeRuntime: any;
@@ -122,6 +128,10 @@ Deno.serve(async (req) => {
     created_at: now,
   });
 
+  // The customer just replied — clear any pending silence check-back (a fresh
+  // one is scheduled after this reply if the chat is still open).
+  await cancelFollowup(db, store.id, sessionId);
+
   // ── Generate the reply with the full toolset (identical to WhatsApp). ──
   const startedAt = Date.now();
   const { text: reply, toolsUsed } = await generateTurnReply(db, store, {
@@ -147,6 +157,24 @@ Deno.serve(async (req) => {
     created_at: outNow,
   });
   await db.from("threads").update({ last_message_at: outNow }).eq("thread_id", threadId);
+
+  // Schedule a single silence check-back unless the customer is clearly wrapping up.
+  try {
+    const fu = await getFollowupSettings(db, store.id);
+    if (fu.enabled && !isLikelyClosing(message) && !isLikelyClosing(finalReply)) {
+      await scheduleFollowup(db, {
+        storeId: store.id,
+        storeSlug: store.slug,
+        sessionId,
+        channel: "web",
+        threadId,
+        customerRef: sessionId,
+        minutes: fu.minutes,
+      });
+    }
+  } catch (e) {
+    console.error("[web-chat] followup schedule:", e);
+  }
 
   const conversationId = `web-${crypto.randomUUID()}`;
   await db.from("conversations").insert({

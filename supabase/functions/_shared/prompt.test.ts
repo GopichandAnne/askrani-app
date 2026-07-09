@@ -80,7 +80,8 @@ Deno.test("promotions section appears only when set, with guardrails", () => {
   assert(on.includes("## Promotions"));
   assert(on.includes("Weekend sweets combo: buy 2 boxes."));
   // Guardrail wording travels with the section.
-  assert(on.includes("sparingly"));
+  assert(on.includes("at most once"));
+  assert(on.includes("never be pushy"));
 });
 
 Deno.test("conversational-flow + proactive-image rules are always present", () => {
