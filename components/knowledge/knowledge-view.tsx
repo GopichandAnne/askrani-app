@@ -13,6 +13,7 @@ import {
 import { useStore } from "@/components/store/store-provider";
 import { QADialog } from "./qa-dialog";
 import { DocumentDialog } from "./document-dialog";
+import { DocumentDatesDialog, docValidity } from "./document-dates-dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +32,7 @@ import {
   BookOpen,
   ExternalLink,
   FileText,
+  CalendarClock,
   Loader2,
   Pencil,
   Plus,
@@ -189,8 +191,41 @@ export function KnowledgeView({
                         indexing…
                       </Badge>
                     )}
+                    {(() => {
+                      const v = docValidity(d.validFrom, d.validUntil);
+                      if (!v) return null;
+                      const cls =
+                        v.tone === "expired"
+                          ? "border-destructive/40 text-destructive"
+                          : v.tone === "scheduled"
+                            ? "border-amber-400/60 text-amber-600"
+                            : "border-teal/50 text-teal-deep";
+                      return (
+                        <Badge variant="outline" className={cls}>
+                          {v.label}
+                        </Badge>
+                      );
+                    })()}
                   </div>
                 </div>
+                {isOwner && (
+                  <DocumentDatesDialog
+                    title={d.title}
+                    validFrom={d.validFrom}
+                    validUntil={d.validUntil}
+                    onSaved={reloadDocs}
+                    trigger={
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="text-muted-foreground size-8 shrink-0"
+                        aria-label="Set effective dates"
+                      >
+                        <CalendarClock className="size-4" />
+                      </Button>
+                    }
+                  />
+                )}
                 {d.sourcePath && (
                   <Button
                     variant="ghost"

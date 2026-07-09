@@ -34,6 +34,8 @@ export function DocumentDialog({
   const [title, setTitle] = useState("");
   const [text, setText] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [validFrom, setValidFrom] = useState("");
+  const [validUntil, setValidUntil] = useState("");
   const [pending, startTransition] = useTransition();
 
   function onOpenChange(o: boolean) {
@@ -41,6 +43,8 @@ export function DocumentDialog({
       setTitle("");
       setText("");
       setFile(null);
+      setValidFrom("");
+      setValidUntil("");
     }
     setOpen(o);
   }
@@ -48,15 +52,21 @@ export function DocumentDialog({
   function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim() || (!file && !text.trim())) return;
+    if (validFrom && validUntil && validUntil < validFrom) {
+      toast.error("Expiry date can't be before the effective date.");
+      return;
+    }
     startTransition(async () => {
       let res;
       if (file) {
         const fd = new FormData();
         fd.set("title", title);
         fd.set("file", file);
+        if (validFrom) fd.set("valid_from", validFrom);
+        if (validUntil) fd.set("valid_until", validUntil);
         res = await ingestFile(fd);
       } else {
-        res = await ingestDocument(title, text);
+        res = await ingestDocument(title, text, validFrom || null, validUntil || null);
       }
       if (res.ok) {
         toast.success(res.message);
@@ -113,6 +123,29 @@ export function DocumentDialog({
               />
             </div>
           )}
+          <div className="space-y-1.5">
+            <Label>Effective dates (optional)</Label>
+            <div className="flex items-center gap-2">
+              <Input
+                type="date"
+                aria-label="Effective from"
+                value={validFrom}
+                onChange={(e) => setValidFrom(e.target.value)}
+              />
+              <span className="text-muted-foreground text-sm">to</span>
+              <Input
+                type="date"
+                aria-label="Expires"
+                value={validUntil}
+                onChange={(e) => setValidUntil(e.target.value)}
+              />
+            </div>
+            <p className="text-muted-foreground text-xs">
+              For time-limited info like a weekend sale or holiday hours. Rani only
+              mentions it within this window and stops after it ends. Leave blank for
+              always-on info.
+            </p>
+          </div>
           <DialogFooter>
             <Button type="submit" disabled={pending || !title.trim() || (!file && !text.trim())}>
               {pending && <Loader2 className="size-4 animate-spin" />}

@@ -23,4 +23,8 @@ export type KnowledgeDoc = {
   /** Storage path of the original uploaded file, if it came from an upload. */
   sourcePath: string | null;
   sourceMime: string | null;
+  /** Optional effective window (YYYY-MM-DD). Outside it, the bot won't surface
+   *  this doc. Null = open-ended. */
+  validFrom: string | null;
+  validUntil: string | null;
 };

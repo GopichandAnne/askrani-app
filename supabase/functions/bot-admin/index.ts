@@ -81,9 +81,25 @@ Deno.serve(async (req) => {
         const title = String(body.title ?? "").trim();
         const text = String(body.text ?? "");
         if (!title || !text.trim()) return json({ error: "title and text required" }, 400);
-        const { chunks } = await ingestDocument(db, store.id, title, text);
+        const vf = body.valid_from ? String(body.valid_from) : null;
+        const vu = body.valid_until ? String(body.valid_until) : null;
+        const { chunks } = await ingestDocument(db, store.id, title, text, null, null, vf, vu);
         const reindex = await reindexKnowledge(db, store.id, Number(body.max_rows ?? 200));
         return json({ store: store.slug, title, chunks, ...reindex });
+      }
+      case "set_document_dates": {
+        const title = String(body.title ?? "").trim();
+        if (!title) return json({ error: "title required" }, 400);
+        const vf = body.valid_from ? String(body.valid_from) : null;
+        const vu = body.valid_until ? String(body.valid_until) : null;
+        const { error, count } = await db
+          .from("knowledge_index")
+          .update({ valid_from: vf, valid_until: vu }, { count: "exact" })
+          .eq("store_id", store.id)
+          .eq("kind", "document_chunk")
+          .eq("source_ref", title);
+        if (error) return json({ error: error.message }, 500);
+        return json({ store: store.slug, title, updated: count ?? 0, valid_from: vf, valid_until: vu });
       }
       case "ingest_file": {
         const title = String(body.title ?? "").trim();
@@ -102,7 +118,9 @@ Deno.serve(async (req) => {
           return json({ error: `could not read the file: ${detail}` }, 422);
         }
         if (!text.trim()) return json({ error: "no text could be extracted from the file" }, 422);
-        const { chunks } = await ingestDocument(db, store.id, title, text, path, mime);
+        const vf = body.valid_from ? String(body.valid_from) : null;
+        const vu = body.valid_until ? String(body.valid_until) : null;
+        const { chunks } = await ingestDocument(db, store.id, title, text, path, mime, vf, vu);
         const reindex = await reindexKnowledge(db, store.id, Number(body.max_rows ?? 500));
         return json({ store: store.slug, title, chunks, chars: text.length, ...reindex });
       }

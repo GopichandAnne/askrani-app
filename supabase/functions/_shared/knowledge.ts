@@ -59,6 +59,8 @@ export async function ingestDocument(
   text: string,
   sourcePath: string | null = null,
   sourceMime: string | null = null,
+  validFrom: string | null = null,
+  validUntil: string | null = null,
 ): Promise<{ chunks: number }> {
   await db
     .from("knowledge_index")
@@ -80,6 +82,8 @@ export async function ingestDocument(
     embedding_stale: true,
     source_path: sourcePath,
     source_mime: sourceMime,
+    valid_from: validFrom,
+    valid_until: validUntil,
   }));
   const { error } = await db.from("knowledge_index").insert(rows);
   if (error) throw new Error(error.message);

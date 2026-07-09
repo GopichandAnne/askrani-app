@@ -219,6 +219,8 @@ export type Database = {
           store_id: string
           token_count: number | null
           updated_at: string
+          valid_from: string | null
+          valid_until: string | null
         }
         Insert: {
           chunk_index?: number
@@ -235,6 +237,8 @@ export type Database = {
           store_id: string
           token_count?: number | null
           updated_at?: string
+          valid_from?: string | null
+          valid_until?: string | null
         }
         Update: {
           chunk_index?: number
@@ -251,6 +255,8 @@ export type Database = {
           store_id?: string
           token_count?: number | null
           updated_at?: string
+          valid_from?: string | null
+          valid_until?: string | null
         }
         Relationships: [
           {

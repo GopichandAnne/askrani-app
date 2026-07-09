@@ -96,7 +96,9 @@ const SEARCH_KNOWLEDGE_DECL: FunctionDeclaration = {
     "lookup. Use it for questions like 'do you deliver?', 'what are your hours?', " +
     "'what's your return policy?'. Pass a normalized English query. Returns the " +
     "most relevant snippets; if nothing relevant comes back, say you'll check " +
-    "with the store rather than guessing.",
+    "with the store rather than guessing. A snippet with a `valid_until` date is a " +
+    "time-limited offer/notice — you may mention the deadline (e.g. 'through " +
+    "Sunday') when it's helpful.",
   parameters: {
     type: "object",
     properties: {
@@ -162,6 +164,7 @@ async function executeSearchKnowledge(
   db: SupabaseClient,
   store: Store,
   args: Record<string, unknown>,
+  today: string | null,
 ): Promise<Record<string, unknown>> {
   const query = String(args.query ?? "").trim();
   if (!query) return { snippets: [], note: "empty query" };
@@ -173,20 +176,30 @@ async function executeSearchKnowledge(
     console.error(`[tools] search_knowledge embed failed: ${e instanceof Error ? e.message : e}`);
     return { snippets: [], note: "search temporarily unavailable — offer to check with the store" };
   }
+  // p_today (store-local date) lets the RPC hide entries outside their effective
+  // window — a past sale or a not-yet-active notice never surfaces.
   const { data, error } = await db.rpc("search_knowledge", {
     p_store_id: store.id,
     p_query_embedding: toVectorLiteral(embedding),
     p_limit: SEARCH_KNOWLEDGE_LIMIT,
+    p_today: today,
   });
   if (error) {
     console.error(`[tools] search_knowledge: ${error.message}`);
     return { snippets: [], note: "search failed" };
   }
   const snippets = (data ?? []).map(
-    (r: { kind: string; source_ref: string | null; chunk_text: string }) => ({
+    (r: {
+      kind: string;
+      source_ref: string | null;
+      chunk_text: string;
+      valid_until: string | null;
+    }) => ({
       source: r.source_ref,
       kind: r.kind,
       text: r.chunk_text,
+      // Present -> a time-limited entry; the bot may mention the deadline.
+      ...(r.valid_until ? { valid_until: r.valid_until } : {}),
     }),
   );
   return { snippets, count: snippets.length };
@@ -501,10 +514,11 @@ export function buildToolset(
   ordersEnabled: boolean,
   hasProposal = false,
   catalogEnabled = false,
+  today: string | null = null,
 ): Toolset {
   const executors: Record<string, ToolExecutor> = {
     search_products: (args) => executeSearchProducts(db, store, args),
-    search_knowledge: (args) => executeSearchKnowledge(db, store, args),
+    search_knowledge: (args) => executeSearchKnowledge(db, store, args, today),
     send_image: (args) => executeSendImage(db, store, sessionId, args),
     escalate_to_owner: (args) => executeEscalate(db, store, sessionId, args),
     add_to_cart: async (args) => {

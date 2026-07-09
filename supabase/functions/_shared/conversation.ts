@@ -72,8 +72,11 @@ export async function generateTurnReply(
       inlineData: { mimeType: opts.image.mime, data: opts.image.base64 },
     });
   }
+  // Store-local date (YYYY-MM-DD) so knowledge retrieval can hide entries that
+  // are outside their effective window (expired promos, not-yet-active notices).
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: config.timezone }).format(new Date());
   const toolset = buildToolset(
-    db, store, opts.sessionId, config.ordersEnabled, hasProposal, config.catalogEnabled,
+    db, store, opts.sessionId, config.ordersEnabled, hasProposal, config.catalogEnabled, today,
   );
   return await generateReply(systemInstruction, contents, toolset);
 }

@@ -164,7 +164,7 @@ export async function listDocuments(): Promise<KnowledgeDoc[]> {
   const supabase = await createClient();
   const { data } = await supabase
     .from("knowledge_index")
-    .select("source_ref, embedding_stale, updated_at, source_path, source_mime")
+    .select("source_ref, embedding_stale, updated_at, source_path, source_mime, valid_from, valid_until")
     .eq("store_id", ctx.active.id)
     .eq("kind", "document_chunk");
 
@@ -172,16 +172,43 @@ export async function listDocuments(): Promise<KnowledgeDoc[]> {
   for (const row of data ?? []) {
     const title = row.source_ref ?? "(untitled)";
     const doc = byTitle.get(title) ??
-      { title, chunks: 0, indexed: true, updatedAt: null, sourcePath: null, sourceMime: null };
+      {
+        title, chunks: 0, indexed: true, updatedAt: null, sourcePath: null, sourceMime: null,
+        validFrom: null, validUntil: null,
+      };
     doc.chunks += 1;
     if (row.embedding_stale) doc.indexed = false;
     if (!doc.updatedAt || (row.updated_at && row.updated_at > doc.updatedAt)) {
       doc.updatedAt = row.updated_at;
     }
     if (row.source_path) { doc.sourcePath = row.source_path; doc.sourceMime = row.source_mime; }
+    doc.validFrom = row.valid_from ?? doc.validFrom;
+    doc.validUntil = row.valid_until ?? doc.validUntil;
     byTitle.set(title, doc);
   }
   return [...byTitle.values()].sort((a, b) => a.title.localeCompare(b.title));
+}
+
+/** Set (or clear) a document's effective window (owners only). */
+export async function setDocumentDates(
+  title: string,
+  validFrom: string | null,
+  validUntil: string | null,
+): Promise<SimpleResult> {
+  const supabase = await createClient();
+  const gate = await requireActiveOwner(supabase);
+  if (!gate.ok) return gate;
+
+  const res = await callBotAdmin({
+    action: "set_document_dates",
+    store_slug: gate.slug,
+    title,
+    valid_from: validFrom || null,
+    valid_until: validUntil || null,
+  });
+  if (!res.ok) return { ok: false, error: res.error };
+  revalidatePath("/knowledge");
+  return { ok: true };
 }
 
 /** Upload a file, extract its text (Gemini for PDF/images), and index it. */
@@ -211,6 +238,8 @@ export async function ingestFile(formData: FormData): Promise<RefreshResult> {
     title,
     storage_path: path,
     mime: file.type,
+    valid_from: cleanStr(String(formData.get("valid_from") ?? "")),
+    valid_until: cleanStr(String(formData.get("valid_until") ?? "")),
   });
   if (!res.ok) {
     await admin.storage.from("kb").remove([path]); // roll back the orphaned upload
@@ -238,6 +267,8 @@ export async function documentFileUrl(sourcePath: string): Promise<{ ok: true; u
 export async function ingestDocument(
   title: string,
   text: string,
+  validFrom: string | null = null,
+  validUntil: string | null = null,
 ): Promise<RefreshResult> {
   const t = cleanStr(title);
   const body = cleanStr(text);
@@ -253,6 +284,8 @@ export async function ingestDocument(
     store_slug: gate.slug,
     title: t,
     text: body,
+    valid_from: cleanStr(validFrom),
+    valid_until: cleanStr(validUntil),
   });
   if (!res.ok) return { ok: false, error: res.error };
   revalidatePath("/knowledge");
