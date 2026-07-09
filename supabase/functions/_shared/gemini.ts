@@ -16,7 +16,9 @@
 
 import type { Toolset } from "./tools.ts";
 
-const DEFAULT_MODEL = "gemini-2.5-flash";
+// `-latest` alias tracks the current flash so a model retirement (e.g. Google
+// pulling gemini-2.5-flash) can't 404 the whole bot. Override with GEMINI_MODEL.
+const DEFAULT_MODEL = "gemini-flash-latest";
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 const MAX_TOOL_ITERATIONS = 4;
 

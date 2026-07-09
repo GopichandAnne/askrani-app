@@ -93,7 +93,14 @@ Deno.serve(async (req) => {
         const { data: blob, error: dlErr } = await db.storage.from("kb").download(path);
         if (dlErr || !blob) return json({ error: `download failed: ${dlErr?.message ?? "no file"}` }, 500);
         const bytes = new Uint8Array(await blob.arrayBuffer());
-        const text = await extractFileText(bytes, mime, path);
+        let text = "";
+        try {
+          text = await extractFileText(bytes, mime, path);
+        } catch (e) {
+          const detail = e instanceof Error ? e.message : String(e);
+          console.error(`[bot-admin] extract failed for ${path}: ${detail}`);
+          return json({ error: `could not read the file: ${detail}` }, 422);
+        }
         if (!text.trim()) return json({ error: "no text could be extracted from the file" }, 422);
         const { chunks } = await ingestDocument(db, store.id, title, text, path, mime);
         const reindex = await reindexKnowledge(db, store.id, Number(body.max_rows ?? 500));

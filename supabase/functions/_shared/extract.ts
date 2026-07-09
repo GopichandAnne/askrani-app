@@ -63,35 +63,42 @@ export async function extractFileText(
 async function geminiExtract(bytes: Uint8Array, mime: string): Promise<string> {
   const key = Deno.env.get("GEMINI_API_KEY");
   if (!key) return "";
-  const model = Deno.env.get("GEMINI_MODEL") ?? "gemini-2.5-flash";
+  const model = Deno.env.get("GEMINI_MODEL") ?? "gemini-flash-latest";
   const prompt = mime.startsWith("image/")
     ? "Transcribe ALL text visible in this image exactly (menu items, prices, labels, signs, hours). If it is a photo of products or a place, ALSO add a short factual description of what it shows. Plain text only, no commentary."
     : "Transcribe ALL text from this document exactly, preserving structure — keep sections, lists, and table rows on their own lines. Plain text only, no commentary.";
 
-  try {
-    const res = await fetch(`${API_BASE}/models/${model}:generateContent?key=${key}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{
-          role: "user",
-          parts: [
-            { inlineData: { mimeType: mime, data: encodeBase64(bytes) } },
-            { text: prompt },
-          ],
-        }],
-        generationConfig: { temperature: 0, maxOutputTokens: 8192, thinkingConfig: { thinkingBudget: 0 } },
-      }),
-    });
-    if (!res.ok) {
-      console.error(`[extract] gemini ${res.status}: ${await res.text()}`);
-      return "";
-    }
-    // deno-lint-ignore no-explicit-any
-    const json: any = await res.json();
-    return (json?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("") ?? "").trim();
-  } catch (e) {
-    console.error("[extract] error:", e);
-    return "";
+  const res = await fetch(`${API_BASE}/models/${model}:generateContent?key=${key}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{
+        role: "user",
+        parts: [
+          { inlineData: { mimeType: mime, data: encodeBase64(bytes) } },
+          { text: prompt },
+        ],
+      }],
+      // NOTE: no thinkingConfig here. Disabling thinking (fine for short chat
+      // replies) makes 2.5-flash return an EMPTY transcription for image OCR —
+      // reading a dense flyer needs some reasoning budget. Let it think.
+      generationConfig: { temperature: 0, maxOutputTokens: 8192 },
+    }),
+  });
+  if (!res.ok) {
+    const detail = (await res.text()).slice(0, 400);
+    console.error(`[extract] gemini ${res.status}: ${detail}`);
+    throw new Error(`vision API error ${res.status}: ${detail}`);
   }
+  // deno-lint-ignore no-explicit-any
+  const json: any = await res.json();
+  const cand = json?.candidates?.[0];
+  const text = (cand?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("") ?? "").trim();
+  if (!text) {
+    const reason = cand?.finishReason ?? "no candidate";
+    const fb = json?.promptFeedback ? ` ${JSON.stringify(json.promptFeedback)}` : "";
+    console.error(`[extract] gemini empty (finishReason=${reason})${fb}`);
+    throw new Error(`vision returned no text (finishReason=${reason})${fb}`);
+  }
+  return text;
 }
