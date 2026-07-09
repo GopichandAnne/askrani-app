@@ -22,6 +22,7 @@ const SECTIONS: Section[] = [
   { key: "off_topic_handling", label: "Off-topic handling", hint: "How to gracefully redirect non-shopping questions." },
   { key: "promotions", label: "Promotions & offers", hint: "What to promote and when — combos, specials, seasonal offers. Rani weaves these in naturally and sparingly, and can show a matching product or flyer image from your Knowledge Base. Leave blank for none." },
   { key: "order_prompt", label: "Ordering & checkout", hint: "How to take pre-orders: building the cart, confirmation, pickup, weight vs quantity, notes.", ordersOnly: true },
+  { key: "order_item_details", label: "Order details to collect", hint: "Per-item details Rani should try to gather for each order — e.g. brand, size/pack, weight or count, variant. She asks lightly and never forces it; the store confirms anything missing.", ordersOnly: true },
 ];
 
 export function AgentView({

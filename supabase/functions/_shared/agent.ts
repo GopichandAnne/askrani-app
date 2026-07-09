@@ -36,6 +36,7 @@ export async function loadAgentConfig(
     storePrompt: m.get("store_prompt") ?? null,
     historyTurns: Number.isFinite(turns) && turns > 0 ? turns : DEFAULT_HISTORY_TURNS,
     orderPrompt: m.get("order_prompt") ?? null,
+    orderItemDetails: m.get("order_item_details") ?? null,
     promotions: m.get("promotions") ?? null,
     // Ordering is off unless explicitly enabled in Agent Setup.
     ordersEnabled: (m.get("orders_enabled") ?? "").toLowerCase() === "true",

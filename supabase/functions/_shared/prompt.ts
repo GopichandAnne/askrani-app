@@ -44,6 +44,10 @@ export interface AgentConfig {
   historyTurns: number;
   /** Owner's ordering/checkout instructions (only used when ordersEnabled). */
   orderPrompt: string | null;
+  /** Owner's list of per-item details worth collecting when taking an order
+   *  (brand, size, weight, variant, …). Store-specific; only used when
+   *  ordersEnabled. Null/empty = the universal detail rule still applies. */
+  orderItemDetails: string | null;
   /** Owner's promotion instructions — what to promote and when; woven in
    *  naturally and sparingly. Null/empty = no store-specific promotions. */
   promotions: string | null;
@@ -216,6 +220,19 @@ const REQUEST_ORDERING_RULES = [
   "store team will confirm the items and total shortly.",
 ].join(" ");
 
+// Shared across modes: as you build the order, collect as much useful detail per
+// item as the customer can easily give — but lightly, never as a gate.
+const ORDER_DETAIL_RULE = [
+  "As you capture each item, try to collect as much useful detail as the customer",
+  "can easily give — brand, size or pack, weight or count, variant or flavor, and",
+  "any preference (ripe ones, low-sugar, a specific model). Ask briefly and at most",
+  "once per item ('any particular brand or size, or should the store pick?'). If",
+  "they don't know or don't say, just capture what they gave and tell them the store",
+  "will confirm the rest — never force these details, never interrogate, and never",
+  "hold up the order over a missing one. More detail is a bonus, not a gate. Record",
+  "everything they tell you in the item's description and notes so the store sees it.",
+].join(" ");
+
 // Shared across modes: handling the customer's reply to a priced proposal.
 const PROPOSAL_RULES = [
   "If a message begins with [PENDING PROPOSAL: order X, total $Y ...], the store",
@@ -278,8 +295,16 @@ export function buildSystemInstruction(c: AgentConfig): string {
   // the shared proposal rules apply, and the owner's order_prompt sits on top.
   if (c.ordersEnabled) {
     out.push(`\n${c.catalogEnabled ? CATALOG_ORDERING_RULES : REQUEST_ORDERING_RULES}`);
+    out.push(`\n${ORDER_DETAIL_RULE}`);
     out.push(`\n${PROPOSAL_RULES}`);
     if (c.orderPrompt) out.push(`\n## Ordering\n${c.orderPrompt}`);
+    // Store-specific: which per-item details matter most here.
+    if (c.orderItemDetails && c.orderItemDetails.trim()) {
+      out.push(
+        `\n## Order details to collect\nFor this store, especially try to capture these ` +
+          `when they apply (still lightly, never forced): ${c.orderItemDetails.trim()}`,
+      );
+    }
   }
 
   return out.join("\n");

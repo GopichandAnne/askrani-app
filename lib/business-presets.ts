@@ -52,14 +52,20 @@ export const BUSINESS_PRESETS: BusinessPreset[] = [
     label: "Grocery / supermarket",
     ordersDefault: true,
     catalogDefault: false,
-    config: { suggestion_chips: "Where is the rice?\nDo you deliver?\nWhat are your hours?" },
+    config: {
+      suggestion_chips: "Where is the rice?\nDo you deliver?\nWhat are your hours?",
+      order_item_details: "brand, size or pack, and weight or count",
+    },
   },
   {
     id: "convenience",
     label: "Convenience store",
     ordersDefault: true,
     catalogDefault: false,
-    config: { suggestion_chips: "Do you have milk?\nWhat time do you close?\nDo you deliver?" },
+    config: {
+      suggestion_chips: "Do you have milk?\nWhat time do you close?\nDo you deliver?",
+      order_item_details: "brand, size or pack, and quantity",
+    },
   },
   {
     id: "liquor",
@@ -73,6 +79,7 @@ export const BUSINESS_PRESETS: BusinessPreset[] = [
         "occasion-based picks from the knowledge base. Always remind buyers they must be of legal " +
         "drinking age with valid ID.",
       suggestion_chips: "Wine for steak?\nAny good IPAs?\nGift ideas?",
+      order_item_details: "brand, bottle size, and type or vintage",
     },
   },
   {
@@ -86,6 +93,7 @@ export const BUSINESS_PRESETS: BusinessPreset[] = [
         " Help with projects: suggest the tools and parts needed for a job from the knowledge base, " +
         "and match specs like sizes and voltages.",
       suggestion_chips: "Fixing a leaky faucet\nWhere's the paint?\nDo you cut wood?",
+      order_item_details: "size or dimensions, material, and quantity",
     },
   },
   {
@@ -98,6 +106,7 @@ export const BUSINESS_PRESETS: BusinessPreset[] = [
         ENGAGE +
         " Recommend by pet type, age and size. For any health concern, remind the owner to consult a vet.",
       suggestion_chips: "Puppy food?\nCat litter aisle?\nWhat are your hours?",
+      order_item_details: "brand, pet size or life stage, and bag or pack size",
     },
   },
   {
@@ -110,6 +119,7 @@ export const BUSINESS_PRESETS: BusinessPreset[] = [
         ENGAGE +
         " Give reading recommendations by genre, author or similar titles, and help readers find the right shelf.",
       suggestion_chips: "Books like Atomic Habits?\nKids section?\nStory time?",
+      order_item_details: "title, author, and format (paperback or hardcover)",
     },
   },
   {
@@ -122,6 +132,7 @@ export const BUSINESS_PRESETS: BusinessPreset[] = [
         ENGAGE +
         " Give plant-care advice - light, watering and seasonal picks - from the knowledge base.",
       suggestion_chips: "Plants for shade?\nWatering succulents?\nWhat are your hours?",
+      order_item_details: "plant type, pot or plant size, and quantity",
     },
   },
   {
@@ -138,6 +149,7 @@ export const BUSINESS_PRESETS: BusinessPreset[] = [
         " Help guests explore the menu, flag vegetarian, vegan and allergen options from the knowledge " +
         "base, and suggest popular dishes.",
       suggestion_chips: "Today's specials?\nVegetarian options?\nCan I book a table?",
+      order_item_details: "portion or size, spice level, and any add-ons or substitutions",
     },
   },
   {
@@ -201,6 +213,7 @@ export const BUSINESS_PRESETS: BusinessPreset[] = [
         " Buyers order by the case or pallet: quote case prices and volume tiers from the knowledge base, " +
         "and help them reorder.",
       suggestion_chips: "Case price on 1L water?\nIs item #4021 in stock?\nDo you deliver?",
+      order_item_details: "brand, pack or case size, and quantity",
     },
   },
   {

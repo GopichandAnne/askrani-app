@@ -28,6 +28,7 @@ function cfg(over: Partial<AgentConfig> = {}): AgentConfig {
     storePrompt: "We carry South Asian groceries.",
     historyTurns: 10,
     orderPrompt: null,
+    orderItemDetails: null,
     promotions: null,
     ordersEnabled: false,
     timezone: "America/Chicago",
@@ -109,6 +110,26 @@ Deno.test("splitBubbles: blank line / --- splits; lists & plain text stay one", 
   assertEquals(splitBubbles("a\n\nb\n\nc\n\nd").length, 3);
   // A price list on single-newline lines is NOT split.
   assertEquals(splitBubbles("Basmati — $5\nSona — $4"), ["Basmati — $5\nSona — $4"]);
+});
+
+Deno.test("order detail rule appears only with ordering; store-specifics only when set", () => {
+  // Universal rule is present when ordering is on, absent when off.
+  assert(!buildSystemInstruction(cfg({ ordersEnabled: false })).includes("More detail is a bonus"));
+  const on = buildSystemInstruction(cfg({ ordersEnabled: true }));
+  assert(on.includes("More detail is a bonus"));
+  assert(!on.includes("## Order details to collect")); // no store-specifics set
+
+  // Store-specific list injects its own section (only when ordering is on).
+  const withDetails = buildSystemInstruction(
+    cfg({ ordersEnabled: true, orderItemDetails: "brand, size or pack, weight or count" }),
+  );
+  assert(withDetails.includes("## Order details to collect"));
+  assert(withDetails.includes("brand, size or pack, weight or count"));
+  // Ignored when ordering is off.
+  assert(
+    !buildSystemInstruction(cfg({ ordersEnabled: false, orderItemDetails: "brand" }))
+      .includes("## Order details to collect"),
+  );
 });
 
 Deno.test("system instruction omits empty sections (stays stable)", () => {
