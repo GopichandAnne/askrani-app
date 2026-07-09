@@ -26,6 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { StoreLinkPanel } from "@/components/store-link/store-link-panel";
+import { BUSINESS_PRESETS, presetFor } from "@/lib/business-presets";
 import { Building2, Plus, QrCode, UserPlus } from "lucide-react";
 
 export type StoreRow = {
@@ -38,21 +39,6 @@ export type StoreRow = {
   createdAt: string | null;
   owners: string[];
 };
-
-const BUSINESS_TYPES = [
-  "grocery",
-  "restaurant",
-  "hardware",
-  "liquor",
-  "pharmacy",
-  "pet",
-  "church",
-  "hospitality",
-  "bookstore",
-  "nursery",
-  "convenience",
-  "other",
-];
 
 export function StoresView({ initial }: { initial: StoreRow[] }) {
   const router = useRouter();
@@ -233,18 +219,32 @@ function OnboardDialog({ onDone }: { onDone: () => void }) {
           </div>
           <div className="space-y-2">
             <Label>Business type</Label>
-            <Select value={businessType} onValueChange={setBusinessType}>
+            <Select
+              value={businessType}
+              onValueChange={(v) => {
+                setBusinessType(v);
+                const p = presetFor(v);
+                if (p) {
+                  setOrdersEnabled(p.ordersDefault);
+                  setCatalogEnabled(p.catalogDefault);
+                }
+              }}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Select type…" />
               </SelectTrigger>
               <SelectContent>
-                {BUSINESS_TYPES.map((t) => (
-                  <SelectItem key={t} value={t} className="capitalize">
-                    {t}
+                {BUSINESS_PRESETS.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            <p className="text-muted-foreground text-xs">
+              Presets the assistant&apos;s behaviour for this type — you can fine-tune it later in
+              Agent Setup.
+            </p>
           </div>
           <div className="flex items-center justify-between rounded-lg border p-3">
             <div>

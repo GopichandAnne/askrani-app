@@ -3,6 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { getSessionContext } from "@/lib/auth/session";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { presetConfig } from "@/lib/business-presets";
+import type { Database } from "@/lib/database.types";
+
+type AgentKey = Database["public"]["Enums"]["agent_config_key"];
 
 export type ActionResult<T = unknown> = ({ ok: true } & T) | { ok: false; error: string };
 
@@ -57,12 +61,20 @@ export async function onboardStore(input: OnboardInput): Promise<ActionResult<{ 
     .single();
   if (error || !store) return { ok: false, error: error?.message ?? "Could not create the store." };
 
-  // Seed the two mode toggles so the store starts in a known state; the owner
-  // configures the rest from the Agent screen.
-  const { error: cfgErr } = await db.from("agent_config").insert([
+  // Seed the agent from the business-type preset so the store has a sensible,
+  // on-brand bot from day one (the owner fine-tunes it later in Agent Setup).
+  // The explicit ordering/catalogue toggles win over the preset's defaults.
+  const preset = presetConfig(input.businessType, displayName);
+  const rows = Object.entries(preset).map(([key, value]) => ({
+    store_id: store.id,
+    key: key as AgentKey,
+    value,
+  }));
+  rows.push(
     { store_id: store.id, key: "orders_enabled", value: input.ordersEnabled ? "true" : "false" },
     { store_id: store.id, key: "catalog_enabled", value: input.catalogEnabled ? "true" : "false" },
-  ]);
+  );
+  const { error: cfgErr } = await db.from("agent_config").insert(rows);
   if (cfgErr) console.error("[admin] seed config:", cfgErr.message);
 
   revalidatePath("/admin/stores");
