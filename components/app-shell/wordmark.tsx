@@ -1,24 +1,23 @@
 import { cn } from "@/lib/utils";
+import { RaniMark } from "@/components/app-shell/rani-mark";
 
-/** Playfair Display (italic 800) "Ask Rani" wordmark. Use with restraint. */
+/** Rani robot + "Ask Rani" (Playfair italic) — matches the marketing site. */
 export function Wordmark({
   className,
-  withDot = true,
+  withIcon = true,
 }: {
   className?: string;
-  withDot?: boolean;
+  withIcon?: boolean;
 }) {
   return (
     <span
       className={cn(
-        "font-display text-teal-deep dark:text-teal-light inline-flex items-baseline gap-1 text-xl italic",
+        "font-display text-teal-deep dark:text-teal-light inline-flex items-center gap-2 text-xl italic leading-none",
         className,
       )}
     >
+      {withIcon && <RaniMark animated={false} className="h-[1.15em] w-auto shrink-0" />}
       Ask Rani
-      {withDot && (
-        <span className="bg-gradient-primary inline-block size-1.5 translate-y-[-2px] rounded-full" />
-      )}
     </span>
   );
 }
