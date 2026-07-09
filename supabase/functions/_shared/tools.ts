@@ -406,11 +406,14 @@ async function executeEscalate(
 const SEND_IMAGE_DECL: FunctionDeclaration = {
   name: "send_image",
   description:
-    "Send the customer a picture the store has on file — its menu, a flyer, or a " +
-    "product photo — when they ask to see one ('show me the menu', 'do you have " +
-    "a picture of X?'). Pass a short query describing what they want to see. Only " +
-    "works if the store uploaded a matching image: if it returns sent:false, tell " +
-    "the customer you don't have that picture — never claim you sent one.",
+    "Send the customer a picture the store has on file — a product photo, its menu, " +
+    "or a promo flyer. Use it when they ask to see one ('show me the menu', 'do you " +
+    "have a picture of X?'), and you MAY also use it on your own initiative when it " +
+    "genuinely helps — to show a product you're recommending or a promotion you're " +
+    "mentioning — occasionally, at most one per reply, never as spam. Pass a short " +
+    "query describing what to show. Only works if the store uploaded a matching " +
+    "image: if it returns sent:false, don't mention a picture and never claim you " +
+    "sent one.",
   parameters: {
     type: "object",
     properties: {

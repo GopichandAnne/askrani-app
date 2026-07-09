@@ -1046,6 +1046,7 @@ export type Database = {
         | "timezone"
         | "store_hours"
         | "catalog_enabled"
+        | "promotions"
       device_type: "whatsapp" | "web"
       fulfillment_type: "pickup" | "delivery"
       message_direction: "inbound" | "outbound" | "system"
@@ -1205,6 +1206,7 @@ export const Constants = {
         "timezone",
         "store_hours",
         "catalog_enabled",
+        "promotions",
       ],
       device_type: ["whatsapp", "web"],
       fulfillment_type: ["pickup", "delivery"],

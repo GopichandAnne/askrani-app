@@ -20,6 +20,7 @@ const SECTIONS: Section[] = [
   { key: "language_handling", label: "Language handling", hint: "Which languages to mirror, regional product-name mappings, how to handle mixed languages." },
   { key: "engage_info", label: "Behavior & engagement", hint: "How Rani helps — navigation, escalation, feedback, interaction style, store layout." },
   { key: "off_topic_handling", label: "Off-topic handling", hint: "How to gracefully redirect non-shopping questions." },
+  { key: "promotions", label: "Promotions & offers", hint: "What to promote and when — combos, specials, seasonal offers. Rani weaves these in naturally and sparingly, and can show a matching product or flyer image from your Knowledge Base. Leave blank for none." },
   { key: "order_prompt", label: "Ordering & checkout", hint: "How to take pre-orders: building the cart, confirmation, pickup, weight vs quantity, notes.", ordersOnly: true },
 ];
 

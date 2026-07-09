@@ -44,6 +44,9 @@ export interface AgentConfig {
   historyTurns: number;
   /** Owner's ordering/checkout instructions (only used when ordersEnabled). */
   orderPrompt: string | null;
+  /** Owner's promotion instructions — what to promote and when; woven in
+   *  naturally and sparingly. Null/empty = no store-specific promotions. */
+  promotions: string | null;
   /** When false the bot is info/nav/Q&A only — no cart/order tools or rules. */
   ordersEnabled: boolean;
   /** IANA timezone for the store's local clock (defaults applied in loader). */
@@ -99,9 +102,22 @@ const BASE_RULES = [
   "question about it — and search the catalog or knowledge base as needed. Never",
   "pretend to see a photo that wasn't sent.",
   "When the customer asks to SEE something the store may have a picture of — its",
-  "menu, a flyer, a product photo — call send_image with a short query. If it",
-  "returns sent:false, tell them you don't have that picture; never claim you",
-  "sent an image when you did not.",
+  "menu, a flyer, a product photo — call send_image with a short query. You MAY",
+  "also send a relevant picture on your own initiative when it genuinely helps —",
+  "to show a product you're recommending, or a flyer for a promotion you're",
+  "mentioning — but do this occasionally and only when it adds value: at most one",
+  "image per reply, never as spam. If send_image returns sent:false, don't mention",
+  "a picture; never claim you sent an image when you did not.",
+  // Conversational flow: talk like a person, not a FAQ endpoint.
+  "Talk like a helpful person, not a form. Vary your wording and don't dead-end:",
+  "after answering, when it feels natural, add ONE short, relevant follow-up that",
+  "moves things forward — a clarifying question, a suggestion, or an offer to help",
+  "with the next step. But don't tack a question onto every message and never",
+  "badger. If the request is ambiguous or the customer seems mid-decision, ask a",
+  "brief clarifying question instead of guessing. If something earlier was left",
+  "unfinished — an order half-built, a question half-answered — and they drift,",
+  "gently offer once to pick it back up; if they're not interested, let it go. A",
+  "quick thanks or goodbye just needs a warm, brief close — no upsell, no question.",
 ].join(" ");
 
 // CATALOGUE mode only: the store has a live priced product catalogue.
@@ -208,6 +224,22 @@ export function buildSystemInstruction(c: AgentConfig): string {
   if (c.engageInfo) out.push(`\n## How to engage\n${c.engageInfo}`);
   if (c.languageHandling) out.push(`\n## Language\n${c.languageHandling}`);
   if (c.offTopicHandling) out.push(`\n## Off-topic requests\n${c.offTopicHandling}`);
+
+  // Promotions: owner-authored, woven in naturally. Guardrails travel WITH the
+  // section so an owner can't accidentally turn Rani into a billboard, and so
+  // request-mode price safety still holds.
+  if (c.promotions && c.promotions.trim()) {
+    out.push(
+      `\n## Promotions\n${c.promotions.trim()}\n\n` +
+        "Weave these in naturally and sparingly — only when they genuinely fit " +
+        "what the customer is asking about or buying, and at most once in a " +
+        "conversation unless they ask. Never let a promotion delay or replace " +
+        "answering their actual question, and never be pushy. Follow the store's " +
+        "pricing rules: if you can't quote prices, describe the offer without exact " +
+        "totals and let the team confirm. If a promotion has a matching picture on " +
+        "file, you may show it with send_image.",
+    );
+  }
 
   // Ordering is optional per store; when on, the mode picks the checkout rules,
   // the shared proposal rules apply, and the owner's order_prompt sits on top.

@@ -27,6 +27,7 @@ function cfg(over: Partial<AgentConfig> = {}): AgentConfig {
     storePrompt: "We carry South Asian groceries.",
     historyTurns: 10,
     orderPrompt: null,
+    promotions: null,
     ordersEnabled: false,
     timezone: "America/Chicago",
     storeHours: null,
@@ -69,6 +70,23 @@ Deno.test("ordering rules + order prompt appear ONLY when ordersEnabled", () => 
   assert(on.includes("place_order"));
   assert(on.includes("## Ordering"));
   assert(on.includes("Pickup only."));
+});
+
+Deno.test("promotions section appears only when set, with guardrails", () => {
+  const off = buildSystemInstruction(cfg({ promotions: null }));
+  assert(!off.includes("## Promotions"));
+
+  const on = buildSystemInstruction(cfg({ promotions: "Weekend sweets combo: buy 2 boxes." }));
+  assert(on.includes("## Promotions"));
+  assert(on.includes("Weekend sweets combo: buy 2 boxes."));
+  // Guardrail wording travels with the section.
+  assert(on.includes("sparingly"));
+});
+
+Deno.test("conversational-flow + proactive-image rules are always present", () => {
+  const s = buildSystemInstruction(cfg());
+  assert(s.includes("Talk like a helpful person, not a form"));
+  assert(s.includes("on your own initiative")); // proactive send_image
 });
 
 Deno.test("system instruction omits empty sections (stays stable)", () => {
