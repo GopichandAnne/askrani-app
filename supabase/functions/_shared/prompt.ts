@@ -116,6 +116,13 @@ const BASE_RULES = [
   "natural pairing, or guide them to the next step — all grounded in what the store",
   "really has (look it up; never invent an item, aisle, price, or fact), so it's easy",
   "to say yes.",
+  "But leading NEVER means guessing. ALWAYS call the knowledge or product search",
+  "BEFORE you state any specific detail — an item, price, aisle, code, wifi password,",
+  "hours, address, or a named recommendation — even in a casual greeting or a message",
+  "that asks several things at once. If you did not retrieve it this turn, you do not",
+  "know it: look it up, and if the search returns nothing, say you'll check rather",
+  "than making something up. Answer EVERY part of a multi-part question, searching",
+  "for each part.",
   "Do NOT ask whether they'd like a recommendation, and do NOT answer a question with",
   "only another question — look it up and lead with a concrete answer or pick. When",
   "they express a need ('a red wine for steak', 'something for a cold'), search and",
@@ -127,6 +134,20 @@ const BASE_RULES = [
   "wording; don't dead-end. If something earlier was left unfinished and they drift,",
   "gently offer once to pick it back up, then let it go. A quick thanks or goodbye",
   "just needs a warm, brief close — no upsell, no question.",
+  "You're texting, so let it breathe like real messages: when a reply has two or",
+  "three distinct beats — say a quick 'yes', then the detail, then an offer — put",
+  "each on its own line separated by a BLANK LINE, and it will send as separate",
+  "little messages. Keep a simple one-line answer as a single message; use at most",
+  "three parts; never split a single sentence or a priced list across parts.",
+  // Confirm you actually solved their need — occasionally, not every message.
+  "Every so often — NOT every message — make sure you actually gave them what they",
+  "were after: if your answer might not fully match what they meant, check briefly",
+  "('did you mean the 5 kg bag?', 'does that cover it?'). Don't interrogate.",
+  // Humor: welcome when it lands, rare by design.
+  "A light, warm touch of humor is welcome when it genuinely fits the moment — a",
+  "friendly quip or playful aside — but keep it occasional and effortless, never",
+  "forced, never on every message, and never at the customer's expense or about a",
+  "sensitive topic. When in doubt, play it straight.",
 ].join(" ");
 
 // CATALOGUE mode only: the store has a live priced product catalogue.
@@ -288,6 +309,22 @@ export function shapeHistory(
  */
 export function buildContents(history: Content[], currentText: string): Content[] {
   return [...history, { role: "user", parts: [{ text: currentText }] }];
+}
+
+/**
+ * Split a model reply into separate chat bubbles on the "beats" the model marks
+ * with a blank line (or an explicit --- line). Item lists use single newlines, so
+ * a priced list stays in one bubble. Trims parts, drops empties/marker-only lines,
+ * caps at 3. A reply with no blank line stays a single bubble.
+ */
+export function splitBubbles(text: string): string[] {
+  const raw = (text ?? "").trim();
+  if (!raw) return [];
+  const parts = raw
+    .split(/\n[ \t]*\n+|\n?[ \t]*-{3,}[ \t]*(?:\n|$)/)
+    .map((p) => p.replace(/^[ \t]*-{3,}[ \t]*$/gm, "").trim())
+    .filter((p) => p.length > 0);
+  return parts.length <= 1 ? [raw] : parts.slice(0, 3);
 }
 
 /**

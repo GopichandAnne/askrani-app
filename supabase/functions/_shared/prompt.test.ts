@@ -14,6 +14,7 @@ import {
   detectLanguage,
   shapeHistory,
   shouldBotRespond,
+  splitBubbles,
 } from "./prompt.ts";
 
 function cfg(over: Partial<AgentConfig> = {}): AgentConfig {
@@ -88,6 +89,26 @@ Deno.test("conversational-flow + proactive-image rules are always present", () =
   const s = buildSystemInstruction(cfg());
   assert(s.includes("Talk like a helpful person, not a form"));
   assert(s.includes("on your own initiative")); // proactive send_image
+  assert(s.includes("BLANK LINE")); // multi-bubble
+});
+
+Deno.test("splitBubbles: blank line / --- splits; lists & plain text stay one", () => {
+  // Blank line = the natural bubble break the model produces.
+  assertEquals(splitBubbles("Yes we do! 😊\n\nIt's in Aisle 5.\n\nWant me to add it?"), [
+    "Yes we do! 😊",
+    "It's in Aisle 5.",
+    "Want me to add it?",
+  ]);
+  // Explicit --- marker also splits.
+  assertEquals(splitBubbles("Hi there!\n---\nWe close at 9 PM."), ["Hi there!", "We close at 9 PM."]);
+  // No blank line -> single bubble, untouched.
+  assertEquals(splitBubbles("Rice is in Aisle 2. Any specific type?"), [
+    "Rice is in Aisle 2. Any specific type?",
+  ]);
+  // Caps at 3 bubbles.
+  assertEquals(splitBubbles("a\n\nb\n\nc\n\nd").length, 3);
+  // A price list on single-newline lines is NOT split.
+  assertEquals(splitBubbles("Basmati — $5\nSona — $4"), ["Basmati — $5\nSona — $4"]);
 });
 
 Deno.test("system instruction omits empty sections (stays stable)", () => {

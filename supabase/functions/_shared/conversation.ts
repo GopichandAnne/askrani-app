@@ -16,6 +16,7 @@ import {
   buildSystemInstruction,
   detectLanguage,
   shouldBotRespond,
+  splitBubbles,
 } from "./prompt.ts";
 import { generateReply, type GeminiReply } from "./gemini.ts";
 import { buildToolset } from "./tools.ts";
@@ -197,28 +198,35 @@ async function sendAndPersist(
   ctx: ConversationContext,
   reply: string,
 ): Promise<void> {
-  const now = new Date().toISOString();
-
   const token = await getStoreAccessToken(db, store.id);
-  if (token) {
-    await sendText(token, ctx.phoneNumberId, ctx.customerPhone, reply);
-  } else {
+  if (!token) {
     console.warn(`[conv] no access token for ${store.slug}; reply logged but not sent`);
   }
 
-  // Append-only outbound record (no wamid: send is best-effort and async).
-  const { error } = await db.from("thread_messages").insert({
-    message_id: `msg_out_${crypto.randomUUID()}`,
-    thread_id: ctx.threadId,
-    store_slug: store.slug,
-    customer_phone: ctx.customerPhone,
-    direction: "outbound",
-    sender: "agent",
-    text: reply,
-    kind: "message",
-    created_at: now,
-  });
-  if (error) console.error(`[conv] persist outbound: ${error.message}`);
+  // A reply may be a few short messages (the model marks breaks with ---). Send
+  // and persist each as its own bubble, in order, with a brief human pause.
+  const bubbles = splitBubbles(reply);
+  for (let i = 0; i < bubbles.length; i++) {
+    const part = bubbles[i];
+    if (i > 0) await new Promise((r) => setTimeout(r, 700));
+    if (token) await sendText(token, ctx.phoneNumberId, ctx.customerPhone, part);
+    // Append-only outbound record (no wamid: send is best-effort and async).
+    const { error } = await db.from("thread_messages").insert({
+      message_id: `msg_out_${crypto.randomUUID()}`,
+      thread_id: ctx.threadId,
+      store_slug: store.slug,
+      customer_phone: ctx.customerPhone,
+      direction: "outbound",
+      sender: "agent",
+      text: part,
+      kind: "message",
+      created_at: new Date().toISOString(),
+    });
+    if (error) console.error(`[conv] persist outbound: ${error.message}`);
+  }
 
-  await db.from("threads").update({ last_message_at: now }).eq("thread_id", ctx.threadId);
+  await db.from("threads").update({ last_message_at: new Date().toISOString() }).eq(
+    "thread_id",
+    ctx.threadId,
+  );
 }

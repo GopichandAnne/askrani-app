@@ -12,6 +12,7 @@ import { serviceClient } from "../_shared/supabase.ts";
 import { getStoreBySlug } from "../_shared/config.ts";
 import { generateTurnReply } from "../_shared/conversation.ts";
 import { classifyTurn } from "../_shared/analytics.ts";
+import { splitBubbles } from "../_shared/prompt.ts";
 import {
   cancelFollowup,
   getFollowupSettings,
@@ -143,20 +144,30 @@ Deno.serve(async (req) => {
   const finalReply = reply || "Sorry, I had a brief hiccup — could you send that again? 🙏";
 
   // ── Persist outbound + conversation. ──
-  const outNow = new Date().toISOString();
-  const outMessageId = `msg_web_out_${crypto.randomUUID()}`;
-  await db.from("thread_messages").insert({
-    message_id: outMessageId,
-    thread_id: threadId,
-    store_slug: store.slug,
-    customer_phone: sessionId,
-    direction: "outbound",
-    sender: "agent",
-    text: finalReply,
-    kind: "message",
-    created_at: outNow,
-  });
-  await db.from("threads").update({ last_message_at: outNow }).eq("thread_id", threadId);
+  // The reply may be a few short messages (model marks breaks with ---). Persist
+  // each as its own bubble; the client renders them one at a time, and Realtime
+  // echoes dedupe by message_id.
+  const bubbles = splitBubbles(finalReply);
+  const replies: { text: string; message_id: string }[] = [];
+  for (const part of bubbles) {
+    const mid = `msg_web_out_${crypto.randomUUID()}`;
+    replies.push({ text: part, message_id: mid });
+    await db.from("thread_messages").insert({
+      message_id: mid,
+      thread_id: threadId,
+      store_slug: store.slug,
+      customer_phone: sessionId,
+      direction: "outbound",
+      sender: "agent",
+      text: part,
+      kind: "message",
+      created_at: new Date().toISOString(),
+    });
+  }
+  await db.from("threads").update({ last_message_at: new Date().toISOString() }).eq(
+    "thread_id",
+    threadId,
+  );
 
   // Schedule a single silence check-back unless the customer is clearly wrapping up.
   try {
@@ -201,7 +212,14 @@ Deno.serve(async (req) => {
     .catch((e) => console.error("[web-chat] analytics:", e));
   if (typeof EdgeRuntime !== "undefined" && EdgeRuntime?.waitUntil) EdgeRuntime.waitUntil(enrich);
 
-  return json({ reply: finalReply, message_id: outMessageId, toolsUsed });
+  return json({
+    // Multi-bubble: the client renders these in order. `reply`/`message_id` kept
+    // for backward compatibility (first bubble).
+    replies,
+    reply: replies[0]?.text ?? finalReply,
+    message_id: replies[0]?.message_id,
+    toolsUsed,
+  });
 });
 
 function json(obj: unknown, status = 200): Response {
