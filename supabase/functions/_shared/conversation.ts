@@ -25,6 +25,7 @@ import { buildNowContext } from "./clock.ts";
 import { classifyTurn } from "./analytics.ts";
 import { getStoreAccessToken } from "./config.ts";
 import { sendText } from "./wa.ts";
+import { loadStoreIntegrations } from "./integrations.ts";
 import {
   cancelFollowup,
   getFollowupSettings,
@@ -75,8 +76,10 @@ export async function generateTurnReply(
   // Store-local date (YYYY-MM-DD) so knowledge retrieval can hide entries that
   // are outside their effective window (expired promos, not-yet-active notices).
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: config.timezone }).format(new Date());
+  // Per-store custom connectors (empty for stores with none → no behavior change).
+  const integrations = await loadStoreIntegrations(db, store.id);
   const toolset = buildToolset(
-    db, store, opts.sessionId, config.ordersEnabled, hasProposal, config.catalogEnabled, today,
+    db, store, opts.sessionId, config.ordersEnabled, hasProposal, config.catalogEnabled, today, integrations,
   );
   return await generateReply(systemInstruction, contents, toolset);
 }

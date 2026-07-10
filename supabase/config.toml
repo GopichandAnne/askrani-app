@@ -62,3 +62,9 @@ verify_jwt = false
 # Called by pg_cron (no user JWT); idempotent — only processes already-due rows.
 [functions.followup]
 verify_jwt = false
+
+# Demo/example connector for Phase 6 integrations. Reached by the bot's HTTP
+# connector call (no Supabase JWT) — it authenticates via the X-Rani-Signature
+# HMAC, exactly like a real external connector would.
+[functions.mock-pos]
+verify_jwt = false

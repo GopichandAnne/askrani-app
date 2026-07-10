@@ -27,6 +27,11 @@ import {
 import { notifyResponders } from "./responders.ts";
 import { getStoreAccessToken } from "./config.ts";
 import { sendImage } from "./wa.ts";
+import {
+  executeIntegration,
+  integrationDeclaration,
+  type StoreIntegration,
+} from "./integrations.ts";
 
 // ── Gemini functionDeclaration shapes ───────────────────────────────────────
 export interface FunctionDeclaration {
@@ -515,6 +520,7 @@ export function buildToolset(
   hasProposal = false,
   catalogEnabled = false,
   today: string | null = null,
+  integrations: StoreIntegration[] = [],
 ): Toolset {
   const executors: Record<string, ToolExecutor> = {
     search_products: (args) => executeSearchProducts(db, store, args),
@@ -577,6 +583,13 @@ export function buildToolset(
       PLACE_ORDER_DECL,
     );
     if (hasProposal) declarations.push(CONFIRM_PROPOSAL_DECL, CANCEL_PROPOSAL_DECL);
+  }
+  // Per-store custom connectors (Phase 6). Additive: a core tool is never
+  // shadowed, and stores with no integrations reach none of this.
+  for (const integ of integrations) {
+    if (executors[integ.name]) continue; // never override a built-in tool
+    executors[integ.name] = (args) => executeIntegration(integ, store, sessionId, args);
+    declarations.push(integrationDeclaration(integ) as FunctionDeclaration);
   }
   return {
     declarations,

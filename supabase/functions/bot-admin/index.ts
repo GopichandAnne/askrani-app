@@ -87,6 +87,38 @@ Deno.serve(async (req) => {
         const reindex = await reindexKnowledge(db, store.id, Number(body.max_rows ?? 200));
         return json({ store: store.slug, title, chunks, ...reindex });
       }
+      case "set_integration": {
+        // Register/update a per-store connector (a tool the bot can call).
+        const name = String(body.name ?? "").trim();
+        const endpoint = String(body.endpoint_url ?? "").trim();
+        if (!name || !endpoint) return json({ error: "name and endpoint_url required" }, 400);
+        const { error } = await db.from("store_integrations").upsert({
+          store_id: store.id,
+          name,
+          description: String(body.description ?? ""),
+          params_schema: body.params_schema ?? { type: "object", properties: {}, required: [] },
+          kind: String(body.kind ?? "http"),
+          endpoint_url: endpoint,
+          auth_secret: body.auth_secret ? String(body.auth_secret) : null,
+          side_effect: !!body.side_effect,
+          enabled: body.enabled === undefined ? true : !!body.enabled,
+          timeout_ms: Number(body.timeout_ms ?? 4000),
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "store_id,name" });
+        if (error) return json({ error: error.message }, 500);
+        return json({ store: store.slug, name, ok: true });
+      }
+      case "delete_integration": {
+        const name = String(body.name ?? "").trim();
+        if (!name) return json({ error: "name required" }, 400);
+        const { error } = await db
+          .from("store_integrations")
+          .delete()
+          .eq("store_id", store.id)
+          .eq("name", name);
+        if (error) return json({ error: error.message }, 500);
+        return json({ store: store.slug, name, deleted: true });
+      }
       case "set_document_dates": {
         const title = String(body.title ?? "").trim();
         if (!title) return json({ error: "title required" }, 400);
