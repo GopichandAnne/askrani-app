@@ -88,6 +88,11 @@ export function KnowledgeView({
     );
   }, [entries, query]);
 
+  // Answers auto-captured from answered escalations, awaiting the owner's review.
+  const pendingFromChat = entries.filter(
+    (e) => !e.active && e.category === "From a conversation",
+  ).length;
+
   function upsert(qa: SavedQA) {
     setEntries((prev) => {
       const i = prev.findIndex((e) => e.id === qa.id);
@@ -272,6 +277,20 @@ export function KnowledgeView({
       </section>
 
       <h2 className="text-muted-foreground pt-1 text-sm font-medium">Saved Q&amp;A</h2>
+
+      {isOwner && pendingFromChat > 0 && (
+        <div className="border-teal/40 bg-teal/5 rounded-lg border p-3">
+          <p className="text-teal-deep text-sm font-medium">
+            {pendingFromChat} answer{pendingFromChat === 1 ? "" : "s"} captured from conversations
+          </p>
+          <p className="text-muted-foreground mt-0.5 text-xs">
+            When your team answers an escalation, Rani saves it here as an inactive draft
+            (tagged “From a conversation”). Review the wording, turn it on, then Sync — and Rani
+            can answer that question itself next time instead of escalating.
+          </p>
+        </div>
+      )}
+
       <div className="relative max-w-sm">
         <Search className="text-muted-foreground pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2" />
         <Input

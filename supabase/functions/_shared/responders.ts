@@ -127,6 +127,36 @@ export async function relayStaffAnswer(
     event_payload_json: { ticket_id: t.ticket_id, by },
   });
 
+  // Learn from this answer: capture it as a SUGGESTED Q&A (inactive) that the
+  // owner can review and turn on, so Rani can handle the same question itself
+  // next time instead of escalating again. Inactive by design — a staff member's
+  // quick reply may be one-off or contain a price the owner wouldn't want the bot
+  // to quote, so it stays out of the KB until an owner approves it. Best-effort;
+  // never blocks the customer relay. Deduped on the exact (English) question.
+  try {
+    const q = (t.question ?? "").trim();
+    if (q) {
+      const { data: dupe } = await db
+        .from("saved_qa")
+        .select("id")
+        .eq("store_id", store.id)
+        .ilike("question", q)
+        .limit(1);
+      if (!dupe || dupe.length === 0) {
+        await db.from("saved_qa").insert({
+          store_id: store.id,
+          question: q,
+          answer: answerText,
+          source_session: t.customer_phone,
+          active: false,
+          category: "From a conversation",
+        });
+      }
+    }
+  } catch (e) {
+    console.error(`[responders] capture Q&A: ${e instanceof Error ? e.message : e}`);
+  }
+
   // Tell the other responders it's handled.
   const { data: others } = await db
     .from("store_responders")
