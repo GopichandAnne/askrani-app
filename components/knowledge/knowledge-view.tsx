@@ -281,12 +281,12 @@ export function KnowledgeView({
       {isOwner && pendingFromChat > 0 && (
         <div className="border-teal/40 bg-teal/5 rounded-lg border p-3">
           <p className="text-teal-deep text-sm font-medium">
-            {pendingFromChat} answer{pendingFromChat === 1 ? "" : "s"} captured from conversations
+            {pendingFromChat} learned answer{pendingFromChat === 1 ? "" : "s"} to review
           </p>
           <p className="text-muted-foreground mt-0.5 text-xs">
-            When your team answers an escalation, Rani saves it here as an inactive draft
-            (tagged “From a conversation”). Review the wording, turn it on, then Sync — and Rani
-            can answer that question itself next time instead of escalating.
+            When your team answers an escalation, Rani auto-publishes the answers it’s confident
+            are safe and reusable (tagged “Learned automatically”). These were less certain —
+            review the wording, turn them on, then Sync. Delete any you don’t want Rani reusing.
           </p>
         </div>
       )}
