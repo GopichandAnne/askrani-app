@@ -14,6 +14,7 @@ export type ConversationMessage = Pick<
   | "sender"
   | "text"
   | "kind"
+  | "media_url"
   | "event_type"
   | "related_order_id"
 >;

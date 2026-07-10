@@ -7,7 +7,7 @@ import { sendWhatsAppText } from "@/lib/wa/send";
 import type { ConversationMessage, RoutingState } from "@/lib/conversations/types";
 
 const MSG_COLUMNS =
-  "message_id, created_at, direction, sender, text, kind, event_type, related_order_id";
+  "message_id, created_at, direction, sender, text, kind, media_url, event_type, related_order_id";
 
 export type SendResult =
   | { ok: true; message: ConversationMessage }

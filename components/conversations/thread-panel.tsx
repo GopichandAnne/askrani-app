@@ -36,7 +36,7 @@ export function ThreadPanel({
     const { data } = await supabase
       .from("thread_messages")
       .select(
-        "message_id, created_at, direction, sender, text, kind, event_type, related_order_id",
+        "message_id, created_at, direction, sender, text, kind, media_url, event_type, related_order_id",
       )
       .eq("thread_id", id)
       .order("created_at", { ascending: true });

@@ -477,7 +477,9 @@ async function executeSendImage(
     }
   }
 
-  const { data: signed } = await db.storage.from("kb").createSignedUrl(best.source_path, 3600);
+  // 7-day signed URL: long enough that the image still loads when staff review
+  // the conversation later in the panel (not just in the live web chat).
+  const { data: signed } = await db.storage.from("kb").createSignedUrl(best.source_path, 60 * 60 * 24 * 7);
   if (!signed?.signedUrl) return { sent: false, note: "could not prepare the image" };
 
   // Web session: deliver the image into the chat via a thread message (Realtime

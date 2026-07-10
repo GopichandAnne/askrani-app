@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import type { ConversationMessage } from "@/lib/conversations/types";
 import { eventLabel } from "@/lib/conversations/events";
 import { formatDateTime } from "@/lib/format";
@@ -14,6 +17,8 @@ export function MessageList({
 }: {
   messages: ConversationMessage[] | null;
 }) {
+  const [preview, setPreview] = useState<string | null>(null);
+
   if (messages == null) {
     return (
       <div className="space-y-3 p-4">
@@ -32,7 +37,8 @@ export function MessageList({
   }
 
   return (
-    <div className="flex flex-col gap-3 p-4">
+    <>
+      <div className="flex flex-col gap-3 p-4">
       {messages.map((m) => {
         if (m.kind === "event") {
           return (
@@ -78,6 +84,15 @@ export function MessageList({
                   : "bg-teal-mist text-teal-deep dark:bg-secondary dark:text-secondary-foreground rounded-tr-sm",
               )}
             >
+              {m.media_url && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={m.media_url}
+                  alt={m.text ?? "image"}
+                  onClick={() => setPreview(m.media_url!)}
+                  className="mb-1 max-h-56 cursor-zoom-in rounded-lg"
+                />
+              )}
               {m.text && <p className="whitespace-pre-wrap">{m.text}</p>}
               <p
                 className={cn(
@@ -92,6 +107,24 @@ export function MessageList({
           </div>
         );
       })}
-    </div>
+      </div>
+
+      {preview && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setPreview(null)}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={preview}
+            alt=""
+            onClick={(e) => e.stopPropagation()}
+            className="max-h-[90vh] max-w-[90vw] rounded-lg shadow-2xl"
+          />
+        </div>
+      )}
+    </>
   );
 }
