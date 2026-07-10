@@ -2,6 +2,7 @@
 
 import { getSessionContext } from "@/lib/auth/session";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { callBotAdmin } from "@/lib/knowledge/bot-admin";
 
 export type LinkResult =
   | {
@@ -13,6 +14,7 @@ export type LinkResult =
       waRedirect: boolean;
       sessionMinutes: number;
       logoUrl: string | null;
+      chips: string;
     }
   | { ok: false; error: string };
 
@@ -38,7 +40,7 @@ export async function getStoreLink(storeId: string): Promise<LinkResult> {
   await requireStoreAccess(storeId);
   const db = createAdminClient();
 
-  const [{ data: existing }, { data: store }] = await Promise.all([
+  const [{ data: existing }, { data: store }, { data: chipsRow }] = await Promise.all([
     db
       .from("store_tokens")
       .select("token, active")
@@ -50,12 +52,19 @@ export async function getStoreLink(storeId: string): Promise<LinkResult> {
       .select("web_chat_paused, whatsapp_display_number, whatsapp_redirect_enabled, session_minutes, logo_url")
       .eq("id", storeId)
       .single(),
+    db
+      .from("agent_config")
+      .select("value")
+      .eq("store_id", storeId)
+      .eq("key", "suggestion_chips")
+      .maybeSingle(),
   ]);
   const paused = !!store?.web_chat_paused;
   const waNumber = store?.whatsapp_display_number ?? null;
   const waRedirect = !!store?.whatsapp_redirect_enabled;
   const sessionMinutes = store?.session_minutes ?? 30;
   const logoUrl = store?.logo_url ?? null;
+  const chips = chipsRow?.value ?? "";
 
   if (existing && existing.length > 0) {
     return {
@@ -67,6 +76,7 @@ export async function getStoreLink(storeId: string): Promise<LinkResult> {
       waRedirect,
       sessionMinutes,
       logoUrl,
+      chips,
     };
   }
 
@@ -75,7 +85,40 @@ export async function getStoreLink(storeId: string): Promise<LinkResult> {
     .from("store_tokens")
     .insert({ store_id: storeId, token, label: "primary QR", active: true });
   if (error) return { ok: false, error: error.message };
-  return { ok: true, token, active: true, paused, waNumber, waRedirect, sessionMinutes, logoUrl };
+  return { ok: true, token, active: true, paused, waNumber, waRedirect, sessionMinutes, logoUrl, chips };
+}
+
+/** AI-compose starter question tiles from the store's own prompts + KB. */
+export async function generateChips(
+  storeId: string,
+): Promise<{ ok: true; chips: string[] } | { ok: false; error: string }> {
+  await requireStoreAccess(storeId);
+  const db = createAdminClient();
+  const { data: s } = await db.from("stores").select("slug").eq("id", storeId).single();
+  if (!s) return { ok: false, error: "Store not found." };
+  const res = await callBotAdmin({ action: "suggest_chips", store_slug: s.slug });
+  if (!res.ok) return { ok: false, error: res.error };
+  return { ok: true, chips: (res.data.chips as string[]) ?? [] };
+}
+
+/** Save the store's starter questions (newline-separated; first 3 show in chat). */
+export async function saveChips(
+  storeId: string,
+  chips: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  await requireStoreAccess(storeId);
+  const db = createAdminClient();
+  const value = chips
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .slice(0, 6)
+    .join("\n");
+  const { error } = await db
+    .from("agent_config")
+    .upsert({ store_id: storeId, key: "suggestion_chips", value }, { onConflict: "store_id,key" });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
 }
 
 /** Upload (or replace) the store's chat logo — owners/admin only. */

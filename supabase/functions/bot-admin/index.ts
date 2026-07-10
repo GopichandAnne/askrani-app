@@ -153,6 +153,69 @@ Deno.serve(async (req) => {
         if (error) return json({ error: error.message }, 500);
         return json({ store: store.slug, name, deleted: true });
       }
+      case "suggest_chips": {
+        // Compose "starter question" tiles from the store's own context.
+        const key = Deno.env.get("GEMINI_API_KEY");
+        if (!key) return json({ error: "AI not configured" }, 500);
+        const model = Deno.env.get("GEMINI_MODEL") ?? "gemini-flash-latest";
+        const { data: cfg } = await db
+          .from("agent_config")
+          .select("key, value")
+          .eq("store_id", store.id)
+          .in("key", ["store_prompt", "engage_info", "personality", "promotions"]);
+        const m = new Map((cfg ?? []).map((r: { key: string; value: string | null }) => [r.key, r.value ?? ""]));
+        const { data: kb } = await db
+          .from("knowledge_index")
+          .select("chunk_text")
+          .eq("store_id", store.id)
+          .eq("kind", "document_chunk")
+          .not("chunk_text", "is", null)
+          .limit(3);
+        const kbText = (kb ?? []).map((k: { chunk_text: string }) => k.chunk_text).join(" ").slice(0, 1400);
+        const context =
+          `Business: ${store.store_display_name ?? store.slug}` +
+          (store.business_type ? ` (a ${store.business_type})` : "") + "\n" +
+          (m.get("store_prompt") ? `About: ${m.get("store_prompt")}\n` : "") +
+          (m.get("engage_info") ? `How it helps customers: ${m.get("engage_info")}\n` : "") +
+          (kbText ? `From its knowledge base: ${kbText}\n` : "");
+        const sys =
+          "You set up chat assistants for local businesses. Given the business info, write FOUR short " +
+          "'starter question' chips a customer would tap to begin a chat — the things people actually " +
+          "ask THIS business. Each 3 to 6 words, natural spoken phrasing, end with '?' where it's a " +
+          "question, specific to this business (use its real products/services/policies), no numbering, " +
+          "no near-duplicates. Return JSON.";
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              systemInstruction: { parts: [{ text: sys }] },
+              contents: [{ role: "user", parts: [{ text: context }] }],
+              generationConfig: {
+                temperature: 0.7,
+                maxOutputTokens: 300,
+                thinkingConfig: { thinkingBudget: 0 },
+                responseMimeType: "application/json",
+                responseSchema: {
+                  type: "object",
+                  properties: { chips: { type: "array", items: { type: "string" } } },
+                  required: ["chips"],
+                },
+              },
+            }),
+          },
+        );
+        if (!res.ok) return json({ error: `AI error ${res.status}` }, 500);
+        // deno-lint-ignore no-explicit-any
+        const j: any = await res.json();
+        const text = j?.candidates?.[0]?.content?.parts?.map((p: { text?: string }) => p.text ?? "").join("") ?? "";
+        let chips: string[] = [];
+        try {
+          chips = (JSON.parse(text).chips ?? []).map((s: unknown) => String(s).trim()).filter(Boolean).slice(0, 4);
+        } catch { /* leave empty */ }
+        return json({ store: store.slug, chips });
+      }
       case "set_document_dates": {
         const title = String(body.title ?? "").trim();
         if (!title) return json({ error: "title required" }, 400);

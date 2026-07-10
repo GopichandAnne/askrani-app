@@ -4,8 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import { QRCodeCanvas } from "qrcode.react";
 import { toast } from "sonner";
 import {
+  generateChips,
   getStoreLink,
   removeStoreLogo,
+  saveChips,
   setLinkActive,
   regenerateLink,
   setStoreLogo,
@@ -16,6 +18,7 @@ import {
 } from "@/app/(app)/link/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -25,7 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Check, Clock, Copy, Download, ImagePlus, Loader2, MessageCircle, QrCode, RefreshCw, Trash2 } from "lucide-react";
+import { Check, Clock, Copy, Download, ImagePlus, Loader2, MessageCircle, QrCode, RefreshCw, Save, Sparkles, Trash2 } from "lucide-react";
 
 const TIMEOUTS: [number, string][] = [
   [15, "15 minutes"],
@@ -60,6 +63,9 @@ export function StoreLinkPanel({
   const [copied, setCopied] = useState(false);
   const [copiedEmbed, setCopiedEmbed] = useState(false);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [chips, setChips] = useState("");
+  const [genChips, setGenChips] = useState(false);
+  const [savedChips, setSavedChips] = useState(false);
   const qrRef = useRef<HTMLDivElement>(null);
   const logoInputRef = useRef<HTMLInputElement>(null);
 
@@ -81,6 +87,7 @@ export function StoreLinkPanel({
         setWaRedirect(res.waRedirect);
         setSessionMins(res.sessionMinutes);
         setLogoUrl(res.logoUrl);
+        setChips(res.chips);
       } else {
         toast.error("Couldn't load link", { description: res.error });
       }
@@ -206,6 +213,33 @@ export function StoreLinkPanel({
       toast.success("Logo removed — back to the default Rani avatar");
     } else {
       toast.error("Couldn't remove logo", { description: res.error });
+    }
+  }
+
+  async function suggestChips() {
+    setGenChips(true);
+    const res = await generateChips(storeId);
+    setGenChips(false);
+    if (res.ok && res.chips.length) {
+      setChips(res.chips.join("\n"));
+      toast.success("Drafted from your store — review and Save");
+    } else if (res.ok) {
+      toast.error("Couldn't compose questions — add more store info first.");
+    } else {
+      toast.error("Couldn't generate", { description: res.error });
+    }
+  }
+
+  async function commitChips() {
+    setBusy(true);
+    const res = await saveChips(storeId, chips);
+    setBusy(false);
+    if (res.ok) {
+      setSavedChips(true);
+      setTimeout(() => setSavedChips(false), 1500);
+      toast.success("Starter questions saved");
+    } else {
+      toast.error("Couldn't save", { description: res.error });
     }
   }
 
@@ -396,6 +430,32 @@ export function StoreLinkPanel({
             </Button>
           )}
         </div>
+      </div>
+
+      {/* Starter questions — the tappable hint tiles shown when a chat opens. */}
+      <div className={active ? "space-y-2 border-t pt-4" : "pointer-events-none space-y-2 border-t pt-4 opacity-50"}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-medium">Starter questions</p>
+          <Button size="sm" variant="outline" disabled={genChips || busy} onClick={suggestChips}>
+            {genChips ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+            Suggest with AI
+          </Button>
+        </div>
+        <p className="text-muted-foreground text-xs">
+          The tappable questions shown when a chat opens (the first 3 appear). One per line. “Suggest
+          with AI” drafts them from your store’s info and knowledge base — leave blank to use smart
+          defaults.
+        </p>
+        <Textarea
+          rows={4}
+          value={chips}
+          onChange={(e) => setChips(e.target.value)}
+          placeholder={"Where can I find rice?\nDo you deliver?\nWhat are your hours?"}
+        />
+        <Button size="sm" onClick={commitChips} disabled={busy}>
+          {savedChips ? <Check className="size-4" /> : <Save className="size-4" />}
+          {savedChips ? "Saved" : "Save questions"}
+        </Button>
       </div>
 
       {/* Embed on a website — a floating chat widget powered by the same web chat. */}
