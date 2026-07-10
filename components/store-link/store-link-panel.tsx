@@ -358,8 +358,8 @@ export function StoreLinkPanel({
       <div className="space-y-2 border-t pt-4">
         <p className="text-sm font-medium">Chat logo</p>
         <p className="text-muted-foreground text-xs">
-          Shown in the chat header in place of the default Rani avatar. A square image works best
-          (PNG, SVG, or JPG, up to 2 MB).
+          Shown on the chat welcome screen (the top-left Ask Rani logo stays). A square image works
+          best (PNG, SVG, or JPG, up to 2 MB).
         </p>
         <div className="flex items-center gap-3">
           <div className="bg-muted flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-full border">
