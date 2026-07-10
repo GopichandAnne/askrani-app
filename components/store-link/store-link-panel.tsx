@@ -56,9 +56,13 @@ export function StoreLinkPanel({
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copiedEmbed, setCopiedEmbed] = useState(false);
   const qrRef = useRef<HTMLDivElement>(null);
 
   const url = token ? `${SITE}/s/${storeSlug}?t=${token}` : "";
+  const embedSnippet = token
+    ? `<script src="${SITE}/embed.js" data-slug="${storeSlug}" data-token="${token}" async></script>`
+    : "";
 
   useEffect(() => {
     let alive = true;
@@ -166,6 +170,12 @@ export function StoreLinkPanel({
     navigator.clipboard.writeText(url);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
+  }
+
+  function copyEmbed() {
+    navigator.clipboard.writeText(embedSnippet);
+    setCopiedEmbed(true);
+    setTimeout(() => setCopiedEmbed(false), 1500);
   }
 
   function downloadQr() {
@@ -311,6 +321,22 @@ export function StoreLinkPanel({
             </p>
           </div>
         </div>
+      </div>
+
+      {/* Embed on a website — a floating chat widget powered by the same web chat. */}
+      <div className={active ? "space-y-2 border-t pt-4" : "pointer-events-none space-y-2 border-t pt-4 opacity-50"}>
+        <p className="text-sm font-medium">Embed on your website</p>
+        <p className="text-muted-foreground text-xs">
+          Paste this before <code className="bg-muted rounded px-1">&lt;/body&gt;</code> on any page.
+          A chat bubble appears in the corner — same Rani, no coding.
+        </p>
+        <code className="bg-muted block overflow-x-auto whitespace-pre rounded px-2 py-1.5 text-xs">
+          {embedSnippet || "…"}
+        </code>
+        <Button size="sm" variant="outline" onClick={copyEmbed} disabled={!embedSnippet}>
+          {copiedEmbed ? <Check className="size-4" /> : <Copy className="size-4" />}
+          {copiedEmbed ? "Copied" : "Copy embed code"}
+        </Button>
       </div>
 
       <div className="flex items-center justify-between gap-3 border-t pt-4">
