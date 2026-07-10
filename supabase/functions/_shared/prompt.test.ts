@@ -63,6 +63,30 @@ Deno.test("request mode: no-price rule present, catalogue rule absent", () => {
   assert(!cat.includes("no price list"));
 });
 
+Deno.test("connector price exception: request mode + a connector only", () => {
+  const EX = "EXCEPTION for live tool prices";
+  // Request mode, no connector -> strict no-price rule, NO exception.
+  assert(!buildSystemInstruction(cfg({ catalogEnabled: false })).includes(EX));
+  // Request mode + a connector -> exception is added.
+  assert(buildSystemInstruction(cfg({ catalogEnabled: false }), { hasConnector: true }).includes(EX));
+  // Catalogue mode already allows prices -> exception is request-mode only.
+  assert(!buildSystemInstruction(cfg({ catalogEnabled: true }), { hasConnector: true }).includes(EX));
+});
+
+Deno.test("non-disruption: no connector => byte-identical to the old prompt", () => {
+  // Default opts, {}, and {hasConnector:false} must all produce the same string,
+  // so a store without integrations is unaffected by the feature.
+  const a = buildSystemInstruction(cfg());
+  assertEquals(buildSystemInstruction(cfg(), {}), a);
+  assertEquals(buildSystemInstruction(cfg(), { hasConnector: false }), a);
+});
+
+Deno.test("external action + payment guardrails are always present", () => {
+  const s = buildSystemInstruction(cfg());
+  assert(s.includes("ONLY AFTER"));
+  assert(s.includes("NEVER ask for or accept card numbers"));
+});
+
 Deno.test("ordering rules + order prompt appear ONLY when ordersEnabled", () => {
   const off = buildSystemInstruction(cfg({ ordersEnabled: false, orderPrompt: "Pickup only." }));
   assert(!off.includes("place_order"));

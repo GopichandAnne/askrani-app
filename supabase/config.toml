@@ -63,8 +63,11 @@ verify_jwt = false
 [functions.followup]
 verify_jwt = false
 
-# Demo/example connector for Phase 6 integrations. Reached by the bot's HTTP
-# connector call (no Supabase JWT) — it authenticates via the X-Rani-Signature
-# HMAC, exactly like a real external connector would.
+# Demo/example connectors for integrations. Reached by the bot's HTTP connector
+# call (no Supabase JWT) — they authenticate via the X-Rani-Signature HMAC,
+# exactly like a real external connector would.
 [functions.mock-pos]
+verify_jwt = false
+
+[functions.mock-pay]
 verify_jwt = false

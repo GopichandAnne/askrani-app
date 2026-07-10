@@ -51,7 +51,10 @@ export async function generateTurnReply(
 ): Promise<GeminiReply> {
   const config = await loadAgentConfig(db, store);
   const history = await loadHistory(db, store.slug, opts.sessionId, config.historyTurns);
-  const systemInstruction = buildSystemInstruction(config);
+  // Per-store connectors — loaded before the prompt so a live-price connector can
+  // lift the request-mode no-price rule. Empty for stores with none → no change.
+  const integrations = await loadStoreIntegrations(db, store.id);
+  const systemInstruction = buildSystemInstruction(config, { hasConnector: integrations.length > 0 });
   // Prefix the CURRENT message (volatile — not the cached prefix) with store-local
   // date/time + open/closed, and any pending priced proposal awaiting a decision.
   const nowCtx = buildNowContext(config.timezone, config.storeHours);
@@ -76,8 +79,6 @@ export async function generateTurnReply(
   // Store-local date (YYYY-MM-DD) so knowledge retrieval can hide entries that
   // are outside their effective window (expired promos, not-yet-active notices).
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: config.timezone }).format(new Date());
-  // Per-store custom connectors (empty for stores with none → no behavior change).
-  const integrations = await loadStoreIntegrations(db, store.id);
   const toolset = buildToolset(
     db, store, opts.sessionId, config.ordersEnabled, hasProposal, config.catalogEnabled, today, integrations,
   );

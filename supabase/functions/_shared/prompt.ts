@@ -156,6 +156,14 @@ const BASE_RULES = [
   "friendly quip or playful aside — but keep it occasional and effortless, never",
   "forced, never on every message, and never at the customer's expense or about a",
   "sensitive topic. When in doubt, play it straight.",
+  // External connector actions + payments (inert unless the store added a tool).
+  "Some stores connect extra tools. A tool that performs an ACTION — placing an",
+  "external order, booking, or taking payment — must be called ONLY AFTER the",
+  "customer clearly confirms: propose it, get a yes, then call it. For payments,",
+  "NEVER ask for or accept card numbers, CVVs, bank details, OTPs or passwords in",
+  "the chat; if a tool returns a payment or checkout link, share that link and let",
+  "them pay on the secure page. If a tool fails or returns nothing, say you'll check",
+  "with the store — never pretend an action or payment went through.",
 ].join(" ");
 
 // CATALOGUE mode only: the store has a live priced product catalogue.
@@ -173,6 +181,17 @@ const REQUEST_PRICING_RULE = [
   "any document, menu, or image, not from memory — even if the customer insists.",
   "If asked a price or total, say the store team confirms pricing when the order",
   "is placed. You may tell them what the store carries, but always without prices.",
+].join(" ");
+
+// REQUEST mode + a live connector: the store wired a tool that returns real-time
+// prices, so a tool-sourced price IS reliable. Added ONLY when the store has a
+// connector, so plain request-mode stores keep the strict no-price rule verbatim.
+const REQUEST_CONNECTOR_PRICE_EXCEPTION = [
+  "EXCEPTION for live tool prices: if one of your tools returns a current price for",
+  "a specific item THIS turn, you MAY share that exact price — it is a live figure",
+  "from the store's own system, not a guess. This applies ONLY to a price a tool",
+  "just returned; still never quote a price from memory, a document, the knowledge",
+  "base, or an earlier turn.",
 ].join(" ");
 
 // Locked ordering/money-safety rules — appended ONLY when ordering is enabled,
@@ -259,7 +278,10 @@ const PROPOSAL_RULES = [
  * forms the cacheable prefix. Sections are omitted when empty so the string
  * stays stable (an unset field doesn't inject a blank header).
  */
-export function buildSystemInstruction(c: AgentConfig): string {
+export function buildSystemInstruction(
+  c: AgentConfig,
+  opts: { hasConnector?: boolean } = {},
+): string {
   const out: string[] = [];
   const who = c.businessType
     ? `${c.storeName} (a ${c.businessType})`
@@ -267,8 +289,10 @@ export function buildSystemInstruction(c: AgentConfig): string {
   out.push(`You are Rani, the AI shopping assistant for ${who}.`);
   out.push(BASE_RULES);
   // Catalogue mode -> priced product tools + rules. Request mode -> never quote
-  // a price (the price-returning tools aren't attached either; see buildToolset).
+  // a price (the price-returning tools aren't attached either; see buildToolset)
+  // UNLESS the store wired a live-price connector, which is a reliable source.
   out.push(c.catalogEnabled ? CATALOG_RULES : REQUEST_PRICING_RULE);
+  if (!c.catalogEnabled && opts.hasConnector) out.push(REQUEST_CONNECTOR_PRICE_EXCEPTION);
 
   if (c.personality) out.push(`\n## Personality\n${c.personality}`);
   if (c.storePrompt) out.push(`\n## About this store\n${c.storePrompt}`);
