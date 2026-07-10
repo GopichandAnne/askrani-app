@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
 import { Check, Copy, Download, Home, Loader2, Plus } from "lucide-react";
 
 const SITE = "https://askrani.ai";
@@ -71,7 +72,9 @@ export function ListingQrs({ storeId, storeSlug }: { storeId: string; storeSlug:
       setTokens((t) => t.map((x) => (x.token === token ? { ...x, active: !active } : x)));
       toast.error("Couldn't update", { description: res.error });
     } else {
-      toast.success(active ? "Listing QR enabled" : "Listing QR turned off");
+      toast.success(
+        active ? "Marked available — the QR leads with this home again" : "Marked sold — the QR now shows similar homes",
+      );
     }
   }
 
@@ -84,7 +87,8 @@ export function ListingQrs({ storeId, storeSlug }: { storeId: string; storeSlug:
       <p className="text-muted-foreground text-xs">
         Make a QR for a specific listing — a yard sign or flyer. Scanning it opens Rani already
         talking about that home, and the visitor can still ask about your other listings. One agent,
-        the same Rani underneath.
+        the same Rani underneath. When the home sells, flip it to <b>Sold</b> — the QR keeps working
+        and shows similar homes instead.
       </p>
 
       {/* Create form */}
@@ -161,13 +165,19 @@ function ListingRow({
   }
 
   return (
-    <div className={"flex items-center gap-3 rounded-lg border p-2.5" + (token.active ? "" : " opacity-60")}>
+    <div className="flex items-center gap-3 rounded-lg border p-2.5">
       <div ref={qrRef} className="bg-card shrink-0 rounded-md border p-1">
         <QRCodeCanvas value={url} size={56} level="M" fgColor="#0f766e" />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">{token.listingRef}</p>
+        <div className="flex items-center gap-2">
+          <p className="truncate text-sm font-medium">{token.listingRef}</p>
+          {!token.active && <Badge className="bg-coral shrink-0 text-white">Sold</Badge>}
+        </div>
         <code className="text-muted-foreground block truncate text-xs">{url}</code>
+        {!token.active && (
+          <p className="text-muted-foreground text-xs">Shows similar homes when scanned.</p>
+        )}
       </div>
       <div className="flex shrink-0 items-center gap-1">
         <Button size="icon" variant="ghost" className="size-8" onClick={copy} aria-label="Copy link">

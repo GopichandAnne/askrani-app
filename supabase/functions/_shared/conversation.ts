@@ -48,6 +48,7 @@ export async function generateTurnReply(
     inboundText: string;
     image?: { base64: string; mime: string }; // a photo the customer just sent
     activeListing?: string; // listing-scoped ("yard sign") token: lead with this listing, stay open
+    listingRetired?: boolean; // the scanned listing is sold/off-market → pivot to similar
   },
 ): Promise<GeminiReply> {
   const config = await loadAgentConfig(db, store);
@@ -71,9 +72,12 @@ export async function generateTurnReply(
     }
   }
   // A listing-scoped token means the visitor scanned the QR in front of one
-  // specific home — lead with it, but stay open to other listings/services.
+  // specific home. If it's live, lead with it (but stay open); if it's retired
+  // (sold / off-market), let them down gently and pivot to similar listings.
   const listingCtx = opts.activeListing
-    ? `\n[ACTIVE LISTING — the visitor scanned the QR sign in front of THIS specific home. Lead with it: open by naming this listing and offer its details, a tour, or neighborhood info. They may also ask about other listings or services — help freely and use your tools (e.g. search other listings). This listing: ${opts.activeListing}]`
+    ? (opts.listingRetired
+      ? `\n[RETIRED LISTING — the visitor scanned a QR sign for a home that is NO LONGER AVAILABLE (sold or off-market): ${opts.activeListing} Briefly and warmly let them know it's no longer on the market, then help them find similar or other listings using your tools. Do not offer a tour of THIS specific home.]`
+      : `\n[ACTIVE LISTING — the visitor scanned the QR sign in front of THIS specific home. Lead with it: open by naming this listing and offer its details, a tour, or neighborhood info. They may also ask about other listings or services — help freely and use your tools (e.g. search other listings). This listing: ${opts.activeListing}]`)
     : "";
   const contents = buildContents(history, `${nowCtx}${proposalCtx}${listingCtx}\n${opts.inboundText}`);
   // Attach the customer's photo (if any) to the current user turn so the model sees it.
