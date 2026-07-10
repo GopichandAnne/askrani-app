@@ -60,6 +60,9 @@ export interface AgentConfig {
   /** true = structured catalogue set (bot may look up + show prices); false =
    *  request mode (KB-only; bot NEVER quotes a price; all orders are requests). */
   catalogEnabled: boolean;
+  /** Request-mode opt-in: prices PUBLISHED in the KB (a listing price, a fixed
+   *  service price) may be stated. Off = the strict no-price rule. */
+  kbPricesOk: boolean;
 }
 
 // Baked-in operating rules — part of the stable prefix, identical across stores.
@@ -194,6 +197,16 @@ const REQUEST_CONNECTOR_PRICE_EXCEPTION = [
   "base, or an earlier turn.",
 ].join(" ");
 
+// REQUEST mode + kb_prices_ok: prices PUBLISHED in the knowledge base are public
+// facts (a property listing price, a fixed service price), so they may be stated.
+const REQUEST_KB_PRICE_EXCEPTION = [
+  "EXCEPTION for published prices: a price explicitly written in your knowledge base",
+  "— for example a property's listing price or a fixed, published service price — is",
+  "a public fact you MAY state. This applies ONLY to a price actually written in the",
+  "knowledge base; never invent, estimate, or negotiate a price, and if they want a",
+  "custom quote capture it for the team to prepare.",
+].join(" ");
+
 // Locked ordering/money-safety rules — appended ONLY when ordering is enabled,
 // always on top of the owner's order_prompt. Owners can't edit these away.
 // CATALOGUE-mode ordering (priced cart).
@@ -293,6 +306,7 @@ export function buildSystemInstruction(
   // UNLESS the store wired a live-price connector, which is a reliable source.
   out.push(c.catalogEnabled ? CATALOG_RULES : REQUEST_PRICING_RULE);
   if (!c.catalogEnabled && opts.hasConnector) out.push(REQUEST_CONNECTOR_PRICE_EXCEPTION);
+  if (!c.catalogEnabled && c.kbPricesOk) out.push(REQUEST_KB_PRICE_EXCEPTION);
 
   if (c.personality) out.push(`\n## Personality\n${c.personality}`);
   if (c.storePrompt) out.push(`\n## About this store\n${c.storePrompt}`);

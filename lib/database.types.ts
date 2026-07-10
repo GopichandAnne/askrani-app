@@ -1062,6 +1062,7 @@ export type Database = {
         | "followup_enabled"
         | "followup_minutes"
         | "order_item_details"
+        | "kb_prices_ok"
       device_type: "whatsapp" | "web"
       fulfillment_type: "pickup" | "delivery"
       message_direction: "inbound" | "outbound" | "system"
@@ -1225,6 +1226,7 @@ export const Constants = {
         "followup_enabled",
         "followup_minutes",
         "order_item_details",
+        "kb_prices_ok",
       ],
       device_type: ["whatsapp", "web"],
       fulfillment_type: ["pickup", "delivery"],

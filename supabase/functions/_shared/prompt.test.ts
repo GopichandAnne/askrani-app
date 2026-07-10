@@ -34,6 +34,7 @@ function cfg(over: Partial<AgentConfig> = {}): AgentConfig {
     timezone: "America/Chicago",
     storeHours: null,
     catalogEnabled: true,
+    kbPricesOk: false,
     ...over,
   };
 }
@@ -71,6 +72,14 @@ Deno.test("connector price exception: request mode + a connector only", () => {
   assert(buildSystemInstruction(cfg({ catalogEnabled: false }), { hasConnector: true }).includes(EX));
   // Catalogue mode already allows prices -> exception is request-mode only.
   assert(!buildSystemInstruction(cfg({ catalogEnabled: true }), { hasConnector: true }).includes(EX));
+});
+
+Deno.test("kb_prices_ok: published-price exception only in request mode + opt-in", () => {
+  const EX = "EXCEPTION for published prices";
+  assert(!buildSystemInstruction(cfg({ catalogEnabled: false, kbPricesOk: false })).includes(EX));
+  assert(buildSystemInstruction(cfg({ catalogEnabled: false, kbPricesOk: true })).includes(EX));
+  // Catalogue mode already allows prices -> not added there.
+  assert(!buildSystemInstruction(cfg({ catalogEnabled: true, kbPricesOk: true })).includes(EX));
 });
 
 Deno.test("non-disruption: no connector => byte-identical to the old prompt", () => {

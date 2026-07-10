@@ -44,5 +44,6 @@ export async function loadAgentConfig(
     storeHours: m.get("store_hours") ?? null,
     // Request mode by default (generic + price-safe) unless a catalogue is set.
     catalogEnabled: (m.get("catalog_enabled") ?? "").toLowerCase() === "true",
+    kbPricesOk: (m.get("kb_prices_ok") ?? "").toLowerCase() === "true",
   };
 }
