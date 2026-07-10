@@ -12,17 +12,54 @@
 type Listing = {
   mls: string; address: string; type: "buy" | "rent";
   beds: number; baths: number; sqft: number; price: number; hoa?: number; status: string;
+  year?: number; garage?: number; desc?: string;
 };
 
 // A little "live MLS" — richer than the static KB, to show it goes beyond it.
 const LISTINGS: Listing[] = [
-  { mls: "MLS1001", address: "214 Maple Street", type: "buy", beds: 3, baths: 2, sqft: 1850, price: 465000, hoa: 45, status: "active" },
-  { mls: "MLS1002", address: "88 Riverbend Court", type: "buy", beds: 4, baths: 3, sqft: 2600, price: 625000, hoa: 0, status: "active" },
-  { mls: "MLS1003", address: "7 Oakhill Lane", type: "buy", beds: 4, baths: 2, sqft: 2200, price: 549000, hoa: 60, status: "active" },
-  { mls: "MLS1004", address: "1203 Cedar Ridge #5B", type: "rent", beds: 2, baths: 2, sqft: 1100, price: 2100, status: "active" },
-  { mls: "MLS1005", address: "45 Birchwood Drive", type: "rent", beds: 3, baths: 2, sqft: 1500, price: 2650, status: "active" },
-  { mls: "MLS1006", address: "920 Sunset Boulevard", type: "buy", beds: 2, baths: 2, sqft: 1400, price: 389000, hoa: 30, status: "active" },
+  { mls: "MLS1001", address: "214 Maple Street", type: "buy", beds: 3, baths: 2, sqft: 1850, price: 465000, hoa: 45, status: "active", year: 2015, garage: 2, desc: "Updated kitchen, large fenced backyard, open floor plan." },
+  { mls: "MLS1002", address: "88 Riverbend Court", type: "buy", beds: 4, baths: 3, sqft: 2600, price: 625000, hoa: 0, status: "active", year: 2019, garage: 3, desc: "Pool, cul-de-sac lot, three-car garage, no HOA." },
+  { mls: "MLS1003", address: "7 Oakhill Lane", type: "buy", beds: 4, baths: 2, sqft: 2200, price: 549000, hoa: 60, status: "active", year: 2012, garage: 2, desc: "Mature trees, covered patio, home office, recent roof." },
+  { mls: "MLS1004", address: "1203 Cedar Ridge #5B", type: "rent", beds: 2, baths: 2, sqft: 1100, price: 2100, status: "active", year: 2018, garage: 0, desc: "In-unit laundry, one assigned spot, small pets OK with deposit." },
+  { mls: "MLS1005", address: "45 Birchwood Drive", type: "rent", beds: 3, baths: 2, sqft: 1500, price: 2650, status: "active", year: 2016, garage: 2, desc: "Single-family rental, fenced yard, two-car garage." },
+  { mls: "MLS1006", address: "920 Sunset Boulevard", type: "buy", beds: 2, baths: 2, sqft: 1400, price: 389000, hoa: 30, status: "active", year: 2010, garage: 1, desc: "Starter home, walkable location, updated bathrooms." },
 ];
+
+// deno-lint-ignore no-explicit-any
+function listingDetails(a: any) {
+  const q = String(a.query ?? a.mls ?? a.address ?? "").toLowerCase().trim();
+  if (!q) return { found: false, note: "no listing specified" };
+  const hit = LISTINGS.find((l) =>
+    l.mls.toLowerCase() === q ||
+    l.address.toLowerCase().includes(q) ||
+    q.includes(l.address.toLowerCase().split(" ").slice(1, 3).join(" ")) // e.g. "maple street"
+  );
+  return hit ? { found: true, ...hit } : { found: false };
+}
+
+// A demo AVM (automated valuation) — the seller lead magnet. Real deployments
+// wrap an actual AVM/CMA source; always framed as an estimate + agent CMA.
+// deno-lint-ignore no-explicit-any
+function homeValue(a: any) {
+  const sqft = Number(a.sqft ?? 0);
+  const ppsf = 265; // demo price-per-sqft for the area
+  if (sqft > 0) {
+    const est = Math.round((sqft * ppsf) / 1000) * 1000;
+    return {
+      address: a.address ?? null,
+      estimated_value: est,
+      range_low: Math.round((est * 0.94) / 1000) * 1000,
+      range_high: Math.round((est * 1.06) / 1000) * 1000,
+      basis: `about $${ppsf} per sq ft for the area`,
+      note: "This is an automated estimate — the agent will prepare a precise comparative market analysis (CMA).",
+    };
+  }
+  return {
+    address: a.address ?? null,
+    estimated_value: null,
+    note: "I need the home's square footage (and ideally beds/baths and condition) to estimate; the agent can prepare a full CMA.",
+  };
+}
 
 async function verify(secret: string, body: string, header: string | null): Promise<boolean> {
   if (!header) return false;
@@ -47,7 +84,14 @@ function mlsSearch(a: any) {
     (a.max_price == null || l.price <= Number(a.max_price)) &&
     (a.min_price == null || l.price >= Number(a.min_price))
   ).slice(0, 5);
-  return { found: results.length, listings: results };
+  // Brief cards only — call listing_details for the full record.
+  return {
+    found: results.length,
+    listings: results.map((l) => ({
+      mls: l.mls, address: l.address, type: l.type,
+      beds: l.beds, baths: l.baths, sqft: l.sqft, price: l.price, status: l.status,
+    })),
+  };
 }
 
 Deno.serve(async (req) => {
@@ -69,6 +113,10 @@ Deno.serve(async (req) => {
   switch (tool) {
     case "mls_search":
       return json(mlsSearch(a));
+    case "listing_details":
+      return json(listingDetails(a));
+    case "get_home_value":
+      return json(homeValue(a));
     case "create_lead":
       return json({
         ok: true,
