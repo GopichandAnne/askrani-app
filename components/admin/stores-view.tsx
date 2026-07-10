@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { onboardStore, assignOwner } from "@/app/(app)/admin/actions";
+import { onboardStore } from "@/app/(app)/admin/actions";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -26,8 +26,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { StoreLinkPanel } from "@/components/store-link/store-link-panel";
+import { TeamManager } from "@/components/team/team-manager";
 import { BUSINESS_PRESETS, presetFor } from "@/lib/business-presets";
-import { Building2, Plus, QrCode, UserPlus } from "lucide-react";
+import { Building2, Plus, QrCode, Users } from "lucide-react";
 
 export type StoreRow = {
   id: string;
@@ -103,7 +104,7 @@ export function StoresView({ initial }: { initial: StoreRow[] }) {
                     <QrCode className="size-4" /> Link &amp; QR
                   </Button>
                   <Button variant="outline" size="sm" onClick={() => setAssignFor(s)}>
-                    <UserPlus className="size-4" /> Assign owner
+                    <Users className="size-4" /> Team
                   </Button>
                 </div>
               </div>
@@ -130,14 +131,27 @@ export function StoresView({ initial }: { initial: StoreRow[] }) {
         </DialogContent>
       </Dialog>
 
-      <AssignOwnerDialog
-        store={assignFor}
-        onOpenChange={(o) => !o && setAssignFor(null)}
-        onDone={() => {
-          setAssignFor(null);
-          router.refresh();
+      <Dialog
+        open={!!assignFor}
+        onOpenChange={(o) => {
+          if (!o) {
+            setAssignFor(null);
+            router.refresh();
+          }
         }}
-      />
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Team</DialogTitle>
+            <DialogDescription>
+              {assignFor ? `Owners and staff for ${assignFor.displayName ?? assignFor.slug}` : ""}
+            </DialogDescription>
+          </DialogHeader>
+          {assignFor && (
+            <TeamManager storeId={assignFor.id} storeName={assignFor.displayName ?? assignFor.slug} />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -274,80 +288,3 @@ function OnboardDialog({ onDone }: { onDone: () => void }) {
   );
 }
 
-function AssignOwnerDialog({
-  store,
-  onOpenChange,
-  onDone,
-}: {
-  store: StoreRow | null;
-  onOpenChange: (open: boolean) => void;
-  onDone: () => void;
-}) {
-  const [email, setEmail] = useState("");
-  const [name, setName] = useState("");
-  const [pending, setPending] = useState(false);
-
-  async function submit() {
-    if (!store) return;
-    if (!email.trim()) {
-      toast.error("Email is required");
-      return;
-    }
-    setPending(true);
-    const res = await assignOwner({ storeId: store.id, email, name: name || undefined });
-    setPending(false);
-    if (res.ok) {
-      toast.success(res.invited ? "Invitation sent" : "Owner assigned", {
-        description: res.invited
-          ? "We emailed them a sign-in link — they'll see this store the first time they log in."
-          : undefined,
-      });
-      setEmail("");
-      setName("");
-      onDone();
-    } else {
-      toast.error("Couldn't assign owner", { description: res.error });
-    }
-  }
-
-  return (
-    <Dialog open={!!store} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Assign owner</DialogTitle>
-          <DialogDescription>
-            {store ? `Give someone owner access to ${store.displayName ?? store.slug}. ` : ""}
-            If they don&apos;t have an account yet, we&apos;ll email them an invite — they&apos;ll see
-            this store the first time they sign in.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="ownerEmail">Owner email</Label>
-            <Input
-              id="ownerEmail"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="owner@store.com"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="ownerName">Name (optional)</Label>
-            <Input
-              id="ownerName"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Jane Doe"
-            />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button onClick={submit} disabled={pending}>
-            {pending ? "Assigning…" : "Assign owner"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
