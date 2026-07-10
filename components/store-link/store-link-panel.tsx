@@ -29,6 +29,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Check, Clock, Copy, Download, ImagePlus, Loader2, MessageCircle, QrCode, RefreshCw, Save, Sparkles, Trash2 } from "lucide-react";
+import { ListingQrs } from "@/components/store-link/listing-qrs";
 
 const TIMEOUTS: [number, string][] = [
   [15, "15 minutes"],
@@ -64,6 +65,7 @@ export function StoreLinkPanel({
   const [copiedEmbed, setCopiedEmbed] = useState(false);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [chips, setChips] = useState("");
+  const [businessType, setBusinessType] = useState<string | null>(null);
   const [genChips, setGenChips] = useState(false);
   const [savedChips, setSavedChips] = useState(false);
   const qrRef = useRef<HTMLDivElement>(null);
@@ -88,6 +90,7 @@ export function StoreLinkPanel({
         setSessionMins(res.sessionMinutes);
         setLogoUrl(res.logoUrl);
         setChips(res.chips);
+        setBusinessType(res.businessType);
       } else {
         toast.error("Couldn't load link", { description: res.error });
       }
@@ -473,6 +476,8 @@ export function StoreLinkPanel({
           {copiedEmbed ? "Copied" : "Copy embed code"}
         </Button>
       </div>
+
+      {businessType === "realtor" && <ListingQrs storeId={storeId} storeSlug={storeSlug} />}
 
       <div className="flex items-center justify-between gap-3 border-t pt-4">
         <p className="text-muted-foreground text-xs">

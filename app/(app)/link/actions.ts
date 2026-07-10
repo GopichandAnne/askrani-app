@@ -15,6 +15,7 @@ export type LinkResult =
       sessionMinutes: number;
       logoUrl: string | null;
       chips: string;
+      businessType: string | null;
     }
   | { ok: false; error: string };
 
@@ -45,11 +46,12 @@ export async function getStoreLink(storeId: string): Promise<LinkResult> {
       .from("store_tokens")
       .select("token, active")
       .eq("store_id", storeId)
+      .is("listing_ref", null) // the primary web QR — listing tokens are managed separately
       .order("created_at", { ascending: false })
       .limit(1),
     db
       .from("stores")
-      .select("web_chat_paused, whatsapp_display_number, whatsapp_redirect_enabled, session_minutes, logo_url")
+      .select("web_chat_paused, whatsapp_display_number, whatsapp_redirect_enabled, session_minutes, logo_url, business_type")
       .eq("id", storeId)
       .single(),
     db
@@ -65,6 +67,7 @@ export async function getStoreLink(storeId: string): Promise<LinkResult> {
   const sessionMinutes = store?.session_minutes ?? 30;
   const logoUrl = store?.logo_url ?? null;
   const chips = chipsRow?.value ?? "";
+  const businessType = store?.business_type ?? null;
 
   if (existing && existing.length > 0) {
     return {
@@ -77,6 +80,7 @@ export async function getStoreLink(storeId: string): Promise<LinkResult> {
       sessionMinutes,
       logoUrl,
       chips,
+      businessType,
     };
   }
 
@@ -85,7 +89,7 @@ export async function getStoreLink(storeId: string): Promise<LinkResult> {
     .from("store_tokens")
     .insert({ store_id: storeId, token, label: "primary QR", active: true });
   if (error) return { ok: false, error: error.message };
-  return { ok: true, token, active: true, paused, waNumber, waRedirect, sessionMinutes, logoUrl, chips };
+  return { ok: true, token, active: true, paused, waNumber, waRedirect, sessionMinutes, logoUrl, chips, businessType };
 }
 
 /** AI-compose starter question tiles from the store's own prompts + KB. */
@@ -243,6 +247,7 @@ export async function setLinkActive(storeId: string, active: boolean): Promise<T
     .from("store_tokens")
     .select("id, token")
     .eq("store_id", storeId)
+    .is("listing_ref", null)
     .order("created_at", { ascending: false })
     .limit(1);
   if (!existing || existing.length === 0) return { ok: false, error: "No link to update." };
@@ -257,11 +262,101 @@ export async function regenerateLink(storeId: string): Promise<TokenResult> {
   await requireStoreAccess(storeId);
   const db = createAdminClient();
 
-  await db.from("store_tokens").update({ active: false }).eq("store_id", storeId).eq("active", true);
+  // Retire only the primary web QR(s) — listing "yard sign" tokens are untouched.
+  await db
+    .from("store_tokens")
+    .update({ active: false })
+    .eq("store_id", storeId)
+    .eq("active", true)
+    .is("listing_ref", null);
   const token = newToken();
   const { error } = await db
     .from("store_tokens")
     .insert({ store_id: storeId, token, label: "primary QR", active: true });
   if (error) return { ok: false, error: error.message };
   return { ok: true, token, active: true };
+}
+
+// ── Listing-scoped tokens ("smart yard signs") ──────────────────────────────
+// One store mints many listing QRs; each launches the chat primed on that home
+// but stays open to other listings. Managed separately from the primary QR.
+
+export type ListingToken = { token: string; listingRef: string; active: boolean };
+
+/** All listing-scoped tokens for a store, newest first. */
+export async function listListingTokens(
+  storeId: string,
+): Promise<{ ok: true; tokens: ListingToken[] } | { ok: false; error: string }> {
+  await requireStoreAccess(storeId);
+  const db = createAdminClient();
+  const { data, error } = await db
+    .from("store_tokens")
+    .select("token, listing_ref, active")
+    .eq("store_id", storeId)
+    .not("listing_ref", "is", null)
+    .order("created_at", { ascending: false });
+  if (error) return { ok: false, error: error.message };
+  return {
+    ok: true,
+    tokens: (data ?? []).map((r) => ({
+      token: r.token,
+      listingRef: (r.listing_ref as string) ?? "",
+      active: r.active,
+    })),
+  };
+}
+
+/** Create a listing-scoped QR. Chips default from the listing if none given. */
+export async function createListingToken(
+  storeId: string,
+  input: { listingRef: string; listingContext: string; listingChips?: string },
+): Promise<{ ok: true; token: ListingToken } | { ok: false; error: string }> {
+  await requireStoreAccess(storeId);
+  const listingRef = input.listingRef.trim();
+  const listingContext = input.listingContext.trim();
+  if (!listingRef) return { ok: false, error: "Enter the listing address or MLS number." };
+  if (listingContext.length < 20) {
+    return { ok: false, error: "Add a short description of the listing (a sentence or two)." };
+  }
+  const chipLines = (input.listingChips ?? "")
+    .split("\n")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .slice(0, 6);
+  const listingChips = (chipLines.length
+    ? chipLines
+    : [`Is ${listingRef} still available?`, `Book a tour of ${listingRef}`, "Show me other homes"]
+  ).join("\n");
+
+  const db = createAdminClient();
+  const token = "lst_" + crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+  const { error } = await db.from("store_tokens").insert({
+    store_id: storeId,
+    token,
+    label: `Listing: ${listingRef}`.slice(0, 120),
+    active: true,
+    listing_ref: listingRef,
+    listing_context: listingContext,
+    listing_chips: listingChips,
+  });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, token: { token, listingRef, active: true } };
+}
+
+/** Enable/disable one listing token (e.g. turn it off when the home sells). */
+export async function setListingTokenActive(
+  storeId: string,
+  token: string,
+  active: boolean,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  await requireStoreAccess(storeId);
+  const db = createAdminClient();
+  const { error } = await db
+    .from("store_tokens")
+    .update({ active })
+    .eq("store_id", storeId)
+    .eq("token", token)
+    .not("listing_ref", "is", null);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
 }
