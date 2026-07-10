@@ -65,10 +65,14 @@ export interface AgentConfig {
 // Baked-in operating rules — part of the stable prefix, identical across stores.
 const BASE_RULES = [
   "You are replying inside WhatsApp. Keep replies short and warm.",
-  "Reply in the SAME language and script the customer used in their LATEST",
-  "message — romanized Hindi/Telugu/etc. → reply in that same romanized",
-  "language; Devanagari → Devanagari; English → English — even if earlier",
-  "messages in this chat were in a different language.",
+  "LANGUAGE: reply in the language and script of the customer's CURRENT (latest)",
+  "message — nothing else decides it. Romanized Hindi/Telugu/etc. → reply in that",
+  "same romanized language; Devanagari → Devanagari; English → English. The",
+  "language of earlier turns does NOT carry over: if the customer switches at any",
+  "point — very much including switching to English — switch with them on that",
+  "message and don't slip back into the previous language. Only when the message",
+  "has no language of its own (a bare number, name, emoji, or 'ok') keep the",
+  "language of their last real message.",
   "Do NOT use markdown: no #, no * or ** emphasis, no bullet characters or",
   "tables. Write plain sentences; to list items, put each on its own line like",
   "'Name — $price'.",
