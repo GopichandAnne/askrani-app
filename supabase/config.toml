@@ -71,3 +71,8 @@ verify_jwt = false
 
 [functions.mock-pay]
 verify_jwt = false
+
+# Public health endpoint — pinged by pg_cron and (optionally) an external uptime
+# monitor. Exposes only pass/fail status, nothing sensitive.
+[functions.health]
+verify_jwt = false
