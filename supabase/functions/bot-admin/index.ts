@@ -87,26 +87,60 @@ Deno.serve(async (req) => {
         const reindex = await reindexKnowledge(db, store.id, Number(body.max_rows ?? 200));
         return json({ store: store.slug, title, chunks, ...reindex });
       }
+      case "list_integrations": {
+        const { data } = await db
+          .from("store_integrations")
+          .select("id, name, description, params_schema, kind, endpoint_url, side_effect, enabled, timeout_ms, auth_secret, updated_at")
+          .eq("store_id", store.id)
+          .order("name");
+        // Never return the raw secret to the panel — just whether one is set.
+        // deno-lint-ignore no-explicit-any
+        const integrations = (data ?? []).map((r: any) => {
+          const { auth_secret, ...rest } = r;
+          return { ...rest, has_secret: !!auth_secret };
+        });
+        return json({ store: store.slug, integrations });
+      }
       case "set_integration": {
         // Register/update a per-store connector (a tool the bot can call).
         const name = String(body.name ?? "").trim();
         const endpoint = String(body.endpoint_url ?? "").trim();
         if (!name || !endpoint) return json({ error: "name and endpoint_url required" }, 400);
-        const { error } = await db.from("store_integrations").upsert({
+        // deno-lint-ignore no-explicit-any
+        const row: Record<string, any> = {
           store_id: store.id,
           name,
           description: String(body.description ?? ""),
           params_schema: body.params_schema ?? { type: "object", properties: {}, required: [] },
           kind: String(body.kind ?? "http"),
           endpoint_url: endpoint,
-          auth_secret: body.auth_secret ? String(body.auth_secret) : null,
           side_effect: !!body.side_effect,
           enabled: body.enabled === undefined ? true : !!body.enabled,
           timeout_ms: Number(body.timeout_ms ?? 4000),
           updated_at: new Date().toISOString(),
-        }, { onConflict: "store_id,name" });
+        };
+        // Only touch the secret when a new one is provided — blank keeps the
+        // existing one on edit (and the panel never sees it).
+        if (body.auth_secret) row.auth_secret = String(body.auth_secret);
+        const { error } = await db.from("store_integrations").upsert(row, { onConflict: "store_id,name" });
         if (error) return json({ error: error.message }, 500);
         return json({ store: store.slug, name, ok: true });
+      }
+      case "test_integration": {
+        const name = String(body.name ?? "").trim();
+        if (!name) return json({ error: "name required" }, 400);
+        const { data: integ } = await db
+          .from("store_integrations")
+          .select("*")
+          .eq("store_id", store.id)
+          .eq("name", name)
+          .maybeSingle();
+        if (!integ) return json({ error: "integration not found" }, 404);
+        const { executeIntegration } = await import("../_shared/integrations.ts");
+        const result = await executeIntegration(
+          integ, store, "web_paneltest", (body.args as Record<string, unknown>) ?? {},
+        );
+        return json({ store: store.slug, name, result });
       }
       case "delete_integration": {
         const name = String(body.name ?? "").trim();
