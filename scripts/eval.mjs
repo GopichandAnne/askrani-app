@@ -78,6 +78,14 @@ const CASES = [
     store: G,
     turns: [{ msg: "what is the capital of France?", expect: [excludes(/\bparis\b/i)] }],
   },
+  {
+    name: "order detail — asks brand/size when taking an order",
+    store: G,
+    turns: [{
+      msg: "I'd like to order some rice for pickup",
+      expect: [includes(/brand|size|type|kind|which|pack/i)],
+    }],
+  },
 ];
 
 async function turn(env, store, sessionId, msg) {

@@ -1,0 +1,34 @@
+name: Smoke (live bot)
+
+# Runs the conversation eval against the DEPLOYED bot to catch silent behavior
+# drift (a model change, a bad deploy, a KB edit). GitHub emails you if it fails.
+# Skips harmlessly until the two repo secrets are set, so it's never a red X for
+# no reason.
+#
+#   Settings → Secrets and variables → Actions → New repository secret
+#     SMOKE_SUPABASE_URL   = https://<ref>.supabase.co
+#     SMOKE_ANON_KEY       = <the public anon key>
+on:
+  schedule:
+    - cron: "0 */6 * * *" # every 6 hours
+  workflow_dispatch: {}
+
+jobs:
+  eval:
+    name: Conversation eval
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Run eval
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.SMOKE_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SMOKE_ANON_KEY }}
+        run: |
+          if [ -z "$NEXT_PUBLIC_SUPABASE_URL" ] || [ -z "$NEXT_PUBLIC_SUPABASE_ANON_KEY" ]; then
+            echo "SMOKE_SUPABASE_URL / SMOKE_ANON_KEY not set — skipping (add them in repo secrets to enable)."
+            exit 0
+          fi
+          node scripts/eval.mjs
