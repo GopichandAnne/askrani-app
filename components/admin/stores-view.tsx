@@ -297,7 +297,11 @@ function AssignOwnerDialog({
     const res = await assignOwner({ storeId: store.id, email, name: name || undefined });
     setPending(false);
     if (res.ok) {
-      toast.success("Owner assigned");
+      toast.success(res.invited ? "Invitation sent" : "Owner assigned", {
+        description: res.invited
+          ? "We emailed them a sign-in link — they'll see this store the first time they log in."
+          : undefined,
+      });
       setEmail("");
       setName("");
       onDone();
@@ -313,7 +317,8 @@ function AssignOwnerDialog({
           <DialogTitle>Assign owner</DialogTitle>
           <DialogDescription>
             {store ? `Give someone owner access to ${store.displayName ?? store.slug}. ` : ""}
-            They must have signed in to the panel at least once.
+            If they don&apos;t have an account yet, we&apos;ll email them an invite — they&apos;ll see
+            this store the first time they sign in.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">

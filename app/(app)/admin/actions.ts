@@ -81,12 +81,17 @@ export async function onboardStore(input: OnboardInput): Promise<ActionResult<{ 
   return { ok: true, slug: store.slug };
 }
 
-// ── Assign an owner to a store (must already have an account) ─────────────────
+// ── Assign an owner to a store ───────────────────────────────────────────────
+// If the person already has an account, they're linked immediately. If not, we
+// invite them (creates the account + emails a sign-in link) and link the store,
+// so they land straight in it the first time they log in.
+const APP_URL = "https://app.askrani.ai";
+
 export async function assignOwner(input: {
   storeId: string;
   email: string;
   name?: string;
-}): Promise<ActionResult> {
+}): Promise<ActionResult<{ invited: boolean }>> {
   await requireAdmin();
 
   const email = input.email.trim().toLowerCase();
@@ -94,15 +99,25 @@ export async function assignOwner(input: {
 
   const db = createAdminClient();
 
-  // Find the auth user by email (they must have signed in at least once).
+  // Find the auth user by email.
   const { data: list, error: listErr } = await db.auth.admin.listUsers({ page: 1, perPage: 1000 });
   if (listErr) return { ok: false, error: listErr.message };
-  const user = list.users.find((u) => (u.email ?? "").toLowerCase() === email);
+  let user = list.users.find((u) => (u.email ?? "").toLowerCase() === email);
+
+  // Not in the system yet — invite them. This creates the account and emails a
+  // sign-in link (same email system as magic-link login). The membership below
+  // is created regardless, so on first login they see this store.
+  let invited = false;
   if (!user) {
-    return {
-      ok: false,
-      error: "No account with that email has signed in yet. Ask them to sign in once, then assign.",
-    };
+    const { data: inv, error: invErr } = await db.auth.admin.inviteUserByEmail(email, {
+      data: input.name?.trim() ? { name: input.name.trim() } : undefined,
+      redirectTo: `${APP_URL}/auth/callback?next=/`,
+    });
+    if (invErr || !inv?.user) {
+      return { ok: false, error: `Couldn't send an invite to ${email}: ${invErr?.message ?? "unknown error"}` };
+    }
+    user = inv.user;
+    invited = true;
   }
 
   const { error } = await db.from("staff").upsert(
@@ -118,7 +133,7 @@ export async function assignOwner(input: {
   if (error) return { ok: false, error: error.message };
 
   revalidatePath("/admin/stores");
-  return { ok: true };
+  return { ok: true, invited };
 }
 
 // ── Waitlist management ──────────────────────────────────────────────────────
