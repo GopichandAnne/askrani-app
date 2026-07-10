@@ -72,7 +72,7 @@ Deno.serve(async (req) => {
   // Validate the visitor token server-side (the client check is not enough).
   const { data: tok } = await db
     .from("store_tokens")
-    .select("id")
+    .select("id, listing_context")
     .eq("store_id", store.id)
     .eq("token", token)
     .eq("active", true)
@@ -81,6 +81,9 @@ Deno.serve(async (req) => {
   if (!tok || tok.length === 0) {
     return json({ error: "This session link is invalid or expired — please scan the QR again." }, 403);
   }
+  // A listing-scoped ("smart yard sign") token primes the conversation on one
+  // listing while staying open to others. Null for ordinary tokens → no change.
+  const activeListing = (tok[0] as { listing_context?: string | null }).listing_context ?? undefined;
 
   // Break mode: the store paused its web chat — do nothing, just say so.
   const { data: pausedRow } = await db
@@ -139,6 +142,7 @@ Deno.serve(async (req) => {
     sessionId,
     inboundText: message || "[photo]",
     image,
+    activeListing,
   });
   const responseTimeMs = Date.now() - startedAt;
   const finalReply = reply || "Sorry, I had a brief hiccup — could you send that again? 🙏";

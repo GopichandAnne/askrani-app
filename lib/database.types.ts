@@ -637,6 +637,9 @@ export type Database = {
           expires_at: string | null
           id: string
           label: string | null
+          listing_chips: string | null
+          listing_context: string | null
+          listing_ref: string | null
           store_id: string
           token: string
         }
@@ -646,6 +649,9 @@ export type Database = {
           expires_at?: string | null
           id?: string
           label?: string | null
+          listing_chips?: string | null
+          listing_context?: string | null
+          listing_ref?: string | null
           store_id: string
           token: string
         }
@@ -655,6 +661,9 @@ export type Database = {
           expires_at?: string | null
           id?: string
           label?: string | null
+          listing_chips?: string | null
+          listing_context?: string | null
+          listing_ref?: string | null
           store_id?: string
           token?: string
         }
