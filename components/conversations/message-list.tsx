@@ -90,7 +90,7 @@ export function MessageList({
                   src={m.media_url}
                   alt={m.text ?? "image"}
                   onClick={() => setPreview(m.media_url!)}
-                  className="mb-1 max-h-56 cursor-zoom-in rounded-lg"
+                  className="mb-1 max-h-72 max-w-full cursor-zoom-in rounded-lg object-contain"
                 />
               )}
               {m.text && <p className="whitespace-pre-wrap">{m.text}</p>}
