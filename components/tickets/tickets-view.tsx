@@ -1,14 +1,19 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import type { Ticket, TicketStatus } from "@/lib/tickets/types";
 import { TICKET_STATUSES, TICKET_STATUS_LABEL } from "@/lib/tickets/types";
+import { answerTicket } from "@/app/(app)/tickets/actions";
 import { TicketStatusChip } from "./ticket-status-chip";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { formatDateTime, formatRelative } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { BookmarkCheck, LifeBuoy, Search } from "lucide-react";
+import { BookmarkCheck, LifeBuoy, Loader2, Search, Send } from "lucide-react";
 
 export function TicketsView({
   initialTickets,
@@ -55,9 +60,8 @@ export function TicketsView({
       <header>
         <h1 className="font-display text-2xl italic">Tickets</h1>
         <p className="text-muted-foreground text-sm">
-          {storeName} · read-only mirror — the durable record is the{" "}
-          <span className="font-medium">ticket_resolved</span> event in the
-          conversation timeline.
+          {storeName} · answer an open ticket here and Rani sends your reply to the customer
+          (WhatsApp or web) — no WhatsApp needed on your end.
         </p>
       </header>
 
@@ -126,8 +130,27 @@ export function TicketsView({
 }
 
 function TicketCard({ ticket }: { ticket: Ticket }) {
+  const router = useRouter();
+  const [answer, setAnswer] = useState("");
+  const [sending, startSend] = useTransition();
   const customer =
     ticket.customer_name?.trim() || ticket.customer_phone || "Unknown customer";
+  const isOpen = ticket.status === "created" || ticket.status === "sent_to_owner";
+
+  function send() {
+    const a = answer.trim();
+    if (!a) return;
+    startSend(async () => {
+      const res = await answerTicket(ticket.ticket_id, a);
+      if (res.ok) {
+        toast.success("Answer sent to the customer");
+        setAnswer("");
+        router.refresh();
+      } else {
+        toast.error("Couldn't send", { description: res.error });
+      }
+    });
+  }
 
   return (
     <li className="bg-card rounded-lg border p-4">
@@ -167,6 +190,24 @@ function TicketCard({ ticket }: { ticket: Ticket }) {
             answered{ticket.answered_by ? ` by ${ticket.answered_by}` : ""}
             {ticket.answered_at ? ` · ${formatDateTime(ticket.answered_at)}` : ""}
           </p>
+        </div>
+      )}
+
+      {isOpen && (
+        <div className="mt-3 space-y-2">
+          <Textarea
+            value={answer}
+            onChange={(e) => setAnswer(e.target.value)}
+            rows={2}
+            placeholder="Type your answer — Rani sends it to the customer as you…"
+            disabled={sending}
+          />
+          <div className="flex justify-end">
+            <Button size="sm" onClick={send} disabled={sending || !answer.trim()}>
+              {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+              Send answer
+            </Button>
+          </div>
         </div>
       )}
     </li>

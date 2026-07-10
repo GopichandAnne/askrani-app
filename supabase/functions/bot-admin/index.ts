@@ -216,6 +216,15 @@ Deno.serve(async (req) => {
         } catch { /* leave empty */ }
         return json({ store: store.slug, chips });
       }
+      case "answer_ticket": {
+        const ticketId = String(body.ticket_id ?? "").trim();
+        const answer = String(body.answer ?? "").trim();
+        const by = (String(body.by ?? "").trim()) || "Store team";
+        if (!ticketId || !answer) return json({ error: "ticket_id and answer required" }, 400);
+        const { answerTicket } = await import("../_shared/responders.ts");
+        const res = await answerTicket(db, store, ticketId, answer, by);
+        return json(res);
+      }
       case "set_document_dates": {
         const title = String(body.title ?? "").trim();
         if (!title) return json({ error: "title required" }, 400);

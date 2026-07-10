@@ -80,14 +80,14 @@ export async function notifyResponders(
 }
 
 /**
- * Relay a responder's reply to the waiting customer. Answers the single open
- * ticket for the store (atomic claim → first-to-answer wins); if zero or many
- * are open, returns a note so the caller can ack the responder appropriately.
+ * Relay a WhatsApp responder's reply to the waiting customer. Answers the single
+ * open ticket for the store; if zero or many are open, returns a note so the
+ * caller can ack the responder appropriately.
  */
 export async function relayStaffAnswer(
   db: SupabaseClient,
   store: Store,
-  phoneNumberId: string,
+  _phoneNumberId: string,
   responder: Responder,
   answerText: string,
 ): Promise<{ handled: boolean; note?: string }> {
@@ -100,71 +100,95 @@ export async function relayStaffAnswer(
   const tickets = open ?? [];
   if (tickets.length === 0) return { handled: false, note: "no_open_tickets" };
   if (tickets.length > 1) return { handled: false, note: "multiple_open" };
+  return await deliverTicketAnswer(
+    db, store, tickets[0], answerText, responder.name ?? responder.phone ?? "a teammate", responder.phone ?? null,
+  );
+}
 
-  const t = tickets[0];
-  const by = responder.name ?? responder.phone;
-  // Atomic claim: only succeeds if the ticket is still open (first-to-answer).
+/**
+ * Answer a SPECIFIC ticket from the dashboard (any owner/staff, incl. email-only
+ * responders who can't reply over WhatsApp). Same delivery as a WhatsApp reply.
+ */
+export async function answerTicket(
+  db: SupabaseClient,
+  store: Store,
+  ticketId: string,
+  answerText: string,
+  by: string,
+): Promise<{ handled: boolean; note?: string }> {
+  const { data: t } = await db
+    .from("tickets")
+    .select("ticket_id, customer_phone, question, status")
+    .eq("store_slug", store.slug)
+    .eq("ticket_id", ticketId)
+    .maybeSingle();
+  if (!t) return { handled: false, note: "not_found" };
+  if (t.status !== "created" && t.status !== "sent_to_owner") {
+    return { handled: false, note: "already_answered" };
+  }
+  return await deliverTicketAnswer(db, store, t, answerText, by, null);
+}
+
+/** Shared: atomically claim the ticket (first-to-answer wins across WhatsApp and
+ *  the panel), relay to the customer, persist, learn, and notify the team. */
+async function deliverTicketAnswer(
+  db: SupabaseClient,
+  store: Store,
+  ticket: { ticket_id: string; customer_phone: string | null; question: string | null },
+  answerText: string,
+  by: string,
+  excludePhone: string | null,
+): Promise<{ handled: boolean; note?: string }> {
   const { data: claimed } = await db
     .from("tickets")
     .update({ status: "answered", answer: answerText, answered_by: by, answered_at: new Date().toISOString() })
-    .eq("ticket_id", t.ticket_id)
+    .eq("ticket_id", ticket.ticket_id)
     .in("status", ["created", "sent_to_owner"])
     .select("ticket_id");
   if (!claimed || claimed.length === 0) return { handled: false, note: "already_answered" };
 
   // Relay to the customer as Rani. Web sessions (customer_phone = web_<uuid>)
   // have no phone — the thread write below is delivered live via Realtime instead.
-  const isWeb = (t.customer_phone ?? "").startsWith("web_");
+  const isWeb = (ticket.customer_phone ?? "").startsWith("web_");
   const token = await getStoreAccessToken(db, store.id);
-  if (token && t.customer_phone && !isWeb) {
-    await sendText(token, phoneNumberId, t.customer_phone, answerText);
+  if (token && ticket.customer_phone && !isWeb && store.whatsapp_phone_number_id) {
+    await sendText(token, store.whatsapp_phone_number_id, ticket.customer_phone, answerText);
   }
 
-  // Persist to the customer's thread: the answer + an event.
-  const threadId = `thr_${t.customer_phone}_${store.slug}`;
+  const threadId = `thr_${ticket.customer_phone}_${store.slug}`;
   await db.from("thread_messages").insert({
     message_id: `msg_out_${crypto.randomUUID()}`,
-    thread_id: threadId,
-    store_slug: store.slug,
-    customer_phone: t.customer_phone,
-    direction: "outbound",
-    sender: by,
-    text: answerText,
-    kind: "message",
+    thread_id: threadId, store_slug: store.slug, customer_phone: ticket.customer_phone,
+    direction: "outbound", sender: by, text: answerText, kind: "message",
   });
   await db.from("thread_messages").insert({
     message_id: `evt_${crypto.randomUUID()}`,
-    thread_id: threadId,
-    store_slug: store.slug,
-    customer_phone: t.customer_phone,
-    direction: "system",
-    sender: "bot",
-    kind: "event",
-    event_type: "ticket_answered",
-    text: `${by} answered: ${t.question}`,
-    event_payload_json: { ticket_id: t.ticket_id, by },
+    thread_id: threadId, store_slug: store.slug, customer_phone: ticket.customer_phone,
+    direction: "system", sender: "bot", kind: "event", event_type: "ticket_answered",
+    text: `${by} answered: ${ticket.question}`, event_payload_json: { ticket_id: ticket.ticket_id, by },
   });
 
-  // Learn from this answer: an LLM decides if it's a reusable FAQ, cleans it, and
-  // publishes safe/high-confidence ones live (indexed) or queues borderline ones
-  // for owner review — so Rani can handle the same question itself next time.
-  // Best-effort; runs in the webhook's background task, never blocks the relay.
+  // Learn from this answer (best-effort; never blocks the relay).
   try {
-    await learnFromAnswer(db, store, t.question ?? "", answerText, t.customer_phone);
+    await learnFromAnswer(db, store, ticket.question ?? "", answerText, ticket.customer_phone);
   } catch (e) {
     console.error(`[responders] learn: ${e instanceof Error ? e.message : e}`);
   }
 
   // Tell the other responders it's handled.
-  const { data: others } = await db
+  let others = db
     .from("store_responders")
     .select("phone")
     .eq("store_slug", store.slug)
     .eq("active", true)
-    .eq("notify_escalations", true)
-    .neq("phone", responder.phone);
-  await notify(db, store, (others ?? []).map((r: { phone: string }) => r.phone),
-    `Handled: "${t.question}" — answered by ${responder.name ?? "a teammate"}.`);
+    .eq("notify_escalations", true);
+  if (excludePhone) others = others.neq("phone", excludePhone);
+  const { data: rest } = await others;
+  await notify(
+    db, store,
+    (rest ?? []).map((r: { phone: string | null }) => r.phone).filter((p): p is string => !!p),
+    `Handled: "${ticket.question}" — answered by ${by}.`,
+  );
 
   return { handled: true };
 }
