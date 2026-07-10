@@ -17,20 +17,21 @@ import { Loader2, Plus, Trash2, Users } from "lucide-react";
 export function RespondersSection({ initial }: { initial: Responder[] }) {
   const [rows, setRows] = useState<Responder[]>(initial);
   const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [adding, startAdd] = useTransition();
 
   function add() {
-    if (!phone.trim()) return;
+    if (!phone.trim() && !email.trim()) return;
     startAdd(async () => {
-      const res = await addResponder({ phone, name });
+      const res = await addResponder({ phone, email, name });
       if (res.ok) {
         setRows((prev) => {
           const i = prev.findIndex((r) => r.id === res.responder.id);
           if (i >= 0) { const c = prev.slice(); c[i] = res.responder; return c; }
           return [...prev, res.responder];
         });
-        setPhone(""); setName("");
+        setPhone(""); setEmail(""); setName("");
         toast.success("Responder added");
       } else toast.error("Couldn't add", { description: res.error });
     });
@@ -55,9 +56,10 @@ export function RespondersSection({ initial }: { initial: Responder[] }) {
         <h2 className="text-sm font-medium">Escalation responders</h2>
       </div>
       <p className="text-muted-foreground text-xs">
-        Owner/staff WhatsApp numbers. Rani messages them when she needs a human
-        (escalations) or when an order is placed. Whoever replies first, Rani
-        relays their answer to the customer. Numbers need no login here.
+        Owner/staff contacts — a WhatsApp number, an email, or both. Rani notifies
+        them on whichever channel they set when she needs a human (escalations) or
+        an order is placed. WhatsApp responders can reply right in WhatsApp and Rani
+        relays the first answer to the customer.
       </p>
 
       {rows.length > 0 && (
@@ -65,9 +67,9 @@ export function RespondersSection({ initial }: { initial: Responder[] }) {
           {rows.map((r) => (
             <li key={r.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 p-3">
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">{r.name || r.phone}</p>
-                <p className="text-muted-foreground text-xs">
-                  {r.phone}
+                <p className="truncate text-sm font-medium">{r.name || r.phone || r.email}</p>
+                <p className="text-muted-foreground truncate text-xs">
+                  {[r.phone, r.email].filter(Boolean).join(" · ")}
                   {r.role === "owner" ? " · owner" : ""}
                   {!r.active ? " · inactive" : ""}
                 </p>
@@ -95,18 +97,23 @@ export function RespondersSection({ initial }: { initial: Responder[] }) {
 
       <div className="flex flex-wrap items-end gap-2">
         <div className="space-y-1">
-          <Label htmlFor="resp-phone" className="text-xs">Phone (with country code)</Label>
-          <Input id="resp-phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="15125551234" inputMode="tel" className="w-48" />
+          <Label htmlFor="resp-phone" className="text-xs">WhatsApp (country code)</Label>
+          <Input id="resp-phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="15125551234" inputMode="tel" className="w-40" />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="resp-email" className="text-xs">Email</Label>
+          <Input id="resp-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="ravi@store.com" inputMode="email" className="w-48" />
         </div>
         <div className="space-y-1">
           <Label htmlFor="resp-name" className="text-xs">Name</Label>
-          <Input id="resp-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ravi" className="w-40" />
+          <Input id="resp-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Ravi" className="w-32" />
         </div>
-        <Button onClick={add} disabled={adding || !phone.trim()} size="sm">
+        <Button onClick={add} disabled={adding || (!phone.trim() && !email.trim())} size="sm">
           {adding ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
           Add
         </Button>
       </div>
+      <p className="text-muted-foreground text-xs">Add a WhatsApp number, an email, or both.</p>
     </section>
   );
 }

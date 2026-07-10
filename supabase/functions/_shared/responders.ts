@@ -11,6 +11,9 @@ import type { Store } from "./types.ts";
 import { sendText } from "./wa.ts";
 import { getStoreAccessToken } from "./config.ts";
 import { learnFromAnswer } from "./learn.ts";
+import { sendEmail } from "./email.ts";
+
+const PANEL_URL = "https://app.askrani.ai";
 
 export interface Responder {
   phone: string;
@@ -45,7 +48,8 @@ async function notify(db: SupabaseClient, store: Store, phones: string[], text: 
   for (const p of phones) await sendText(token, pnid, p, text); // best-effort
 }
 
-/** DM responders opted into a given notification kind. */
+/** Notify responders opted into a given kind — on every channel they've set
+ *  (WhatsApp DM to their phone, email to their address). */
 export async function notifyResponders(
   db: SupabaseClient,
   store: Store,
@@ -55,11 +59,24 @@ export async function notifyResponders(
   const col = kind === "order" ? "notify_orders" : "notify_escalations";
   const { data } = await db
     .from("store_responders")
-    .select("phone")
+    .select("phone, email")
     .eq("store_slug", store.slug)
     .eq("active", true)
     .eq(col, true);
-  await notify(db, store, (data ?? []).map((r: { phone: string }) => r.phone), text);
+  const rows = (data ?? []) as { phone: string | null; email: string | null }[];
+
+  const phones = rows.map((r) => r.phone).filter((p): p is string => !!p);
+  await notify(db, store, phones, text);
+
+  const emails = rows.map((r) => r.email).filter((e): e is string => !!e);
+  if (emails.length) {
+    const name = store.store_display_name ?? store.slug;
+    const subject = kind === "order"
+      ? `New order — ${name}`
+      : `A customer needs help — ${name}`;
+    const body = `${text}\n\nOpen your dashboard to respond: ${PANEL_URL}/tickets`;
+    for (const to of emails) await sendEmail(to, subject, body);
+  }
 }
 
 /**

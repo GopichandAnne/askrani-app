@@ -552,11 +552,12 @@ export type Database = {
         Row: {
           active: boolean
           created_at: string
+          email: string | null
           id: string
           name: string | null
           notify_escalations: boolean
           notify_orders: boolean
-          phone: string
+          phone: string | null
           role: Database["public"]["Enums"]["staff_role"]
           store_slug: string
           updated_at: string
@@ -564,11 +565,12 @@ export type Database = {
         Insert: {
           active?: boolean
           created_at?: string
+          email?: string | null
           id?: string
           name?: string | null
           notify_escalations?: boolean
           notify_orders?: boolean
-          phone: string
+          phone?: string | null
           role?: Database["public"]["Enums"]["staff_role"]
           store_slug: string
           updated_at?: string
@@ -576,11 +578,12 @@ export type Database = {
         Update: {
           active?: boolean
           created_at?: string
+          email?: string | null
           id?: string
           name?: string | null
           notify_escalations?: boolean
           notify_orders?: boolean
-          phone?: string
+          phone?: string | null
           role?: Database["public"]["Enums"]["staff_role"]
           store_slug?: string
           updated_at?: string

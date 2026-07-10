@@ -112,14 +112,22 @@ export async function listResponders(): Promise<Responder[]> {
 }
 
 export async function addResponder(input: {
-  phone: string;
+  phone?: string;
+  email?: string;
   name?: string;
   role?: "owner" | "staff";
   notify_escalations?: boolean;
   notify_orders?: boolean;
 }): Promise<ResponderResult> {
-  const phone = normalizePhone(input.phone);
-  if (phone.length < 7) return { ok: false, error: "Enter a valid phone number (country code + number)." };
+  const phone = normalizePhone(input.phone ?? "");
+  const email = (input.email ?? "").trim().toLowerCase();
+  if (!phone && !email) return { ok: false, error: "Add a WhatsApp number or an email." };
+  if (phone && phone.length < 7) {
+    return { ok: false, error: "Enter a valid phone number (country code + number)." };
+  }
+  if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    return { ok: false, error: "Enter a valid email address." };
+  }
 
   const ctx = await getActiveStore();
   if (!ctx?.active) return { ok: false, error: "No active store." };
@@ -132,7 +140,8 @@ export async function addResponder(input: {
     .upsert(
       {
         store_slug: ctx.active.slug,
-        phone,
+        phone: phone || null,
+        email: email || null,
         name: (input.name ?? "").trim() || null,
         role: input.role ?? "staff",
         notify_escalations: input.notify_escalations ?? true,
