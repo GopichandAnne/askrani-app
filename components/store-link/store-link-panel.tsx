@@ -5,8 +5,10 @@ import { QRCodeCanvas } from "qrcode.react";
 import { toast } from "sonner";
 import {
   getStoreLink,
+  removeStoreLogo,
   setLinkActive,
   regenerateLink,
+  setStoreLogo,
   setWebChatPaused,
   setWhatsappNumber,
   setWhatsappRedirect,
@@ -23,7 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Check, Clock, Copy, Download, Loader2, MessageCircle, QrCode, RefreshCw } from "lucide-react";
+import { Check, Clock, Copy, Download, ImagePlus, Loader2, MessageCircle, QrCode, RefreshCw, Trash2 } from "lucide-react";
 
 const TIMEOUTS: [number, string][] = [
   [15, "15 minutes"],
@@ -57,7 +59,9 @@ export function StoreLinkPanel({
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [copiedEmbed, setCopiedEmbed] = useState(false);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const qrRef = useRef<HTMLDivElement>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   const url = token ? `${SITE}/s/${storeSlug}?t=${token}` : "";
   const embedSnippet = token
@@ -76,6 +80,7 @@ export function StoreLinkPanel({
         setWaInput(res.waNumber ?? "");
         setWaRedirect(res.waRedirect);
         setSessionMins(res.sessionMinutes);
+        setLogoUrl(res.logoUrl);
       } else {
         toast.error("Couldn't load link", { description: res.error });
       }
@@ -176,6 +181,32 @@ export function StoreLinkPanel({
     navigator.clipboard.writeText(embedSnippet);
     setCopiedEmbed(true);
     setTimeout(() => setCopiedEmbed(false), 1500);
+  }
+
+  async function uploadLogo(file: File) {
+    setBusy(true);
+    const fd = new FormData();
+    fd.set("logo", file);
+    const res = await setStoreLogo(storeId, fd);
+    setBusy(false);
+    if (res.ok) {
+      setLogoUrl(res.logoUrl);
+      toast.success("Chat logo updated");
+    } else {
+      toast.error("Couldn't upload logo", { description: res.error });
+    }
+  }
+
+  async function clearLogo() {
+    setBusy(true);
+    const res = await removeStoreLogo(storeId);
+    setBusy(false);
+    if (res.ok) {
+      setLogoUrl(null);
+      toast.success("Logo removed — back to the default Rani avatar");
+    } else {
+      toast.error("Couldn't remove logo", { description: res.error });
+    }
   }
 
   function downloadQr() {
@@ -320,6 +351,50 @@ export function StoreLinkPanel({
               no app, no login.
             </p>
           </div>
+        </div>
+      </div>
+
+      {/* Chat logo — shown in the chat header instead of the default Rani avatar. */}
+      <div className="space-y-2 border-t pt-4">
+        <p className="text-sm font-medium">Chat logo</p>
+        <p className="text-muted-foreground text-xs">
+          Shown in the chat header in place of the default Rani avatar. A square image works best
+          (PNG, SVG, or JPG, up to 2 MB).
+        </p>
+        <div className="flex items-center gap-3">
+          <div className="bg-muted flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-full border">
+            {logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={logoUrl} alt="Store logo" className="size-full object-cover" />
+            ) : (
+              <ImagePlus className="text-muted-foreground size-5" />
+            )}
+          </div>
+          <input
+            ref={logoInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/svg+xml,image/webp"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) uploadLogo(f);
+              e.target.value = "";
+            }}
+          />
+          <Button size="sm" variant="outline" disabled={busy} onClick={() => logoInputRef.current?.click()}>
+            <ImagePlus className="size-4" /> {logoUrl ? "Replace" : "Upload logo"}
+          </Button>
+          {logoUrl && (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={busy}
+              onClick={clearLogo}
+              className="text-muted-foreground hover:text-destructive"
+            >
+              <Trash2 className="size-4" /> Remove
+            </Button>
+          )}
         </div>
       </div>
 

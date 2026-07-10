@@ -12,6 +12,7 @@ export type LinkResult =
       waNumber: string | null;
       waRedirect: boolean;
       sessionMinutes: number;
+      logoUrl: string | null;
     }
   | { ok: false; error: string };
 
@@ -46,7 +47,7 @@ export async function getStoreLink(storeId: string): Promise<LinkResult> {
       .limit(1),
     db
       .from("stores")
-      .select("web_chat_paused, whatsapp_display_number, whatsapp_redirect_enabled, session_minutes")
+      .select("web_chat_paused, whatsapp_display_number, whatsapp_redirect_enabled, session_minutes, logo_url")
       .eq("id", storeId)
       .single(),
   ]);
@@ -54,6 +55,7 @@ export async function getStoreLink(storeId: string): Promise<LinkResult> {
   const waNumber = store?.whatsapp_display_number ?? null;
   const waRedirect = !!store?.whatsapp_redirect_enabled;
   const sessionMinutes = store?.session_minutes ?? 30;
+  const logoUrl = store?.logo_url ?? null;
 
   if (existing && existing.length > 0) {
     return {
@@ -64,6 +66,7 @@ export async function getStoreLink(storeId: string): Promise<LinkResult> {
       waNumber,
       waRedirect,
       sessionMinutes,
+      logoUrl,
     };
   }
 
@@ -72,7 +75,48 @@ export async function getStoreLink(storeId: string): Promise<LinkResult> {
     .from("store_tokens")
     .insert({ store_id: storeId, token, label: "primary QR", active: true });
   if (error) return { ok: false, error: error.message };
-  return { ok: true, token, active: true, paused, waNumber, waRedirect, sessionMinutes };
+  return { ok: true, token, active: true, paused, waNumber, waRedirect, sessionMinutes, logoUrl };
+}
+
+/** Upload (or replace) the store's chat logo — owners/admin only. */
+export async function setStoreLogo(
+  storeId: string,
+  formData: FormData,
+): Promise<{ ok: true; logoUrl: string } | { ok: false; error: string }> {
+  await requireStoreAccess(storeId);
+  const file = formData.get("logo");
+  if (!(file instanceof File) || file.size === 0) return { ok: false, error: "Pick an image to upload." };
+  if (!file.type.startsWith("image/")) return { ok: false, error: "Please upload an image (PNG, JPG, SVG, or WebP)." };
+  if (file.size > 2 * 1024 * 1024) return { ok: false, error: "Image too large (max 2 MB)." };
+
+  const db = createAdminClient();
+  const { data: s } = await db.from("stores").select("slug").eq("id", storeId).single();
+  const slug = s?.slug ?? storeId;
+  const path = `${slug}/logo`;
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const { error: upErr } = await db.storage
+    .from("branding")
+    .upload(path, bytes, { contentType: file.type, upsert: true });
+  if (upErr) return { ok: false, error: `Upload failed: ${upErr.message}` };
+
+  const { data: pub } = db.storage.from("branding").getPublicUrl(path);
+  const logoUrl = `${pub.publicUrl}?v=${Date.now()}`; // cache-bust so re-uploads show
+  const { error } = await db.from("stores").update({ logo_url: logoUrl }).eq("id", storeId);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, logoUrl };
+}
+
+/** Remove the store's chat logo (revert to the default Rani avatar). */
+export async function removeStoreLogo(
+  storeId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  await requireStoreAccess(storeId);
+  const db = createAdminClient();
+  const { error } = await db.from("stores").update({ logo_url: null }).eq("id", storeId);
+  if (error) return { ok: false, error: error.message };
+  const { data: s } = await db.from("stores").select("slug").eq("id", storeId).single();
+  if (s?.slug) await db.storage.from("branding").remove([`${s.slug}/logo`]); // best-effort
+  return { ok: true };
 }
 
 /** Set how long a web chat visitor session lasts (minutes). */

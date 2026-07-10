@@ -681,6 +681,7 @@ export type Database = {
           pricing_folder_id: string | null
           product_source: string | null
           prompt_file_id: string | null
+          logo_url: string | null
           session_minutes: number
           slug: string
           store_display_name: string | null
@@ -708,6 +709,7 @@ export type Database = {
           pricing_folder_id?: string | null
           product_source?: string | null
           prompt_file_id?: string | null
+          logo_url?: string | null
           session_minutes?: number
           slug: string
           store_display_name?: string | null
@@ -735,6 +737,7 @@ export type Database = {
           pricing_folder_id?: string | null
           product_source?: string | null
           prompt_file_id?: string | null
+          logo_url?: string | null
           session_minutes?: number
           slug?: string
           store_display_name?: string | null
