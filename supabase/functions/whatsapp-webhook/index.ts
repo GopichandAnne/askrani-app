@@ -12,6 +12,7 @@ import { getStoreAccessToken, getStoreByPhoneNumberId } from "../_shared/config.
 import { handleConversation } from "../_shared/conversation.ts";
 import { findResponder, relayStaffAnswer, type Responder } from "../_shared/responders.ts";
 import { downloadMedia, sendText } from "../_shared/wa.ts";
+import { storeChatImage } from "../_shared/chat-media.ts";
 import { encodeBase64 } from "jsr:@std/encoding@1/base64";
 import type { Store, WaContact, WaMessage, WaWebhook } from "../_shared/types.ts";
 
@@ -165,13 +166,18 @@ async function handleMessage(
   console.log(`[webhook] ${store.slug} <- ${from}: ${text?.slice(0, 80)}`);
 
   // If the customer sent a photo, download it (Meta media API) so the model can
-  // see it. Best-effort: on failure we proceed text-only with the caption.
+  // see it. Best-effort: on failure we proceed text-only with the caption. Also
+  // store it so staff can see it in the panel (stamp media_url on the row above).
   let image: { base64: string; mime: string } | undefined;
   if (msg.type === "image" && msg.image?.id) {
     const token = await getStoreAccessToken(db, store.id);
     if (token) {
       const media = await downloadMedia(token, msg.image.id);
-      if (media) image = { base64: encodeBase64(media.bytes), mime: media.mime };
+      if (media) {
+        image = { base64: encodeBase64(media.bytes), mime: media.mime };
+        const url = await storeChatImage(db, store, `wa_${from}`, image.base64, image.mime);
+        if (url) await db.from("thread_messages").update({ media_url: url }).eq("message_id", messageId);
+      }
     }
   }
 

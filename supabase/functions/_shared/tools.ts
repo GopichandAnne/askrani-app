@@ -482,31 +482,37 @@ async function executeSendImage(
   const { data: signed } = await db.storage.from("kb").createSignedUrl(best.source_path, 60 * 60 * 24 * 7);
   if (!signed?.signedUrl) return { sent: false, note: "could not prepare the image" };
 
-  // Web session: deliver the image into the chat via a thread message (Realtime
-  // pushes it to the browser, which renders it inline). No WhatsApp send.
-  if (sessionId.startsWith("web_")) {
-    const { error } = await db.from("thread_messages").insert({
-      message_id: `msg_web_img_${crypto.randomUUID()}`,
-      thread_id: `thr_${sessionId}_${store.slug}`,
-      store_slug: store.slug,
-      customer_phone: sessionId,
-      direction: "outbound",
-      sender: "agent",
-      text: best.source_ref,
-      media_url: signed.signedUrl,
-      kind: "message",
-    });
-    return error
+  // Record the outbound image as a thread message so it shows in the panel (and,
+  // for web sessions, Realtime pushes it to the browser to render inline). The
+  // thread_id format mirrors each channel's inbound writer.
+  const isWeb = sessionId.startsWith("web_");
+  const phone = sessionId.startsWith("wa_") ? sessionId.slice(3) : sessionId;
+  const threadId = isWeb ? `thr_${sessionId}_${store.slug}` : `thr_${phone}_${store.slug}`;
+  const { error: persistErr } = await db.from("thread_messages").insert({
+    message_id: `msg_img_${crypto.randomUUID()}`,
+    thread_id: threadId,
+    store_slug: store.slug,
+    customer_phone: isWeb ? sessionId : phone,
+    direction: "outbound",
+    sender: "agent",
+    text: best.source_ref,
+    media_url: signed.signedUrl,
+    kind: "message",
+  });
+
+  // Web session: the thread message IS the delivery (no WhatsApp send).
+  if (isWeb) {
+    return persistErr
       ? { sent: false, note: "could not send the image", image: best.source_ref }
       : { sent: true, image: best.source_ref };
   }
 
+  // WhatsApp: also push the image over the WhatsApp media API.
   const token = await getStoreAccessToken(db, store.id);
-  const to = sessionId.startsWith("wa_") ? sessionId.slice(3) : sessionId;
   if (!token || !store.whatsapp_phone_number_id) {
     return { sent: false, note: "messaging not configured", image: best.source_ref };
   }
-  const ok = await sendImage(token, store.whatsapp_phone_number_id, to, signed.signedUrl, best.source_ref);
+  const ok = await sendImage(token, store.whatsapp_phone_number_id, phone, signed.signedUrl, best.source_ref);
   return ok
     ? { sent: true, image: best.source_ref }
     : { sent: false, note: "send failed", image: best.source_ref };

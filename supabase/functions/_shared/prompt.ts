@@ -328,8 +328,11 @@ export function buildSystemInstruction(
         "no moment fits, skip it entirely — a chat with no promotion beats a forced " +
         "one. Never let a promotion delay or replace answering their actual question, " +
         "and never be pushy. Follow the store's pricing rules: if you can't quote " +
-        "prices, describe the offer without exact totals and let the team confirm. If a " +
-        "promotion has a matching picture on file, you may show it with send_image.",
+        "prices, describe the offer without exact totals and let the team confirm. " +
+        "WHENEVER you mention a promotion, SHOW its picture if one is on file — call " +
+        "send_image with the promotion's name (its flyer, or the featured item's " +
+        "photo). A promotion lands far better with the image, so include it whenever " +
+        "one is available; if send_image returns sent:false, just continue without it.",
     );
   }
 

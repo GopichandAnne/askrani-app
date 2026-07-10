@@ -13,6 +13,7 @@ import { getStoreBySlug } from "../_shared/config.ts";
 import { generateTurnReply } from "../_shared/conversation.ts";
 import { classifyTurn } from "../_shared/analytics.ts";
 import { splitBubbles } from "../_shared/prompt.ts";
+import { storeChatImage } from "../_shared/chat-media.ts";
 import {
   cancelFollowup,
   getFollowupSettings,
@@ -121,6 +122,12 @@ Deno.serve(async (req) => {
 
   const now = new Date().toISOString();
 
+  // If the customer attached a photo, store it so staff can see it in the panel
+  // later (best-effort — the model already receives the image regardless).
+  const inboundMediaUrl = image
+    ? await storeChatImage(db, store, sessionId, image.base64, image.mime)
+    : null;
+
   // ── Persist the thread + inbound message (customer_phone stands in as the web id). ──
   await db.from("threads").upsert(
     { thread_id: threadId, store_slug: store.slug, customer_phone: sessionId, last_message_at: now },
@@ -134,6 +141,7 @@ Deno.serve(async (req) => {
     direction: "inbound",
     sender: "customer",
     text: message || "[photo]",
+    media_url: inboundMediaUrl,
     kind: "message",
     created_at: now,
   });
