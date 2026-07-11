@@ -82,6 +82,34 @@ export async function deleteIntegration(name: string): Promise<Result> {
   return { ok: true };
 }
 
+// ── Prebuilt provider connectors (one-click for non-technical owners) ────────
+export async function providerStatus(): Promise<{ stripe: boolean }> {
+  const gate = await requireOwner();
+  if (!gate.ok) return { stripe: false };
+  const res = await callBotAdmin({ action: "provider_status", store_slug: gate.slug });
+  if (!res.ok) return { stripe: false };
+  const providers = (res.data.providers as { provider: string }[]) ?? [];
+  return { stripe: providers.some((p) => p.provider === "stripe") };
+}
+
+export async function connectStripe(stripeKey: string): Promise<Result> {
+  const gate = await requireOwner();
+  if (!gate.ok) return gate;
+  const res = await callBotAdmin({ action: "connect_stripe", store_slug: gate.slug, stripe_key: stripeKey.trim() });
+  if (!res.ok) return res;
+  revalidatePath("/integrations");
+  return { ok: true };
+}
+
+export async function disconnectProvider(provider: string): Promise<Result> {
+  const gate = await requireOwner();
+  if (!gate.ok) return gate;
+  const res = await callBotAdmin({ action: "disconnect_provider", store_slug: gate.slug, provider });
+  if (!res.ok) return res;
+  revalidatePath("/integrations");
+  return { ok: true };
+}
+
 export type TestResult =
   | { ok: true; result: unknown }
   | { ok: false; error: string };

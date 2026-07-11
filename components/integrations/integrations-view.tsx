@@ -10,6 +10,7 @@ import {
   testIntegration,
 } from "@/app/(app)/integrations/actions";
 import { IntegrationDialog } from "./integration-dialog";
+import { PrebuiltConnectors } from "./prebuilt-connectors";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
@@ -104,8 +105,17 @@ export function IntegrationsView({
       <p className="text-muted-foreground text-sm">
         Connect Rani to your own systems — a POS for live prices, a booking system, anything with an
         HTTP endpoint. Rani decides on its own when to call each one, based on the description you
-        write. No coding on our side.
+        write.
       </p>
+
+      <PrebuiltConnectors onChange={refresh} />
+
+      <div className="flex items-center gap-2 pt-1">
+        <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+          Custom connectors
+        </span>
+        <span className="bg-border h-px flex-1" />
+      </div>
 
       {initial.length === 0 ? (
         <div className="bg-card text-muted-foreground flex flex-col items-center gap-2 rounded-lg border border-dashed py-16 text-center">

@@ -6,12 +6,37 @@
 // Set the STRIPE_SECRET_KEY function secret to go live. Without it, it returns a
 // demo URL so the flow still works end-to-end. HMAC-signed like every connector.
 
+import { serviceClient } from "../_shared/supabase.ts";
+
 function id(p: string) {
   return p + "-" + crypto.randomUUID().slice(0, 8).toUpperCase();
 }
 
-async function stripeCheckout(amount: number, ref: string): Promise<string | null> {
-  const key = Deno.env.get("STRIPE_SECRET_KEY");
+/** The calling store's own Stripe key (set once in the panel), else the platform
+ *  env key, else none (demo). */
+async function resolveStripeKey(storeSlug: string): Promise<string | null> {
+  if (storeSlug) {
+    try {
+      const db = serviceClient();
+      const { data: store } = await db.from("stores").select("id").eq("slug", storeSlug).maybeSingle();
+      if (store) {
+        const { data } = await db
+          .from("store_provider_credentials")
+          .select("credentials")
+          .eq("store_id", store.id)
+          .eq("provider", "stripe")
+          .maybeSingle();
+        const k = (data?.credentials as { secret_key?: string } | null)?.secret_key;
+        if (k) return k;
+      }
+    } catch (e) {
+      console.error("[stripe-pay] key lookup:", e);
+    }
+  }
+  return Deno.env.get("STRIPE_SECRET_KEY") ?? null;
+}
+
+async function stripeCheckout(amount: number, ref: string, key: string | null): Promise<string | null> {
   if (!key) return null; // demo fallback
   const cents = Math.round(amount * 100);
   const p = new URLSearchParams();
@@ -53,7 +78,7 @@ Deno.serve(async (req) => {
   if (secret && !(await verify(secret, raw, req.headers.get("X-Rani-Signature")))) {
     return json({ error: "bad signature" }, 401);
   }
-  let parsed: { tool?: string; args?: Record<string, unknown> };
+  let parsed: { tool?: string; args?: Record<string, unknown>; store_slug?: string };
   try {
     parsed = JSON.parse(raw);
   } catch {
@@ -67,7 +92,8 @@ Deno.serve(async (req) => {
   const ref = String(a.order_ref ?? id("ORD"));
   if (!(amount > 0)) return json({ ok: false, note: "need the order total to create a payment link" });
 
-  const stripeUrl = await stripeCheckout(amount, ref);
+  const key = await resolveStripeKey(String(parsed.store_slug ?? ""));
+  const stripeUrl = await stripeCheckout(amount, ref, key);
   return json(
     stripeUrl
       ? {

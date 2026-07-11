@@ -126,6 +126,50 @@ Deno.serve(async (req) => {
         if (error) return json({ error: error.message }, 500);
         return json({ store: store.slug, name, ok: true });
       }
+      case "connect_stripe": {
+        // One-click Stripe: store the owner's key + wire the payment connector
+        // to our hosted stripe-pay adapter (which reads this store's key).
+        const key = String(body.stripe_key ?? "").trim();
+        if (!/^(sk|rk)_/.test(key)) {
+          return json({ error: "That doesn't look like a Stripe secret key (it starts with sk_ or rk_)." }, 400);
+        }
+        const { error: credErr } = await db.from("store_provider_credentials").upsert(
+          { store_id: store.id, provider: "stripe", credentials: { secret_key: key }, connected: true, updated_at: new Date().toISOString() },
+          { onConflict: "store_id,provider" },
+        );
+        if (credErr) return json({ error: credErr.message }, 500);
+        const { error } = await db.from("store_integrations").upsert({
+          store_id: store.id,
+          name: "create_payment_link",
+          description:
+            "Create a secure hosted payment link (Stripe) for the order total. Call after placing the order and share the link. Never take card details in chat.",
+          params_schema: { type: "object", properties: { amount: { type: "number", description: "order total including tax" }, order_ref: { type: "string" } }, required: [] },
+          kind: "http",
+          endpoint_url: `${Deno.env.get("SUPABASE_URL")}/functions/v1/stripe-pay`,
+          auth_secret: Deno.env.get("STRIPE_PAY_SECRET") ?? "",
+          side_effect: true,
+          enabled: true,
+          timeout_ms: 8000,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "store_id,name" });
+        if (error) return json({ error: error.message }, 500);
+        return json({ ok: true, provider: "stripe" });
+      }
+      case "provider_status": {
+        const { data } = await db
+          .from("store_provider_credentials")
+          .select("provider, connected, updated_at")
+          .eq("store_id", store.id);
+        return json({ providers: data ?? [] });
+      }
+      case "disconnect_provider": {
+        const provider = String(body.provider ?? "");
+        await db.from("store_provider_credentials").delete().eq("store_id", store.id).eq("provider", provider);
+        if (provider === "stripe") {
+          await db.from("store_integrations").delete().eq("store_id", store.id).eq("name", "create_payment_link");
+        }
+        return json({ ok: true });
+      }
       case "test_integration": {
         const name = String(body.name ?? "").trim();
         if (!name) return json({ error: "name required" }, 400);
