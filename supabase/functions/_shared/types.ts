@@ -44,4 +44,5 @@ export interface Store {
   business_type: string | null;
   whatsapp_phone_number_id: string | null;
   access_control?: string | null; // open | optional | required
+  identity_secret?: string | null; // HMAC secret for embedded-SSO identity tokens
 }

@@ -81,6 +81,92 @@ export async function resolveMember(
   return null;
 }
 
+// ── Embedded SSO: verify a signed identity token from the store's own site ───
+// The store's backend signs `base64url(JSON).hex(hmacSHA256)` with its
+// identity_secret; we verify and trust the enclosed email/phone. This lets the
+// store's existing website login drive the member — no separate login from us.
+
+async function hmacHex(secret: string, msg: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
+  );
+  const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(msg));
+  return [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function b64urlDecode(s: string): string {
+  const pad = s.length % 4 ? "=".repeat(4 - (s.length % 4)) : "";
+  return atob(s.replace(/-/g, "+").replace(/_/g, "/") + pad);
+}
+
+/** Verify an embedded-SSO identity token; returns the claimed email/phone or null. */
+export async function verifyIdentityToken(
+  secret: string | null | undefined,
+  token: string,
+): Promise<{ email?: string; phone?: string } | null> {
+  if (!secret || !token) return null;
+  const dot = token.lastIndexOf(".");
+  if (dot <= 0) return null;
+  const payloadB64 = token.slice(0, dot);
+  const sig = token.slice(dot + 1);
+  if (sig !== (await hmacHex(secret, payloadB64))) return null;
+  try {
+    const p = JSON.parse(b64urlDecode(payloadB64));
+    if (p.exp && Date.now() / 1000 > Number(p.exp)) return null; // expired
+    const email = p.email ? String(p.email) : undefined;
+    const phone = p.phone ? String(p.phone) : undefined;
+    return email || phone ? { email, phone } : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Find a member by verified email or phone. */
+export async function findMemberByIdentity(
+  db: SupabaseClient,
+  storeId: string,
+  email?: string,
+  phone?: string,
+): Promise<MemberContext | null> {
+  if (email) {
+    const { data } = await db
+      .from("store_members")
+      .select(MEMBER_COLS)
+      .eq("store_id", storeId)
+      .eq("active", true)
+      .ilike("email", email)
+      .maybeSingle();
+    if (data) return shape(data);
+  }
+  if (phone) {
+    const d = digits(phone);
+    const { data } = await db
+      .from("store_members")
+      .select(MEMBER_COLS)
+      .eq("store_id", storeId)
+      .eq("active", true)
+      .not("phone", "is", null);
+    const hit = (data ?? []).find((m: { phone: string | null }) => {
+      const md = digits(m.phone ?? "");
+      return md && (md === d || md.endsWith(d) || d.endsWith(md));
+    });
+    if (hit) return shape(hit);
+  }
+  return null;
+}
+
+/** Bind a web session to a verified member (so later turns resolve them). */
+export async function bindMemberSession(
+  db: SupabaseClient,
+  sessionId: string,
+  storeId: string,
+  memberId: string,
+): Promise<void> {
+  await db
+    .from("member_sessions")
+    .upsert({ session_id: sessionId, store_id: storeId, member_id: memberId }, { onConflict: "session_id" });
+}
+
 export function accessMode(store: Store): AccessMode {
   const v = (store.access_control ?? "open").toLowerCase();
   return v === "required" ? "required" : v === "optional" ? "optional" : "open";

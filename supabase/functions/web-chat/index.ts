@@ -14,6 +14,7 @@ import { generateTurnReply } from "../_shared/conversation.ts";
 import { classifyTurn } from "../_shared/analytics.ts";
 import { splitBubbles } from "../_shared/prompt.ts";
 import { storeChatImage } from "../_shared/chat-media.ts";
+import { bindMemberSession, findMemberByIdentity, verifyIdentityToken } from "../_shared/members.ts";
 import {
   cancelFollowup,
   getFollowupSettings,
@@ -118,6 +119,18 @@ Deno.serve(async (req) => {
     .gte("created_at", since);
   if ((count ?? 0) >= RATE_MAX) {
     return json({ error: "You're sending messages very fast — please slow down a moment." }, 429);
+  }
+
+  // Embedded SSO: if the host site passed a signed identity token, verify it and
+  // bind this session to the matching member — the store's own login drives it,
+  // no separate login from us. (Best-effort; failure just leaves them anonymous.)
+  const identityToken = typeof body.identity_token === "string" ? body.identity_token : "";
+  if (identityToken && store.access_control && (store as { identity_secret?: string | null }).identity_secret) {
+    const claim = await verifyIdentityToken((store as { identity_secret?: string | null }).identity_secret, identityToken);
+    if (claim && (claim.email || claim.phone)) {
+      const m = await findMemberByIdentity(db, store.id, claim.email, claim.phone);
+      if (m) await bindMemberSession(db, sessionId, store.id, m.id);
+    }
   }
 
   const now = new Date().toISOString();
