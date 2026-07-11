@@ -6,6 +6,7 @@ import {
   addMember,
   generateSsoSecret,
   getMemberSettings,
+  importMembers,
   removeMember,
   setAccessMode,
   setMemberBlocked,
@@ -14,6 +15,7 @@ import {
 } from "@/app/(app)/members/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import {
   Select,
@@ -41,6 +43,16 @@ export function MembersManager({ storeId }: { storeId: string }) {
   const [role, setRole] = useState("resident");
   const [secret, setSecret] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [csv, setCsv] = useState("");
+
+  async function refresh() {
+    const res = await getMemberSettings(storeId);
+    if (res.ok) {
+      setMode(res.mode);
+      setMembers(res.members);
+      setHasSso(res.hasSso);
+    }
+  }
 
   useEffect(() => {
     let alive = true;
@@ -102,6 +114,19 @@ export function MembersManager({ storeId }: { storeId: string }) {
     } else toast.error("Couldn't remove", { description: res.error });
   }
 
+  async function runImport() {
+    setBusy(true);
+    const res = await importMembers(storeId, csv);
+    setBusy(false);
+    if (res.ok) {
+      toast.success(
+        `Imported: ${res.added} added, ${res.updated} updated${res.skipped ? `, ${res.skipped} skipped` : ""}`,
+      );
+      setCsv("");
+      refresh();
+    } else toast.error("Couldn't import", { description: res.error });
+  }
+
   async function makeSecret() {
     setBusy(true);
     const res = await generateSsoSecret(storeId);
@@ -150,6 +175,40 @@ export function MembersManager({ storeId }: { storeId: string }) {
           Email identifies them on web chat; phone matches their WhatsApp. The <b>role</b> (e.g.
           resident, member, vip) is what the agent uses to distinguish them.
         </p>
+      </div>
+
+      {/* CSV import */}
+      <div className="space-y-2 rounded-lg border p-3">
+        <p className="text-sm font-medium">Import from CSV</p>
+        <p className="text-muted-foreground text-xs">
+          Export your resident/member list from your system and paste or upload it. Needs a header row
+          with <code className="bg-muted rounded px-1">email</code> and/or{" "}
+          <code className="bg-muted rounded px-1">phone</code>; optional{" "}
+          <code className="bg-muted rounded px-1">role</code>,{" "}
+          <code className="bg-muted rounded px-1">name</code>, and any extra columns (e.g. unit) are
+          kept. Re-importing updates existing members.
+        </p>
+        <input
+          type="file"
+          accept=".csv,text/csv,text/plain"
+          className="text-muted-foreground block text-xs"
+          onChange={async (e) => {
+            const f = e.target.files?.[0];
+            if (f) setCsv(await f.text());
+            e.target.value = "";
+          }}
+        />
+        <Textarea
+          rows={4}
+          value={csv}
+          onChange={(e) => setCsv(e.target.value)}
+          placeholder={"email,phone,role,name,unit\nmaya@x.com,+15551234567,resident,Maya R.,214"}
+          className="font-mono text-xs"
+        />
+        <Button size="sm" onClick={runImport} disabled={busy || !csv.trim()}>
+          {busy ? <Loader2 className="size-4 animate-spin" /> : null}
+          Import members
+        </Button>
       </div>
 
       {/* Member list */}

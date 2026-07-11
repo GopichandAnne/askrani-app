@@ -99,11 +99,20 @@ function b64urlDecode(s: string): string {
   return atob(s.replace(/-/g, "+").replace(/_/g, "/") + pad);
 }
 
-/** Verify an embedded-SSO identity token; returns the claimed email/phone or null. */
+export type IdentityClaim = {
+  email?: string;
+  phone?: string;
+  role?: string;
+  name?: string;
+  metadata?: Record<string, unknown>;
+};
+
+/** Verify an embedded-SSO identity token; returns the signed claims or null.
+ *  The token may carry role/name/metadata (e.g. unit) for JIT provisioning. */
 export async function verifyIdentityToken(
   secret: string | null | undefined,
   token: string,
-): Promise<{ email?: string; phone?: string } | null> {
+): Promise<IdentityClaim | null> {
   if (!secret || !token) return null;
   const dot = token.lastIndexOf(".");
   if (dot <= 0) return null;
@@ -115,10 +124,47 @@ export async function verifyIdentityToken(
     if (p.exp && Date.now() / 1000 > Number(p.exp)) return null; // expired
     const email = p.email ? String(p.email) : undefined;
     const phone = p.phone ? String(p.phone) : undefined;
-    return email || phone ? { email, phone } : null;
+    if (!email && !phone) return null;
+    return {
+      email,
+      phone,
+      role: p.role ? String(p.role) : undefined,
+      name: p.name ? String(p.name) : undefined,
+      metadata: p.metadata && typeof p.metadata === "object" ? p.metadata : undefined,
+    };
   } catch {
     return null;
   }
+}
+
+/** Just-in-time provisioning: create a member from a VERIFIED SSO token's claims
+ *  (the store's own backend vouched for them). Returns the member, or re-finds on
+ *  a race. Null only if nothing to key on / a hard error. */
+export async function provisionMember(
+  db: SupabaseClient,
+  storeId: string,
+  claim: IdentityClaim,
+): Promise<MemberContext | null> {
+  const email = claim.email ? claim.email.toLowerCase() : null;
+  const phone = claim.phone ?? null;
+  if (!email && !phone) return null;
+  const { data, error } = await db
+    .from("store_members")
+    .insert({
+      store_id: storeId,
+      email,
+      phone,
+      role: claim.role || "member",
+      display_name: claim.name ?? null,
+      metadata: claim.metadata ?? {},
+    })
+    .select(MEMBER_COLS)
+    .single();
+  if (error) {
+    // Likely a race on the unique index — re-find and use the existing row.
+    return await findMemberByIdentity(db, storeId, claim.email, claim.phone);
+  }
+  return data ? shape(data) : null;
 }
 
 /** Find a member by verified email or phone. */

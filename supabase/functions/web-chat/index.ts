@@ -14,7 +14,12 @@ import { generateTurnReply } from "../_shared/conversation.ts";
 import { classifyTurn } from "../_shared/analytics.ts";
 import { splitBubbles } from "../_shared/prompt.ts";
 import { storeChatImage } from "../_shared/chat-media.ts";
-import { bindMemberSession, findMemberByIdentity, verifyIdentityToken } from "../_shared/members.ts";
+import {
+  bindMemberSession,
+  findMemberByIdentity,
+  provisionMember,
+  verifyIdentityToken,
+} from "../_shared/members.ts";
 import {
   cancelFollowup,
   getFollowupSettings,
@@ -128,7 +133,10 @@ Deno.serve(async (req) => {
   if (identityToken && store.access_control && (store as { identity_secret?: string | null }).identity_secret) {
     const claim = await verifyIdentityToken((store as { identity_secret?: string | null }).identity_secret, identityToken);
     if (claim && (claim.email || claim.phone)) {
-      const m = await findMemberByIdentity(db, store.id, claim.email, claim.phone);
+      // Find the member, or JIT-provision them from the verified token (so a
+      // property manager's portal drives the directory with no upload).
+      let m = await findMemberByIdentity(db, store.id, claim.email, claim.phone);
+      if (!m) m = await provisionMember(db, store.id, claim);
       if (m) await bindMemberSession(db, sessionId, store.id, m.id);
     }
   }
