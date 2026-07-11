@@ -81,6 +81,9 @@ verify_jwt = false
 [functions.mock-apartment]
 verify_jwt = false
 
+[functions.mock-restaurant]
+verify_jwt = false
+
 # Public health endpoint — pinged by pg_cron and (optionally) an external uptime
 # monitor. Exposes only pass/fail status, nothing sensitive.
 [functions.health]
