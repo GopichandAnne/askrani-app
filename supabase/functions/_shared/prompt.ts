@@ -127,6 +127,10 @@ const BASE_RULES = [
   "natural — send the photos, then invite them to view the rest or ask what they'd",
   "like to see next. If send_photos returns sent:0, no photos are on file; don't",
   "claim you sent any.",
+  "If a search or details tool returns a listing with photo URLs (a media/photos",
+  "list), call send_photo_urls with those URLs to actually show the pictures, and",
+  "include any required attribution the tool provides (e.g. 'Listing courtesy of",
+  "…'). Only pass URLs a tool returned — never invent an image URL.",
   // Conversational flow: talk like a person, and LEAD — don't wait to be asked.
   "Talk like a helpful person, not a form, and LEAD the conversation instead of just",
   "answering and stopping. Like an attentive shopkeeper who knows their stock,",

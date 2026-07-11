@@ -39,7 +39,10 @@ export interface FunctionDeclaration {
   description: string;
   parameters: {
     type: "object";
-    properties: Record<string, { type: string; description: string }>;
+    properties: Record<
+      string,
+      { type: string; description?: string; items?: { type: string }; enum?: string[] }
+    >;
     required: string[];
   };
 }
@@ -469,6 +472,28 @@ const SEND_PHOTOS_DECL: FunctionDeclaration = {
   },
 };
 
+const SEND_PHOTO_URLS_DECL: FunctionDeclaration = {
+  name: "send_photo_urls",
+  description:
+    "Show the customer photos from image URLs that another tool returned — e.g. an " +
+    "MLS listing's photos (its media/photos list). Pass the URLs and an optional " +
+    "caption; it sends a few inline. Use it right after a listing search or details " +
+    "call returns photo URLs, to actually show the pictures. Only pass URLs a tool " +
+    "returned — never invent or guess an image URL.",
+  parameters: {
+    type: "object",
+    properties: {
+      urls: {
+        type: "array",
+        items: { type: "string" },
+        description: "Image URLs returned by a tool (e.g. a listing's media list).",
+      },
+      caption: { type: "string", description: "Optional short caption, e.g. the address." },
+    },
+    required: ["urls"],
+  },
+};
+
 type ImageDoc = { source_ref: string | null; source_path: string; chunk_text: string | null };
 
 /** All of a store's image-sourced KB docs, ranked by keyword overlap on the
@@ -496,38 +521,47 @@ async function rankImages(
     .sort((a, b) => b.score - a.score);
 }
 
-/** Sign one image, record it as an outbound thread message (panel + web Realtime),
- *  and — on WhatsApp — also push it over the WhatsApp media API. */
-async function deliverImage(
+/** Record one image URL as an outbound thread message (panel + web Realtime),
+ *  and — on WhatsApp — also push it over the WhatsApp media API. The URL must be
+ *  publicly reachable (a signed KB URL, or a connector-provided public photo). */
+async function recordAndSend(
   db: SupabaseClient,
   store: Store,
   sessionId: string,
-  doc: ImageDoc,
+  url: string,
+  caption: string,
 ): Promise<boolean> {
-  // 7-day signed URL: long enough that the image still loads when staff review
-  // the conversation later in the panel (not just in the live web chat).
-  const { data: signed } = await db.storage.from("kb").createSignedUrl(doc.source_path, 60 * 60 * 24 * 7);
-  if (!signed?.signedUrl) return false;
-
   const isWeb = sessionId.startsWith("web_");
   const phone = sessionId.startsWith("wa_") ? sessionId.slice(3) : sessionId;
   const threadId = isWeb ? `thr_${sessionId}_${store.slug}` : `thr_${phone}_${store.slug}`;
-  const { error: persistErr } = await db.from("thread_messages").insert({
+  const { error } = await db.from("thread_messages").insert({
     message_id: `msg_img_${crypto.randomUUID()}`,
     thread_id: threadId,
     store_slug: store.slug,
     customer_phone: isWeb ? sessionId : phone,
     direction: "outbound",
     sender: "agent",
-    text: doc.source_ref,
-    media_url: signed.signedUrl,
+    text: caption || null,
+    media_url: url,
     kind: "message",
   });
-  if (isWeb) return !persistErr; // the thread message IS the delivery
+  if (isWeb) return !error; // the thread message IS the delivery
 
   const token = await getStoreAccessToken(db, store.id);
   if (!token || !store.whatsapp_phone_number_id) return false;
-  return await sendImage(token, store.whatsapp_phone_number_id, phone, signed.signedUrl, doc.source_ref ?? "");
+  return await sendImage(token, store.whatsapp_phone_number_id, phone, url, caption || "");
+}
+
+/** Sign a KB image (7-day URL — still loads when staff review later) and send it. */
+async function deliverImage(
+  db: SupabaseClient,
+  store: Store,
+  sessionId: string,
+  doc: ImageDoc,
+): Promise<boolean> {
+  const { data: signed } = await db.storage.from("kb").createSignedUrl(doc.source_path, 60 * 60 * 24 * 7);
+  if (!signed?.signedUrl) return false;
+  return recordAndSend(db, store, sessionId, signed.signedUrl, doc.source_ref ?? "");
 }
 
 /** A shareable gallery link (all photos matching the query) using the store's
@@ -592,6 +626,24 @@ async function executeSendPhotos(
   };
 }
 
+/** Show photos from URLs a connector returned (e.g. an MLS Media list). */
+async function executeSendPhotoUrls(
+  db: SupabaseClient,
+  store: Store,
+  sessionId: string,
+  args: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const raw = Array.isArray(args.urls) ? args.urls : [];
+  const urls = raw.map((u) => String(u)).filter((u) => /^https:\/\/\S+$/.test(u));
+  const caption = String(args.caption ?? "").trim();
+  if (urls.length === 0) return { sent: 0, note: "no valid image URLs" };
+  let sent = 0;
+  for (const url of urls.slice(0, PHOTO_SEND_LIMIT)) {
+    if (await recordAndSend(db, store, sessionId, url, caption)) sent++;
+  }
+  return { sent, total: urls.length };
+}
+
 /** Build the toolset bound to a store + session context. Cart/order tools are
  *  attached only when ordering is enabled for the store (Agent Setup). */
 export function buildToolset(
@@ -609,6 +661,7 @@ export function buildToolset(
     search_knowledge: (args) => executeSearchKnowledge(db, store, args, today),
     send_image: (args) => executeSendImage(db, store, sessionId, args),
     send_photos: (args) => executeSendPhotos(db, store, sessionId, args),
+    send_photo_urls: (args) => executeSendPhotoUrls(db, store, sessionId, args),
     escalate_to_owner: (args) => executeEscalate(db, store, sessionId, args),
     add_to_cart: async (args) => {
       const res = await addToCart(
@@ -658,6 +711,7 @@ export function buildToolset(
     SEARCH_KNOWLEDGE_DECL,
     SEND_IMAGE_DECL,
     SEND_PHOTOS_DECL,
+    SEND_PHOTO_URLS_DECL,
     ESCALATE_DECL,
   ];
   if (catalogEnabled) declarations.push(SEARCH_PRODUCTS_DECL);

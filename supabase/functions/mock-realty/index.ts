@@ -9,21 +9,39 @@
 // separate store_integrations row so the model sees them as distinct tools.
 // verify_jwt=false — auth is the X-Rani-Signature HMAC.
 
+// RESO-Data-Dictionary-shaped listing (the fields a real RESO Web API / IDX feed
+// exposes). A production connector would fetch these from the MLS instead of a
+// static array — the shape returned to the bot stays the same.
 type Listing = {
-  mls: string; address: string; type: "buy" | "rent";
-  beds: number; baths: number; sqft: number; price: number; hoa?: number; status: string;
-  year?: number; garage?: number; desc?: string;
+  mls: string; address: string; city: string; type: "buy" | "rent";
+  property_type: string; // RESO PropertyType, e.g. "Single Family Residence", "Condominium"
+  beds: number; baths: number; sqft: number; price: number; hoa: number;
+  pool: boolean; year: number; garage: number; status: string; // "Active"
+  courtesy: string; // listing brokerage — IDX attribution is required
+  desc: string;
 };
 
-// A little "live MLS" — richer than the static KB, to show it goes beyond it.
 const LISTINGS: Listing[] = [
-  { mls: "MLS1001", address: "214 Maple Street", type: "buy", beds: 3, baths: 2, sqft: 1850, price: 465000, hoa: 45, status: "active", year: 2015, garage: 2, desc: "Updated kitchen, large fenced backyard, open floor plan." },
-  { mls: "MLS1002", address: "88 Riverbend Court", type: "buy", beds: 4, baths: 3, sqft: 2600, price: 625000, hoa: 0, status: "active", year: 2019, garage: 3, desc: "Pool, cul-de-sac lot, three-car garage, no HOA." },
-  { mls: "MLS1003", address: "7 Oakhill Lane", type: "buy", beds: 4, baths: 2, sqft: 2200, price: 549000, hoa: 60, status: "active", year: 2012, garage: 2, desc: "Mature trees, covered patio, home office, recent roof." },
-  { mls: "MLS1004", address: "1203 Cedar Ridge #5B", type: "rent", beds: 2, baths: 2, sqft: 1100, price: 2100, status: "active", year: 2018, garage: 0, desc: "In-unit laundry, one assigned spot, small pets OK with deposit." },
-  { mls: "MLS1005", address: "45 Birchwood Drive", type: "rent", beds: 3, baths: 2, sqft: 1500, price: 2650, status: "active", year: 2016, garage: 2, desc: "Single-family rental, fenced yard, two-car garage." },
-  { mls: "MLS1006", address: "920 Sunset Boulevard", type: "buy", beds: 2, baths: 2, sqft: 1400, price: 389000, hoa: 30, status: "active", year: 2010, garage: 1, desc: "Starter home, walkable location, updated bathrooms." },
+  { mls: "MLS1001", address: "214 Maple Street", city: "Cedar Park", type: "buy", property_type: "Single Family Residence", beds: 3, baths: 2, sqft: 1850, price: 465000, hoa: 45, pool: false, year: 2015, garage: 2, status: "Active", courtesy: "Cedar & Oak Realty", desc: "Updated kitchen, large fenced backyard, open floor plan." },
+  { mls: "MLS1002", address: "88 Riverbend Court", city: "Cedar Park", type: "buy", property_type: "Single Family Residence", beds: 4, baths: 3, sqft: 2600, price: 625000, hoa: 0, pool: true, year: 2019, garage: 3, status: "Active", courtesy: "Cedar & Oak Realty", desc: "Private pool, cul-de-sac lot, three-car garage, no HOA." },
+  { mls: "MLS1003", address: "7 Oakhill Lane", city: "Austin", type: "buy", property_type: "Single Family Residence", beds: 4, baths: 2, sqft: 2200, price: 549000, hoa: 60, pool: false, year: 2012, garage: 2, status: "Active", courtesy: "Hill Country Homes", desc: "Mature trees, covered patio, home office, recent roof." },
+  { mls: "MLS1004", address: "1203 Cedar Ridge #5B", city: "Cedar Park", type: "rent", property_type: "Condominium", beds: 2, baths: 2, sqft: 1100, price: 2100, hoa: 0, pool: true, year: 2018, garage: 0, status: "Active", courtesy: "Cedar & Oak Realty", desc: "In-unit laundry, community pool, one assigned spot, small pets OK." },
+  { mls: "MLS1005", address: "45 Birchwood Drive", city: "Round Rock", type: "rent", property_type: "Single Family Residence", beds: 3, baths: 2, sqft: 1500, price: 2650, hoa: 0, pool: false, year: 2016, garage: 2, status: "Active", courtesy: "Cedar & Oak Realty", desc: "Single-family rental, fenced yard, two-car garage." },
+  { mls: "MLS1006", address: "920 Sunset Boulevard", city: "Austin", type: "buy", property_type: "Condominium", beds: 2, baths: 2, sqft: 1400, price: 389000, hoa: 30, pool: false, year: 2010, garage: 1, status: "Active", courtesy: "Cedar & Oak Realty", desc: "Starter condo, walkable location, updated bathrooms." },
 ];
+
+// Public photo URLs (a RESO Media resource). In production these are the MLS's
+// hosted photo URLs; here they point at demo images in the public branding bucket.
+const PHOTO_BASE = "https://ctdczunzetcftcadbrot.supabase.co/storage/v1/object/public/branding/realty-demo";
+const SLOTS = ["front", "kitchen", "living"];
+function photosFor(mls: string): string[] {
+  return SLOTS.map((s) => `${PHOTO_BASE}/${mls.toLowerCase()}-${s}.svg`);
+}
+// The brokerage's IDX detail page for a listing (has the full photo set + map).
+function listingUrl(mls: string): string {
+  return `https://cedarandoak.example/listings/${mls}`;
+}
+const IDX_DISCLAIMER = "Listing data via Demo MLS IDX — information deemed reliable but not guaranteed.";
 
 // deno-lint-ignore no-explicit-any
 function listingDetails(a: any) {
@@ -34,7 +52,18 @@ function listingDetails(a: any) {
     l.address.toLowerCase().includes(q) ||
     q.includes(l.address.toLowerCase().split(" ").slice(1, 3).join(" ")) // e.g. "maple street"
   );
-  return hit ? { found: true, ...hit } : { found: false };
+  if (!hit) return { found: false };
+  return {
+    found: true,
+    mls: hit.mls, address: hit.address, city: hit.city, property_type: hit.property_type,
+    beds: hit.beds, baths: hit.baths, sqft: hit.sqft, price: hit.price, hoa: hit.hoa,
+    pool: hit.pool, year_built: hit.year, garage: hit.garage, status: hit.status,
+    description: hit.desc,
+    courtesy: `Listing courtesy of ${hit.courtesy}`,
+    photos: photosFor(hit.mls),
+    listing_url: listingUrl(hit.mls),
+    disclaimer: IDX_DISCLAIMER,
+  };
 }
 
 // A demo AVM (automated valuation) — the seller lead magnet. Real deployments
@@ -75,21 +104,39 @@ function id(prefix: string) {
   return prefix + "-" + crypto.randomUUID().slice(0, 8).toUpperCase();
 }
 
+// Criteria-based search — the connector translates these into an MLS query (a
+// RESO OData $filter in production). Accepts the common buyer criteria.
 // deno-lint-ignore no-explicit-any
 function mlsSearch(a: any) {
   const type = String(a.type ?? "").toLowerCase();
+  const city = String(a.city ?? "").toLowerCase().trim();
+  const ptype = String(a.property_type ?? "").toLowerCase().trim();
+  const poolStr = String(a.pool ?? "").toLowerCase();
+  const wantPool = a.pool === true || poolStr === "true" || poolStr === "yes";
   const results = LISTINGS.filter((l) =>
-    (!type || (type.includes("rent") ? l.type === "rent" : type.includes("buy") || type.includes("sale") ? l.type === "buy" : true)) &&
+    (!type || (type.includes("rent") ? l.type === "rent" : (type.includes("buy") || type.includes("sale") || type.includes("purchase")) ? l.type === "buy" : true)) &&
     (a.beds == null || l.beds >= Number(a.beds)) &&
+    (a.baths == null || l.baths >= Number(a.baths)) &&
     (a.max_price == null || l.price <= Number(a.max_price)) &&
-    (a.min_price == null || l.price >= Number(a.min_price))
-  ).slice(0, 5);
-  // Brief cards only — call listing_details for the full record.
+    (a.min_price == null || l.price >= Number(a.min_price)) &&
+    (a.min_sqft == null || l.sqft >= Number(a.min_sqft)) &&
+    (!city || l.city.toLowerCase().includes(city) || city.includes(l.city.toLowerCase())) &&
+    (!ptype ||
+      (ptype.includes("condo") ? l.property_type === "Condominium"
+        : (ptype.includes("single") || ptype.includes("house") || ptype.includes("family")) ? l.property_type.includes("Single")
+        : l.property_type.toLowerCase().includes(ptype))) &&
+    (!wantPool || l.pool)
+  ).slice(0, 6);
   return {
-    found: results.length,
+    count: results.length,
+    disclaimer: IDX_DISCLAIMER,
     listings: results.map((l) => ({
-      mls: l.mls, address: l.address, type: l.type,
-      beds: l.beds, baths: l.baths, sqft: l.sqft, price: l.price, status: l.status,
+      mls: l.mls, address: l.address, city: l.city, property_type: l.property_type,
+      beds: l.beds, baths: l.baths, sqft: l.sqft, price: l.price, hoa: l.hoa,
+      pool: l.pool, status: l.status,
+      courtesy: `Listing courtesy of ${l.courtesy}`,
+      photos: photosFor(l.mls),
+      listing_url: listingUrl(l.mls),
     })),
   };
 }
