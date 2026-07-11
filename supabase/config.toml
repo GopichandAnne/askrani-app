@@ -84,6 +84,11 @@ verify_jwt = false
 [functions.mock-restaurant]
 verify_jwt = false
 
+# Reference Stripe payment-link connector (real Checkout Sessions when
+# STRIPE_SECRET_KEY is set; a demo URL otherwise). Auth is the X-Rani-Signature.
+[functions.stripe-pay]
+verify_jwt = false
+
 # Public health endpoint — pinged by pg_cron and (optionally) an external uptime
 # monitor. Exposes only pass/fail status, nothing sensitive.
 [functions.health]
