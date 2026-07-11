@@ -118,6 +118,8 @@ const SEARCH_KNOWLEDGE_DECL: FunctionDeclaration = {
 
 const SEARCH_PRODUCTS_LIMIT = 5;
 const SEARCH_KNOWLEDGE_LIMIT = 4;
+const PHOTO_SEND_LIMIT = 4; // inline photos per send_photos call; the rest live in the gallery
+const WEB_BASE = "https://askrani.ai";
 
 async function executeSearchProducts(
   db: SupabaseClient,
@@ -424,14 +426,14 @@ async function executeEscalate(
 const SEND_IMAGE_DECL: FunctionDeclaration = {
   name: "send_image",
   description:
-    "Send the customer a picture the store has on file — a product photo, its menu, " +
+    "Send the customer ONE picture the store has on file — a product photo, its menu, " +
     "or a promo flyer. Use it when they ask to see one ('show me the menu', 'do you " +
     "have a picture of X?'), and you MAY also use it on your own initiative when it " +
     "genuinely helps — to show a product you're recommending or a promotion you're " +
-    "mentioning — occasionally, at most one per reply, never as spam. Pass a short " +
-    "query describing what to show. Only works if the store uploaded a matching " +
-    "image: if it returns sent:false, don't mention a picture and never claim you " +
-    "sent one.",
+    "mentioning — occasionally, at most one per reply, never as spam. For SEVERAL " +
+    "photos of one subject (e.g. a home listing), use send_photos instead. Pass a " +
+    "short query describing what to show. If it returns sent:false, don't mention a " +
+    "picture and never claim you sent one.",
   parameters: {
     type: "object",
     properties: {
@@ -444,15 +446,38 @@ const SEND_IMAGE_DECL: FunctionDeclaration = {
   },
 };
 
-/** Find the best-matching image the store uploaded and send it over WhatsApp.
- *  Only image-sourced KB docs qualify (a PDF can't go as a WhatsApp image). */
-async function executeSendImage(
+const SEND_PHOTOS_DECL: FunctionDeclaration = {
+  name: "send_photos",
+  description:
+    "Send SEVERAL photos the store has on file for one subject — e.g. all the photos " +
+    "of a specific home listing, a product, or a space. Use it when the customer wants " +
+    "to SEE something and multiple pictures help ('show me the house', 'can I see " +
+    "photos of 214 Maple', 'show me the rooms'). It sends a few inline and, when there " +
+    "are more, returns a gallery_url containing ALL of them — always share that link " +
+    "so the customer can scroll every photo. Pass a query that identifies the subject " +
+    "(e.g. '214 Maple Street'). If it returns sent:0, no matching photos are on file — " +
+    "don't claim you sent any.",
+  parameters: {
+    type: "object",
+    properties: {
+      query: {
+        type: "string",
+        description: "The subject to show photos of, e.g. '214 Maple Street', 'the kitchen'.",
+      },
+    },
+    required: ["query"],
+  },
+};
+
+type ImageDoc = { source_ref: string | null; source_path: string; chunk_text: string | null };
+
+/** All of a store's image-sourced KB docs, ranked by keyword overlap on the
+ *  query (title + extracted text). Only images qualify — a PDF can't be sent. */
+async function rankImages(
   db: SupabaseClient,
   store: Store,
-  sessionId: string,
-  args: Record<string, unknown>,
-): Promise<Record<string, unknown>> {
-  const query = String(args.query ?? "").trim().toLowerCase();
+  query: string,
+): Promise<{ doc: ImageDoc; score: number }[]> {
   const { data: docs } = await db
     .from("knowledge_index")
     .select("source_ref, source_path, chunk_text")
@@ -460,31 +485,30 @@ async function executeSendImage(
     .eq("kind", "document_chunk")
     .not("source_path", "is", null)
     .like("source_mime", "image/%");
-  if (!docs || docs.length === 0) {
-    return { sent: false, note: "the store has no picture on file to send" };
-  }
+  if (!docs || docs.length === 0) return [];
+  const words = query.toLowerCase().split(/\s+/).filter((w) => w.length > 2);
+  return (docs as ImageDoc[])
+    .map((doc) => {
+      const hay = `${doc.source_ref ?? ""} ${doc.chunk_text ?? ""}`.toLowerCase();
+      const score = words.reduce((n, w) => n + (hay.includes(w) ? 1 : 0), 0);
+      return { doc, score };
+    })
+    .sort((a, b) => b.score - a.score);
+}
 
-  // Small set of image docs — pick the best by word overlap on title + text.
-  const words = query.split(/\s+/).filter((w) => w.length > 2);
-  let best = docs[0];
-  let bestScore = -1;
-  for (const d of docs) {
-    const hay = `${d.source_ref} ${d.chunk_text}`.toLowerCase();
-    const score = words.reduce((n, w) => n + (hay.includes(w) ? 1 : 0), 0);
-    if (score > bestScore) {
-      bestScore = score;
-      best = d;
-    }
-  }
-
+/** Sign one image, record it as an outbound thread message (panel + web Realtime),
+ *  and — on WhatsApp — also push it over the WhatsApp media API. */
+async function deliverImage(
+  db: SupabaseClient,
+  store: Store,
+  sessionId: string,
+  doc: ImageDoc,
+): Promise<boolean> {
   // 7-day signed URL: long enough that the image still loads when staff review
   // the conversation later in the panel (not just in the live web chat).
-  const { data: signed } = await db.storage.from("kb").createSignedUrl(best.source_path, 60 * 60 * 24 * 7);
-  if (!signed?.signedUrl) return { sent: false, note: "could not prepare the image" };
+  const { data: signed } = await db.storage.from("kb").createSignedUrl(doc.source_path, 60 * 60 * 24 * 7);
+  if (!signed?.signedUrl) return false;
 
-  // Record the outbound image as a thread message so it shows in the panel (and,
-  // for web sessions, Realtime pushes it to the browser to render inline). The
-  // thread_id format mirrors each channel's inbound writer.
   const isWeb = sessionId.startsWith("web_");
   const phone = sessionId.startsWith("wa_") ? sessionId.slice(3) : sessionId;
   const threadId = isWeb ? `thr_${sessionId}_${store.slug}` : `thr_${phone}_${store.slug}`;
@@ -495,27 +519,77 @@ async function executeSendImage(
     customer_phone: isWeb ? sessionId : phone,
     direction: "outbound",
     sender: "agent",
-    text: best.source_ref,
+    text: doc.source_ref,
     media_url: signed.signedUrl,
     kind: "message",
   });
+  if (isWeb) return !persistErr; // the thread message IS the delivery
 
-  // Web session: the thread message IS the delivery (no WhatsApp send).
-  if (isWeb) {
-    return persistErr
-      ? { sent: false, note: "could not send the image", image: best.source_ref }
-      : { sent: true, image: best.source_ref };
-  }
-
-  // WhatsApp: also push the image over the WhatsApp media API.
   const token = await getStoreAccessToken(db, store.id);
-  if (!token || !store.whatsapp_phone_number_id) {
-    return { sent: false, note: "messaging not configured", image: best.source_ref };
-  }
-  const ok = await sendImage(token, store.whatsapp_phone_number_id, phone, signed.signedUrl, best.source_ref);
+  if (!token || !store.whatsapp_phone_number_id) return false;
+  return await sendImage(token, store.whatsapp_phone_number_id, phone, signed.signedUrl, doc.source_ref ?? "");
+}
+
+/** A shareable gallery link (all photos matching the query) using the store's
+ *  primary public token. Null if the store has no public token. */
+async function galleryUrl(db: SupabaseClient, store: Store, query: string): Promise<string | null> {
+  const { data } = await db
+    .from("store_tokens")
+    .select("token")
+    .eq("store_id", store.id)
+    .eq("active", true)
+    .is("listing_ref", null)
+    .order("created_at", { ascending: true })
+    .limit(1);
+  const token = data?.[0]?.token;
+  if (!token) return null;
+  return `${WEB_BASE}/g/${store.slug}?t=${token}&q=${encodeURIComponent(query)}`;
+}
+
+/** Send the single best-matching image the store uploaded. */
+async function executeSendImage(
+  db: SupabaseClient,
+  store: Store,
+  sessionId: string,
+  args: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const query = String(args.query ?? "").trim();
+  const ranked = await rankImages(db, store, query);
+  if (ranked.length === 0) return { sent: false, note: "the store has no picture on file to send" };
+  const best = ranked[0].doc;
+  const ok = await deliverImage(db, store, sessionId, best);
   return ok
     ? { sent: true, image: best.source_ref }
-    : { sent: false, note: "send failed", image: best.source_ref };
+    : { sent: false, note: "could not send the image", image: best.source_ref };
+}
+
+/** Send several photos matching a subject, plus a gallery link for the rest. */
+async function executeSendPhotos(
+  db: SupabaseClient,
+  store: Store,
+  sessionId: string,
+  args: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const query = String(args.query ?? "").trim();
+  const ranked = await rankImages(db, store, query);
+  const matches = ranked.filter((r) => r.score > 0).map((r) => r.doc);
+  if (matches.length === 0) return { sent: 0, note: "no matching photos on file" };
+
+  let sent = 0;
+  const captions: string[] = [];
+  for (const doc of matches.slice(0, PHOTO_SEND_LIMIT)) {
+    if (await deliverImage(db, store, sessionId, doc)) {
+      sent++;
+      if (doc.source_ref) captions.push(doc.source_ref);
+    }
+  }
+  const gallery = matches.length > sent ? await galleryUrl(db, store, query) : null;
+  return {
+    sent,
+    total: matches.length,
+    photos: captions,
+    ...(gallery ? { gallery_url: gallery } : {}),
+  };
 }
 
 /** Build the toolset bound to a store + session context. Cart/order tools are
@@ -534,6 +608,7 @@ export function buildToolset(
     search_products: (args) => executeSearchProducts(db, store, args),
     search_knowledge: (args) => executeSearchKnowledge(db, store, args, today),
     send_image: (args) => executeSendImage(db, store, sessionId, args),
+    send_photos: (args) => executeSendPhotos(db, store, sessionId, args),
     escalate_to_owner: (args) => executeEscalate(db, store, sessionId, args),
     add_to_cart: async (args) => {
       const res = await addToCart(
@@ -579,7 +654,12 @@ export function buildToolset(
   };
   // search_products (which returns prices) is attached ONLY in catalogue mode —
   // in request mode the bot has no price-returning tool, so it cannot quote a price.
-  const declarations: FunctionDeclaration[] = [SEARCH_KNOWLEDGE_DECL, SEND_IMAGE_DECL, ESCALATE_DECL];
+  const declarations: FunctionDeclaration[] = [
+    SEARCH_KNOWLEDGE_DECL,
+    SEND_IMAGE_DECL,
+    SEND_PHOTOS_DECL,
+    ESCALATE_DECL,
+  ];
   if (catalogEnabled) declarations.push(SEARCH_PRODUCTS_DECL);
   if (ordersEnabled) {
     if (catalogEnabled) declarations.push(ADD_TO_CART_DECL); // priced catalog add
