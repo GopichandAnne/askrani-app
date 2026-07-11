@@ -26,6 +26,7 @@ import { classifyTurn } from "./analytics.ts";
 import { getStoreAccessToken } from "./config.ts";
 import { sendText } from "./wa.ts";
 import { loadStoreIntegrations } from "./integrations.ts";
+import { accessMode, identityContext, resolveMember } from "./members.ts";
 import {
   cancelFollowup,
   getFollowupSettings,
@@ -52,6 +53,24 @@ export async function generateTurnReply(
   },
 ): Promise<GeminiReply> {
   const config = await loadAgentConfig(db, store);
+
+  // End-user identity + access control. Resolve who's chatting, then gate:
+  // blocked users and "required"-mode strangers get a canned reply (no model
+  // run); everyone else gets their role woven into the prompt.
+  const member = await resolveMember(db, store, opts.sessionId);
+  const mode = accessMode(store);
+  if (member?.blocked) {
+    return { text: "I'm not able to help here — please reach out to the business directly.", toolsUsed: [] };
+  }
+  if (mode === "required" && !member) {
+    return {
+      text:
+        "This assistant is for registered members. Please verify your identity to continue, or contact the business directly.",
+      toolsUsed: [],
+    };
+  }
+  const idCtx = identityContext(member, mode);
+
   const history = await loadHistory(db, store.slug, opts.sessionId, config.historyTurns);
   // Per-store connectors — loaded before the prompt so a live-price connector can
   // lift the request-mode no-price rule. Empty for stores with none → no change.
@@ -79,7 +98,7 @@ export async function generateTurnReply(
       ? `\n[RETIRED LISTING — the visitor scanned a QR sign for a home that is NO LONGER AVAILABLE (sold or off-market): ${opts.activeListing} Briefly and warmly let them know it's no longer on the market, then help them find similar or other listings using your tools. Do not offer a tour of THIS specific home.]`
       : `\n[ACTIVE LISTING — the visitor scanned the QR sign in front of THIS specific home. Lead with it: open by naming this listing and offer its details, a tour, or neighborhood info. They may also ask about other listings or services — help freely and use your tools (e.g. search other listings). This listing: ${opts.activeListing}]`)
     : "";
-  const contents = buildContents(history, `${nowCtx}${proposalCtx}${listingCtx}\n${opts.inboundText}`);
+  const contents = buildContents(history, `${nowCtx}${proposalCtx}${listingCtx}${idCtx}\n${opts.inboundText}`);
   // Attach the customer's photo (if any) to the current user turn so the model sees it.
   if (opts.image && contents.length > 0) {
     contents[contents.length - 1].parts.unshift({

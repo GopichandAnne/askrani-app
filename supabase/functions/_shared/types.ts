@@ -43,4 +43,5 @@ export interface Store {
   store_display_name: string | null;
   business_type: string | null;
   whatsapp_phone_number_id: string | null;
+  access_control?: string | null; // open | optional | required
 }
