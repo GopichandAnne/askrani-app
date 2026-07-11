@@ -9,6 +9,7 @@ import {
   importMembers,
   removeMember,
   setAccessMode,
+  setEmailVerification,
   setMemberBlocked,
   type AccessMode,
   type Member,
@@ -17,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -44,6 +46,7 @@ export function MembersManager({ storeId }: { storeId: string }) {
   const [secret, setSecret] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [csv, setCsv] = useState("");
+  const [emailVerify, setEmailVerify] = useState(false);
 
   async function refresh() {
     const res = await getMemberSettings(storeId);
@@ -51,6 +54,7 @@ export function MembersManager({ storeId }: { storeId: string }) {
       setMode(res.mode);
       setMembers(res.members);
       setHasSso(res.hasSso);
+      setEmailVerify(res.emailVerification);
     }
   }
 
@@ -62,6 +66,7 @@ export function MembersManager({ storeId }: { storeId: string }) {
         setMode(res.mode);
         setMembers(res.members);
         setHasSso(res.hasSso);
+        setEmailVerify(res.emailVerification);
       } else toast.error("Couldn't load members", { description: res.error });
     });
     return () => {
@@ -127,6 +132,17 @@ export function MembersManager({ storeId }: { storeId: string }) {
     } else toast.error("Couldn't import", { description: res.error });
   }
 
+  async function toggleEmailVerify(on: boolean) {
+    setEmailVerify(on);
+    setBusy(true);
+    const res = await setEmailVerification(storeId, on);
+    setBusy(false);
+    if (!res.ok) {
+      setEmailVerify(!on);
+      toast.error("Couldn't update", { description: res.error });
+    } else toast.success(on ? "Web email verification on" : "Web email verification off");
+  }
+
   async function makeSecret() {
     setBusy(true);
     const res = await generateSsoSecret(storeId);
@@ -156,6 +172,18 @@ export function MembersManager({ storeId }: { storeId: string }) {
           </SelectContent>
         </Select>
         <p className="text-muted-foreground text-xs">{MODES.find((m) => m.value === mode)?.help}</p>
+      </div>
+
+      {/* Web email verification toggle */}
+      <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
+        <div>
+          <p className="text-sm font-medium">Web email verification</p>
+          <p className="text-muted-foreground text-xs">
+            Let visitors on your public web chat verify their email with a one-time code to be
+            recognized as a member. Off by default. (WhatsApp and embedded SSO don&apos;t need this.)
+          </p>
+        </div>
+        <Switch checked={emailVerify} onCheckedChange={toggleEmailVerify} disabled={busy} aria-label="Web email verification" />
       </div>
 
       {/* Add member */}

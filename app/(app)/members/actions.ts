@@ -38,11 +38,11 @@ function toMember(r: {
 
 export async function getMemberSettings(
   storeId: string,
-): Promise<MemberResult<{ mode: AccessMode; members: Member[]; hasSso: boolean }>> {
+): Promise<MemberResult<{ mode: AccessMode; members: Member[]; hasSso: boolean; emailVerification: boolean }>> {
   await requireMemberManage(storeId);
   const db = createAdminClient();
   const [{ data: store }, { data: rows, error }] = await Promise.all([
-    db.from("stores").select("access_control, identity_secret").eq("id", storeId).single(),
+    db.from("stores").select("access_control, identity_secret, web_email_verification").eq("id", storeId).single(),
     db
       .from("store_members")
       .select("id, email, phone, role, display_name, blocked")
@@ -56,7 +56,17 @@ export async function getMemberSettings(
     mode,
     members: (rows ?? []).map(toMember),
     hasSso: !!store?.identity_secret,
+    emailVerification: !!store?.web_email_verification,
   };
+}
+
+export async function setEmailVerification(storeId: string, on: boolean): Promise<MemberResult> {
+  await requireMemberManage(storeId);
+  const db = createAdminClient();
+  const { error } = await db.from("stores").update({ web_email_verification: on }).eq("id", storeId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/members");
+  return { ok: true };
 }
 
 export async function setAccessMode(storeId: string, mode: AccessMode): Promise<MemberResult> {
