@@ -83,19 +83,31 @@ export async function deleteIntegration(name: string): Promise<Result> {
 }
 
 // ── Prebuilt provider connectors (one-click for non-technical owners) ────────
-export async function providerStatus(): Promise<{ stripe: boolean }> {
+export async function providerStatus(): Promise<{ stripe: boolean; demoPos: boolean }> {
   const gate = await requireOwner();
-  if (!gate.ok) return { stripe: false };
+  if (!gate.ok) return { stripe: false, demoPos: false };
   const res = await callBotAdmin({ action: "provider_status", store_slug: gate.slug });
-  if (!res.ok) return { stripe: false };
+  if (!res.ok) return { stripe: false, demoPos: false };
   const providers = (res.data.providers as { provider: string }[]) ?? [];
-  return { stripe: providers.some((p) => p.provider === "stripe") };
+  return {
+    stripe: providers.some((p) => p.provider === "stripe"),
+    demoPos: providers.some((p) => p.provider === "demo_pos"),
+  };
 }
 
 export async function connectStripe(stripeKey: string): Promise<Result> {
   const gate = await requireOwner();
   if (!gate.ok) return gate;
   const res = await callBotAdmin({ action: "connect_stripe", store_slug: gate.slug, stripe_key: stripeKey.trim() });
+  if (!res.ok) return res;
+  revalidatePath("/integrations");
+  return { ok: true };
+}
+
+export async function connectDemoPos(): Promise<Result> {
+  const gate = await requireOwner();
+  if (!gate.ok) return gate;
+  const res = await callBotAdmin({ action: "connect_demo_pos", store_slug: gate.slug });
   if (!res.ok) return res;
   revalidatePath("/integrations");
   return { ok: true };

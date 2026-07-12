@@ -155,6 +155,29 @@ Deno.serve(async (req) => {
         if (error) return json({ error: error.message }, 500);
         return json({ ok: true, provider: "stripe" });
       }
+      case "connect_demo_pos": {
+        // A working demo POS so owners can see the order -> kitchen-ticket flow
+        // before a real Toast/Square/Clover adapter is wired.
+        await db.from("store_provider_credentials").upsert(
+          { store_id: store.id, provider: "demo_pos", credentials: {}, connected: true, updated_at: new Date().toISOString() },
+          { onConflict: "store_id,provider" },
+        );
+        const { error } = await db.from("store_integrations").upsert({
+          store_id: store.id,
+          name: "place_pos_order",
+          description: "Send the confirmed order to the kitchen POS and get a ticket + ETA. Call once the guest confirms their order.",
+          params_schema: { type: "object", properties: { items: { type: "array", items: { type: "string" }, description: "ordered items" }, order_type: { type: "string", description: "pickup or delivery" }, total: { type: "number" }, name: { type: "string" } }, required: [] },
+          kind: "http",
+          endpoint_url: `${Deno.env.get("SUPABASE_URL")}/functions/v1/mock-restaurant`,
+          auth_secret: Deno.env.get("MOCK_RESTAURANT_SECRET") ?? "",
+          side_effect: true,
+          enabled: true,
+          timeout_ms: 8000,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "store_id,name" });
+        if (error) return json({ error: error.message }, 500);
+        return json({ ok: true, provider: "demo_pos" });
+      }
       case "provider_status": {
         const { data } = await db
           .from("store_provider_credentials")
@@ -167,6 +190,9 @@ Deno.serve(async (req) => {
         await db.from("store_provider_credentials").delete().eq("store_id", store.id).eq("provider", provider);
         if (provider === "stripe") {
           await db.from("store_integrations").delete().eq("store_id", store.id).eq("name", "create_payment_link");
+        }
+        if (provider === "demo_pos") {
+          await db.from("store_integrations").delete().eq("store_id", store.id).eq("name", "place_pos_order");
         }
         return json({ ok: true });
       }
