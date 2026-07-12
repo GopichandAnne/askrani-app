@@ -55,6 +55,7 @@ export async function notifyResponders(
   store: Store,
   kind: "escalation" | "order",
   text: string,
+  opts?: { subject?: string; emailBody?: string },
 ): Promise<void> {
   const col = kind === "order" ? "notify_orders" : "notify_escalations";
   const { data } = await db
@@ -71,10 +72,10 @@ export async function notifyResponders(
   const emails = rows.map((r) => r.email).filter((e): e is string => !!e);
   if (emails.length) {
     const name = store.store_display_name ?? store.slug;
-    const subject = kind === "order"
-      ? `New order — ${name}`
-      : `A customer needs help — ${name}`;
-    const body = `${text}\n\nOpen your dashboard to respond: ${PANEL_URL}/tickets`;
+    const subject = opts?.subject ??
+      (kind === "order" ? `New order — ${name}` : `A customer needs help — ${name}`);
+    const body = opts?.emailBody ??
+      `${text}\n\nOpen your dashboard to respond: ${PANEL_URL}/tickets`;
     for (const to of emails) await sendEmail(to, subject, body);
   }
 }

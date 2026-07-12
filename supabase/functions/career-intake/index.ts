@@ -6,15 +6,19 @@
 // public.career_requests, and emails HR. It performs a write (side_effect), so
 // the bot only calls it once the visitor has confirmed.
 //
+// HR is notified through the SAME per-store escalation list every store already
+// uses (store_responders with notify_escalations) — so this stays generic for
+// any store, not a hardcoded recipient. Configure who gets it on the Team page.
+//
 // Secrets (Supabase function env):
 //   CAREER_INTAKE_SECRET  — shared HMAC secret (must match the store_integrations
 //                           auth_secret registered via bot-admin set_integration)
-//   HR_EMAIL              — recipient for new-lead notifications
 //   GMAIL_USER / GMAIL_APP_PASSWORD — outbound email (see _shared/email.ts)
 //   SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY — DB write (see _shared/supabase.ts)
 
 import { serviceClient } from "../_shared/supabase.ts";
-import { sendEmail } from "../_shared/email.ts";
+import { getStoreBySlug } from "../_shared/config.ts";
+import { notifyResponders } from "../_shared/responders.ts";
 
 function json(obj: unknown, status = 200): Response {
   return new Response(JSON.stringify(obj), {
@@ -80,11 +84,7 @@ Deno.serve(async (req) => {
   }
 
   const db = serviceClient();
-  const { data: store } = await db
-    .from("stores")
-    .select("id, store_display_name, slug")
-    .eq("slug", slug)
-    .maybeSingle();
+  const store = await getStoreBySlug(db, slug);
   if (!store) return json({ ok: false, error: `unknown store: ${slug}` }, 200);
 
   const { data: inserted, error } = await db
@@ -101,31 +101,29 @@ Deno.serve(async (req) => {
     .single();
   if (error) return json({ ok: false, error: error.message }, 200);
 
-  // Notify HR (best-effort; never blocks the confirmation to the visitor).
-  const hr = Deno.env.get("HR_EMAIL");
+  // Notify HR through the store's own escalation responders (generic per-store,
+  // WhatsApp + email). Best-effort — never blocks the visitor's confirmation.
   const orgName = store.store_display_name ?? store.slug;
-  let emailed = false;
-  if (hr) {
-    emailed = await sendEmail(
-      hr,
-      `New career interest — ${orgName}`,
-      [
-        `A visitor shared their interest in opportunities at ${orgName}.`,
-        ``,
-        `Email:     ${email}`,
-        `Positions: ${positions || "—"}`,
-        `Skills:    ${skills || "—"}`,
-        notes ? `Notes:     ${notes}` : ``,
-        ``,
-        `Review and reach back from the Ask Rani panel → Career requests.`,
-      ].filter((l) => l !== undefined).join("\n"),
-    );
+  const summary = [
+    `New career interest — ${orgName}`,
+    ``,
+    `Email:     ${email}`,
+    `Positions: ${positions || "—"}`,
+    `Skills:    ${skills || "—"}`,
+    notes ? `Notes:     ${notes}` : undefined,
+  ].filter((l) => l !== undefined).join("\n");
+  try {
+    await notifyResponders(db, store, "escalation", summary, {
+      subject: `New career interest — ${orgName}`,
+      emailBody: `${summary}\n\nReview and reach back: https://app.askrani.ai/career-requests`,
+    });
+  } catch (e) {
+    console.error(`[career-intake] notify failed: ${e instanceof Error ? e.message : e}`);
   }
 
   return json({
     ok: true,
     reference: inserted.id,
-    emailed,
-    message: "Your interest has been shared with our HR team — they'll reach out by email.",
+    message: "Your interest has been shared with our team — they'll reach out by email.",
   });
 });
