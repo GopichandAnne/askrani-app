@@ -126,6 +126,31 @@ Deno.serve(async (req) => {
         if (error) return json({ error: error.message }, 500);
         return json({ store: store.slug, name, ok: true });
       }
+      case "list_career_requests": {
+        // Recruiting leads captured by the web assistant (see career-intake fn).
+        const { data, error } = await db
+          .from("career_requests")
+          .select("id, email, positions, skills, notes, status, created_at")
+          .eq("store_id", store.id)
+          .order("created_at", { ascending: false })
+          .limit(Number(body.limit ?? 200));
+        if (error) return json({ error: error.message }, 500);
+        return json({ store: store.slug, career_requests: data ?? [] });
+      }
+      case "set_career_request_status": {
+        const id = String(body.id ?? "").trim();
+        const status = String(body.status ?? "").trim();
+        if (!id || !["new", "reviewed", "contacted", "closed"].includes(status)) {
+          return json({ error: "id and a valid status are required" }, 400);
+        }
+        const { error } = await db
+          .from("career_requests")
+          .update({ status })
+          .eq("id", id)
+          .eq("store_id", store.id);
+        if (error) return json({ error: error.message }, 500);
+        return json({ store: store.slug, id, status, ok: true });
+      }
       case "connect_stripe": {
         // One-click Stripe: store the owner's key + wire the payment connector
         // to our hosted stripe-pay adapter (which reads this store's key).

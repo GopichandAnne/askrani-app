@@ -2,6 +2,7 @@ import {
   BarChart3,
   BookOpen,
   Bot,
+  Briefcase,
   Building2,
   ClipboardList,
   LifeBuoy,
@@ -38,6 +39,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Team", href: "/team", icon: Users, available: true, ownerOnly: true },
   { label: "Members", href: "/members", icon: ShieldCheck, available: true, ownerOnly: true },
   { label: "Integrations", href: "/integrations", icon: Plug, available: true, ownerOnly: true },
+  { label: "Career requests", href: "/career-requests", icon: Briefcase, available: true, ownerOnly: true },
   { label: "Tickets", href: "/tickets", icon: LifeBuoy, available: true },
   { label: "Dashboard", href: "/dashboard", icon: BarChart3, available: true, ownerOnly: true },
   // ── Platform admin (super admin) — store-agnostic ──
