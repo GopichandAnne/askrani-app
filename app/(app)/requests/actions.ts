@@ -104,3 +104,42 @@ export async function deleteRequestType(key: string): Promise<Result> {
   revalidatePath("/requests");
   return { ok: true };
 }
+
+// ── Natural-language config (the LLM proposes; the owner confirms; we apply) ───
+export type ConfigAction = {
+  kind: "upsert_type" | "delete_type" | "subscribe" | "unsubscribe";
+  key?: string;
+  label?: string;
+  description?: string;
+  fields?: RequestField[];
+  topic?: string;
+  responder_email?: string;
+  responder_phone?: string;
+  responder_name?: string;
+};
+export type ConfigPlan = { summary: string; actions: ConfigAction[] };
+
+export async function planConfig(
+  instruction: string,
+): Promise<{ ok: true; plan: ConfigPlan } | { ok: false; error: string }> {
+  const gate = await requireOwner();
+  if (!gate.ok) return gate;
+  const res = await callBotAdmin({ action: "plan_request_config", store_slug: gate.slug, instruction });
+  if (!res.ok) return res;
+  return { ok: true, plan: res.data.plan as ConfigPlan };
+}
+
+export async function applyConfig(
+  actions: ConfigAction[],
+): Promise<{ ok: true; applied: string[]; skipped: string[] } | { ok: false; error: string }> {
+  const gate = await requireOwner();
+  if (!gate.ok) return gate;
+  const res = await callBotAdmin({ action: "apply_request_config", store_slug: gate.slug, actions });
+  if (!res.ok) return res;
+  revalidatePath("/requests");
+  return {
+    ok: true,
+    applied: (res.data.applied as string[]) ?? [],
+    skipped: (res.data.skipped as string[]) ?? [],
+  };
+}

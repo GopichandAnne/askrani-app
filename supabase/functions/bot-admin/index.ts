@@ -30,6 +30,7 @@ import { placeOrder } from "../_shared/order.ts";
 import { classifyTurn } from "../_shared/analytics.ts";
 import { findResponder, relayStaffAnswer } from "../_shared/responders.ts";
 import { generateTurnReply } from "../_shared/conversation.ts";
+import { generateStructured } from "../_shared/gemini.ts";
 
 const REINDEX_DEFAULT_MAX = 200;
 
@@ -194,6 +195,129 @@ Deno.serve(async (req) => {
           .eq("store_id", store.id);
         if (error) return json({ error: error.message }, 500);
         return json({ store: store.slug, id, status, ok: true });
+      }
+      case "plan_request_config": {
+        // Natural-language config: turn an owner's sentence into a STRUCTURED plan
+        // (proposal only — no writes). The panel previews it; apply happens on
+        // confirm via apply_request_config.
+        const instruction = String(body.instruction ?? "").trim();
+        if (!instruction) return json({ error: "instruction required" }, 400);
+        const [{ data: types }, { data: resp }] = await Promise.all([
+          db.from("request_types").select("key, label, fields").eq("store_id", store.id),
+          db.from("store_responders").select("name, email, phone, topics").eq("store_slug", store.slug).eq("active", true),
+        ]);
+        const ctx = [
+          "Existing request types:",
+          (types ?? []).length
+            // deno-lint-ignore no-explicit-any
+            ? (types ?? []).map((t: any) => `- ${t.key} (${t.label}); fields: ${JSON.stringify(t.fields ?? [])}`).join("\n")
+            : "- (none)",
+          "",
+          "Existing responders (topics they're subscribed to):",
+          (resp ?? []).length
+            // deno-lint-ignore no-explicit-any
+            ? (resp ?? []).map((r: any) => `- ${r.name ?? r.email ?? r.phone}: [${(r.topics ?? []).join(", ")}]`).join("\n")
+            : "- (none)",
+        ].join("\n");
+        const sys =
+          "You convert a store owner's plain-language instruction into a structured plan of " +
+          "assistant-config actions. Action kinds:\n" +
+          "- upsert_type: create/edit a request the assistant can capture. key = stable lowercase_snake id (also the notification topic); reuse an existing key when editing; label = human name; description = when the bot should file it; fields = the info to collect ({key, required}).\n" +
+          "- delete_type: remove a request type (key).\n" +
+          "- subscribe / unsubscribe: change who is notified for a topic. topic = a request-type key or the built-ins 'order' / 'escalation'. Identify the person by responder_email, responder_phone, or responder_name.\n" +
+          "Rules: for every upsert_type you MUST include the `fields` array — one entry per piece of info to collect (required:true unless clearly optional). Emit a SEPARATE subscribe action for EACH person to notify, with topic = the request type's key. Keep fields minimal; invent a sensible snake_case key for new types; only act on what the instruction clearly asks; if unclear or unrelated, return an empty actions array. Always fill 'summary' with a short plain-English description of what will change (or why nothing will).\n\n" +
+          "Respond with ONLY a JSON object of exactly this shape:\n" +
+          "{\"summary\": string, \"actions\": [ {\"kind\":\"upsert_type\"|\"delete_type\"|\"subscribe\"|\"unsubscribe\", \"key\"?: string, \"label\"?: string, \"description\"?: string, \"fields\"?: [{\"key\": string, \"required\": boolean}], \"topic\"?: string, \"responder_email\"?: string, \"responder_phone\"?: string, \"responder_name\"?: string} ] }\n\n" +
+          "Example — instruction: \"Capture quote requests with product and quantity, and email sam@shop.com about them.\"\n" +
+          "Output: {\"summary\":\"Add a Quote request collecting product and quantity, and notify sam@shop.com about quotes.\",\"actions\":[" +
+          "{\"kind\":\"upsert_type\",\"key\":\"quote_request\",\"label\":\"Quote request\",\"description\":\"When a visitor asks for a price quote.\",\"fields\":[{\"key\":\"product\",\"required\":true},{\"key\":\"quantity\",\"required\":true}]}," +
+          "{\"kind\":\"subscribe\",\"topic\":\"quote_request\",\"responder_email\":\"sam@shop.com\"}]}\n\n" +
+          "Current store config:\n" + ctx;
+        const plan = await generateStructured(sys, instruction);
+        if (!plan) return json({ error: "Couldn't understand that (AI config is unavailable). Try the manual controls." }, 502);
+        return json({ store: store.slug, plan });
+      }
+      case "apply_request_config": {
+        // Apply a confirmed structured plan (from plan_request_config). Deterministic.
+        // deno-lint-ignore no-explicit-any
+        const actions: any[] = Array.isArray(body.actions) ? body.actions : [];
+        const applied: string[] = [];
+        const skipped: string[] = [];
+        // Load responders once for matching.
+        const { data: resp } = await db
+          .from("store_responders")
+          .select("id, name, email, phone, topics")
+          .eq("store_slug", store.slug);
+        // deno-lint-ignore no-explicit-any
+        const responders = (resp ?? []) as any[];
+        const digits = (s: string) => (s ?? "").replace(/[^0-9]/g, "");
+
+        for (const a of actions) {
+          const kind = String(a?.kind ?? "");
+          try {
+            if (kind === "upsert_type") {
+              let key = String(a.key ?? "").trim().toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
+              const label = String(a.label ?? "").trim();
+              if (!key && label) key = label.toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40);
+              if (!/^[a-z][a-z0-9_]{1,40}$/.test(key) || !label) { skipped.push(`type "${label || key}" (needs a valid key + label)`); continue; }
+              const fields = Array.isArray(a.fields)
+                // deno-lint-ignore no-explicit-any
+                ? a.fields.filter((f: any) => f && f.key).map((f: any) => ({ key: String(f.key), required: f.required !== false }))
+                : [];
+              const { error } = await db.from("request_types").upsert({
+                store_id: store.id, key, label,
+                description: a.description != null ? String(a.description) : null,
+                fields, enabled: true, updated_at: new Date().toISOString(),
+              }, { onConflict: "store_id,key" });
+              if (error) { skipped.push(`type ${key}: ${error.message}`); continue; }
+              applied.push(`Request type "${label}" (${key})`);
+            } else if (kind === "delete_type") {
+              const key = String(a.key ?? "").trim();
+              if (!key) { skipped.push("delete type (no key)"); continue; }
+              await db.from("request_types").delete().eq("store_id", store.id).eq("key", key);
+              applied.push(`Removed request type ${key}`);
+            } else if (kind === "subscribe" || kind === "unsubscribe") {
+              const topic = String(a.topic ?? "").trim();
+              if (!topic) { skipped.push(`${kind} (no topic)`); continue; }
+              const email = String(a.responder_email ?? "").trim().toLowerCase();
+              const phone = digits(String(a.responder_phone ?? ""));
+              const name = String(a.responder_name ?? "").trim().toLowerCase();
+              let r = responders.find((x) =>
+                (email && (x.email ?? "").toLowerCase() === email) ||
+                (phone && digits(x.phone ?? "") === phone) ||
+                (name && (x.name ?? "").toLowerCase() === name)
+              );
+              if (!r) {
+                if (kind === "subscribe" && (email || phone)) {
+                  const { data: created, error } = await db.from("store_responders").insert({
+                    store_slug: store.slug, email: email || null, phone: phone || null,
+                    name: a.responder_name ? String(a.responder_name) : null, role: "staff",
+                    topics: [topic], active: true,
+                  }).select("id, name, email, phone, topics").single();
+                  if (error) { skipped.push(`add responder: ${error.message}`); continue; }
+                  responders.push(created);
+                  applied.push(`Added ${created.email ?? created.phone} and subscribed to ${topic}`);
+                } else {
+                  skipped.push(`${kind} ${topic} (couldn't find that person; give an email or phone)`);
+                }
+                continue;
+              }
+              const cur: string[] = r.topics ?? [];
+              const next = kind === "subscribe"
+                ? [...new Set([...cur, topic])]
+                : cur.filter((t) => t !== topic);
+              const { error } = await db.from("store_responders").update({ topics: next }).eq("id", r.id);
+              if (error) { skipped.push(`${kind} ${topic}: ${error.message}`); continue; }
+              r.topics = next;
+              applied.push(`${kind === "subscribe" ? "Subscribed" : "Unsubscribed"} ${r.name ?? r.email ?? r.phone} ${kind === "subscribe" ? "to" : "from"} ${topic}`);
+            } else {
+              skipped.push(`unknown action: ${kind}`);
+            }
+          } catch (e) {
+            skipped.push(`${kind}: ${e instanceof Error ? e.message : e}`);
+          }
+        }
+        return json({ store: store.slug, applied, skipped });
       }
       case "connect_stripe": {
         // One-click Stripe: store the owner's key + wire the payment connector

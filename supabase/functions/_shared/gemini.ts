@@ -67,6 +67,58 @@ async function fetchWithRetry(url: string, body: string): Promise<Response> {
 }
 
 /**
+ * One-shot structured generation: returns a parsed JSON object matching the
+ * given responseSchema (Gemini JSON mode). null on no-key/failure/parse error.
+ * Used for owner-facing tasks like natural-language config parsing — never the
+ * customer chat loop.
+ */
+export async function generateStructured(
+  systemInstruction: string,
+  userText: string,
+  responseSchema?: Record<string, unknown>,
+): Promise<Record<string, unknown> | null> {
+  const key = Deno.env.get("GEMINI_API_KEY");
+  if (!key) {
+    console.warn("[gemini] GEMINI_API_KEY not set — structured generation skipped");
+    return null;
+  }
+  const model = Deno.env.get("GEMINI_MODEL") ?? DEFAULT_MODEL;
+  const url = `${API_BASE}/models/${model}:generateContent?key=${key}`;
+  const body = JSON.stringify({
+    systemInstruction: { parts: [{ text: systemInstruction }] },
+    contents: [{ role: "user", parts: [{ text: userText }] }],
+    generationConfig: {
+      temperature: 0.2,
+      // Thinking tokens count against this budget on flash; keep it generous so a
+      // multi-part plan's JSON isn't truncated (which would drop the whole plan).
+      // Also don't set thinkingBudget:0 — that can yield empty output.
+      maxOutputTokens: 8192,
+      responseMimeType: "application/json",
+      // A rigid responseSchema makes flash emit minimal conformant output and
+      // ignore few-shot structure — rely on JSON mode + the example instead.
+      ...(responseSchema ? { responseSchema } : {}),
+    },
+  });
+  try {
+    const res = await fetchWithRetry(url, body);
+    if (!res.ok) {
+      console.error(`[gemini] structured ${res.status}: ${await res.text()}`);
+      return null;
+    }
+    // deno-lint-ignore no-explicit-any
+    const json: any = await res.json();
+    const text: string = (json?.candidates?.[0]?.content?.parts ?? [])
+      // deno-lint-ignore no-explicit-any
+      .map((p: any) => p.text ?? "").join("");
+    if (!text.trim()) return null;
+    return JSON.parse(text) as Record<string, unknown>;
+  } catch (e) {
+    console.error("[gemini] structured error:", e);
+    return null;
+  }
+}
+
+/**
  * Generate a reply, running the tool loop if a toolset is given. Returns the
  * final text (null on no-key/failure) and the ordered list of tools invoked.
  */

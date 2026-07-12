@@ -4,10 +4,13 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
+  applyConfig,
   deleteRequestType,
+  planConfig,
   saveRequestType,
   setRequestStatus,
   type CapturedRequest,
+  type ConfigPlan,
   type RequestField,
   type RequestStatus,
   type RequestType,
@@ -15,7 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Inbox, Mail, Pencil, Phone, Plus, Trash2 } from "lucide-react";
+import { Inbox, Loader2, Mail, Pencil, Phone, Plus, Sparkles, Trash2 } from "lucide-react";
 
 const STATUSES: RequestStatus[] = ["new", "reviewed", "contacted", "closed"];
 const STATUS_STYLE: Record<RequestStatus, string> = {
@@ -54,6 +57,24 @@ function val(v: unknown): string {
   return Array.isArray(v) ? v.map((x) => String(x)).join(", ") : String(v ?? "");
 }
 
+function describeAction(a: ConfigPlan["actions"][number]): string {
+  const who = a.responder_email || a.responder_phone || a.responder_name || "someone";
+  switch (a.kind) {
+    case "upsert_type": {
+      const flds = (a.fields ?? []).map((f) => (f.required === false ? f.key : `${f.key}*`)).join(", ");
+      return `Add/update request type “${a.label ?? a.key}”${flds ? ` — collect ${flds}` : ""}`;
+    }
+    case "delete_type":
+      return `Remove request type “${a.key}”`;
+    case "subscribe":
+      return `Notify ${who} about “${a.topic}”`;
+    case "unsubscribe":
+      return `Stop notifying ${who} about “${a.topic}”`;
+    default:
+      return a.kind;
+  }
+}
+
 export function RequestsView({
   requests,
   types,
@@ -76,9 +97,37 @@ export function RequestsView({
   const [fDesc, setFDesc] = useState("");
   const [fFields, setFFields] = useState("");
 
+  // Natural-language config (LLM proposes → owner confirms → apply).
+  const [nl, setNl] = useState("");
+  const [plan, setPlan] = useState<ConfigPlan | null>(null);
+  const [planning, setPlanning] = useState(false);
+  const [applying, setApplying] = useState(false);
+
   const labelOf = (k: string) => types.find((t) => t.key === k)?.label ?? k;
   const shown = filter === "all" ? requests : requests.filter((r) => r.type === filter);
   const newCount = requests.filter((r) => r.status === "new").length;
+
+  async function preview() {
+    setPlanning(true);
+    const res = await planConfig(nl.trim());
+    setPlanning(false);
+    if (res.ok) setPlan(res.plan);
+    else toast.error("Couldn't read that", { description: res.error });
+  }
+  async function applyPlan() {
+    if (!plan) return;
+    setApplying(true);
+    const res = await applyConfig(plan.actions);
+    setApplying(false);
+    if (res.ok) {
+      setPlan(null);
+      setNl("");
+      toast.success(res.applied.length ? res.applied.join(" · ") : "Nothing to change", {
+        description: res.skipped.length ? `Skipped: ${res.skipped.join("; ")}` : undefined,
+      });
+      router.refresh();
+    } else toast.error("Couldn't apply", { description: res.error });
+  }
 
   function changeStatus(id: string, status: RequestStatus) {
     setBusy(id);
@@ -143,6 +192,54 @@ export function RequestsView({
         </div>
         {newCount > 0 && <Badge className="bg-teal text-white">{newCount} new</Badge>}
       </header>
+
+      {/* ── Natural-language config ── */}
+      <section className="space-y-2">
+        <div className="flex items-center gap-2">
+          <Sparkles className="text-teal-deep size-4" />
+          <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+            Configure with a sentence
+          </span>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Input
+            value={nl}
+            onChange={(e) => setNl(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && nl.trim() && !planning) preview();
+            }}
+            placeholder='e.g. Capture callback requests with phone and reason, and notify priya@store.com'
+            className="min-w-[260px] flex-1"
+          />
+          <Button onClick={preview} disabled={planning || !nl.trim()}>
+            {planning ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+            Preview
+          </Button>
+        </div>
+        {plan && (
+          <div className="bg-card space-y-3 rounded-lg border p-4">
+            <p className="text-sm">{plan.summary}</p>
+            {plan.actions.length > 0 && (
+              <ul className="space-y-1">
+                {plan.actions.map((a, i) => (
+                  <li key={i} className="text-muted-foreground flex items-start gap-2 text-sm">
+                    <span className="text-teal-deep">•</span>
+                    {describeAction(a)}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="flex gap-2">
+              <Button size="sm" onClick={applyPlan} disabled={applying || plan.actions.length === 0}>
+                {applying ? <Loader2 className="size-4 animate-spin" /> : null} Apply
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setPlan(null)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+      </section>
 
       {/* ── Request types the assistant can capture ── */}
       <section className="space-y-2">
