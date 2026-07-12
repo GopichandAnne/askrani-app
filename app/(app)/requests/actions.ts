@@ -31,14 +31,15 @@ export type CapturedRequest = {
 export type Result = { ok: true } | { ok: false; error: string };
 
 async function requireOwner(): Promise<
-  { ok: true; slug: string } | { ok: false; error: string }
+  { ok: true; slug: string; actor: string | null } | { ok: false; error: string }
 > {
   const ctx = await getActiveStore();
   if (!ctx?.active) return { ok: false, error: "No active store." };
   const supabase = await createClient();
   const { data: isOwner } = await supabase.rpc("user_is_owner", { p_store_id: ctx.active.id });
   if (!isOwner) return { ok: false, error: "Only owners can manage requests." };
-  return { ok: true, slug: ctx.active.slug };
+  const { data: { user } } = await supabase.auth.getUser();
+  return { ok: true, slug: ctx.active.slug, actor: user?.email ?? null };
 }
 
 // ── Captured requests (the inbox) ────────────────────────────────────────────
@@ -90,6 +91,7 @@ export async function saveRequestType(input: {
     description: input.description?.trim() || null,
     fields: input.fields,
     enabled: input.enabled ?? true,
+    actor: gate.actor,
   });
   if (!res.ok) return res;
   revalidatePath("/requests");
@@ -99,7 +101,7 @@ export async function saveRequestType(input: {
 export async function deleteRequestType(key: string): Promise<Result> {
   const gate = await requireOwner();
   if (!gate.ok) return gate;
-  const res = await callBotAdmin({ action: "delete_request_type", store_slug: gate.slug, key });
+  const res = await callBotAdmin({ action: "delete_request_type", store_slug: gate.slug, key, actor: gate.actor });
   if (!res.ok) return res;
   revalidatePath("/requests");
   return { ok: true };
@@ -131,10 +133,18 @@ export async function planConfig(
 
 export async function applyConfig(
   actions: ConfigAction[],
+  meta?: { summary?: string; instruction?: string },
 ): Promise<{ ok: true; applied: string[]; skipped: string[] } | { ok: false; error: string }> {
   const gate = await requireOwner();
   if (!gate.ok) return gate;
-  const res = await callBotAdmin({ action: "apply_request_config", store_slug: gate.slug, actions });
+  const res = await callBotAdmin({
+    action: "apply_request_config",
+    store_slug: gate.slug,
+    actions,
+    summary: meta?.summary,
+    instruction: meta?.instruction,
+    actor: gate.actor,
+  });
   if (!res.ok) return res;
   revalidatePath("/requests");
   return {
@@ -142,4 +152,22 @@ export async function applyConfig(
     applied: (res.data.applied as string[]) ?? [],
     skipped: (res.data.skipped as string[]) ?? [],
   };
+}
+
+// ── Config audit log ─────────────────────────────────────────────────────────
+export type ConfigAuditEntry = {
+  id: string;
+  actor: string | null;
+  source: "nl" | "manual";
+  summary: string;
+  details: { instruction?: string | null; applied?: string[]; skipped?: string[] };
+  created_at: string;
+};
+
+export async function listConfigAudit(): Promise<ConfigAuditEntry[]> {
+  const gate = await requireOwner();
+  if (!gate.ok) return [];
+  const res = await callBotAdmin({ action: "list_config_audit", store_slug: gate.slug });
+  if (!res.ok) return [];
+  return (res.data.audit as ConfigAuditEntry[]) ?? [];
 }

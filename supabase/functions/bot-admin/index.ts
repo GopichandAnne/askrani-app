@@ -55,6 +55,25 @@ Deno.serve(async (req) => {
   const store = storeSlug ? await getStoreBySlug(db, storeSlug) : null;
   if (!store) return json({ error: `unknown store: ${storeSlug}` }, 404);
 
+  // Best-effort audit trail for config changes (never blocks the action).
+  const logConfig = async (
+    source: string,
+    summary: string,
+    details: Record<string, unknown> = {},
+  ) => {
+    try {
+      await db.from("config_audit").insert({
+        store_id: store.id,
+        actor: body.actor ? String(body.actor) : null,
+        source,
+        summary,
+        details,
+      });
+    } catch (e) {
+      console.error(`[bot-admin] audit: ${e instanceof Error ? e.message : e}`);
+    }
+  };
+
   try {
     switch (action) {
       case "reindex_products": {
@@ -156,6 +175,7 @@ Deno.serve(async (req) => {
         };
         const { error } = await db.from("request_types").upsert(row, { onConflict: "store_id,key" });
         if (error) return json({ error: error.message }, 500);
+        if (body.source !== "nl") await logConfig("manual", `Saved request type “${label}” (${key})`, { key, label });
         return json({ store: store.slug, key, ok: true });
       }
       case "delete_request_type": {
@@ -167,7 +187,18 @@ Deno.serve(async (req) => {
           .eq("store_id", store.id)
           .eq("key", key);
         if (error) return json({ error: error.message }, 500);
+        if (body.source !== "nl") await logConfig("manual", `Removed request type “${key}”`, { key });
         return json({ store: store.slug, key, ok: true });
+      }
+      case "list_config_audit": {
+        const { data, error } = await db
+          .from("config_audit")
+          .select("id, actor, source, summary, details, created_at")
+          .eq("store_id", store.id)
+          .order("created_at", { ascending: false })
+          .limit(Number(body.limit ?? 20));
+        if (error) return json({ error: error.message }, 500);
+        return json({ store: store.slug, audit: data ?? [] });
       }
       case "list_requests": {
         // Captured requests (any type) for this store.
@@ -316,6 +347,14 @@ Deno.serve(async (req) => {
           } catch (e) {
             skipped.push(`${kind}: ${e instanceof Error ? e.message : e}`);
           }
+        }
+        if (applied.length) {
+          const summary = body.summary ? String(body.summary) : `Applied ${applied.length} change(s)`;
+          await logConfig("nl", summary, {
+            instruction: body.instruction ? String(body.instruction) : null,
+            applied,
+            skipped,
+          });
         }
         return json({ store: store.slug, applied, skipped });
       }

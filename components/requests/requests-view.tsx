@@ -10,6 +10,7 @@ import {
   saveRequestType,
   setRequestStatus,
   type CapturedRequest,
+  type ConfigAuditEntry,
   type ConfigPlan,
   type RequestField,
   type RequestStatus,
@@ -18,7 +19,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Inbox, Loader2, Mail, Pencil, Phone, Plus, Sparkles, Trash2 } from "lucide-react";
+import { History, Inbox, Loader2, Mail, Pencil, Phone, Plus, Sparkles, Trash2 } from "lucide-react";
 
 const STATUSES: RequestStatus[] = ["new", "reviewed", "contacted", "closed"];
 const STATUS_STYLE: Record<RequestStatus, string> = {
@@ -78,10 +79,12 @@ function describeAction(a: ConfigPlan["actions"][number]): string {
 export function RequestsView({
   requests,
   types,
+  audit,
   storeName,
 }: {
   requests: CapturedRequest[];
   types: RequestType[];
+  audit: ConfigAuditEntry[];
   storeName: string;
 }) {
   const router = useRouter();
@@ -117,7 +120,7 @@ export function RequestsView({
   async function applyPlan() {
     if (!plan) return;
     setApplying(true);
-    const res = await applyConfig(plan.actions);
+    const res = await applyConfig(plan.actions, { summary: plan.summary, instruction: nl.trim() });
     setApplying(false);
     if (res.ok) {
       setPlan(null);
@@ -423,6 +426,40 @@ export function RequestsView({
           </ul>
         )}
       </section>
+
+      {/* ── Recent config changes ── */}
+      {audit.length > 0 && (
+        <section className="space-y-3">
+          <div className="flex items-center gap-2">
+            <History className="text-muted-foreground size-4" />
+            <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+              Recent changes
+            </span>
+          </div>
+          <ul className="space-y-2">
+            {audit.map((a) => (
+              <li key={a.id} className="bg-card rounded-lg border p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  {a.source === "nl" && (
+                    <Badge variant="outline" className="gap-1 text-xs">
+                      <Sparkles className="size-3" /> sentence
+                    </Badge>
+                  )}
+                  <p className="text-sm">{a.summary}</p>
+                </div>
+                {a.details?.instruction && (
+                  <p className="text-muted-foreground mt-1 text-xs italic">
+                    &ldquo;{a.details.instruction}&rdquo;
+                  </p>
+                )}
+                <p className="text-muted-foreground mt-1 text-xs">
+                  {[a.actor, fmtDate(a.created_at)].filter(Boolean).join(" · ")}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </div>
   );
 }
