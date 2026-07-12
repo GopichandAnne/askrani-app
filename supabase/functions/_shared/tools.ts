@@ -150,11 +150,12 @@ async function executeSearchProducts(
     return { products: [], note: "search failed" };
   }
   // Compact rows for the model. sku is included so it can add_to_cart exactly.
+  // image_url is a live reference — pass it to send_photo_urls to show the item.
   const products = (data ?? []).map(
     (r: {
       sku: string | null; name: string; brand: string | null; size: string | null;
       unit: string | null; price: number | null; currency: string | null;
-      in_stock: boolean; category: string | null;
+      in_stock: boolean; category: string | null; description?: string | null; image_url?: string | null;
     }) => ({
       sku: r.sku,
       name: r.name,
@@ -165,6 +166,8 @@ async function executeSearchProducts(
       currency: r.currency,
       in_stock: r.in_stock,
       category: r.category,
+      ...(r.description ? { description: r.description } : {}),
+      ...(r.image_url ? { image_url: r.image_url } : {}),
     }),
   );
   return { products, count: products.length };
