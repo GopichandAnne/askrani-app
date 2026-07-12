@@ -4,6 +4,7 @@ import { getActiveStore } from "@/lib/store/active-store";
 import { createClient } from "@/lib/supabase/server";
 import { AgentView } from "@/components/agent/agent-view";
 import { listResponders } from "./actions";
+import { listRequestTypes } from "@/app/(app)/requests/actions";
 
 export const metadata: Metadata = { title: "Agent · Ask Rani" };
 
@@ -19,19 +20,28 @@ export default async function AgentPage() {
   });
   if (!isOwner) redirect("/orders");
 
-  const [{ data: rows }, responders] = await Promise.all([
+  const [{ data: rows }, responders, requestTypes] = await Promise.all([
     supabase.from("agent_config").select("key, value").eq("store_id", store.id),
     listResponders(),
+    listRequestTypes(),
   ]);
 
   const config: Record<string, string> = {};
   for (const r of rows ?? []) config[r.key] = r.value ?? "";
+
+  // Built-in topics + any request types this store defined (dynamic).
+  const topics = [
+    { key: "escalation", label: "Escalations" },
+    { key: "order", label: "Orders" },
+    ...requestTypes.map((t) => ({ key: t.key, label: t.label })),
+  ];
 
   return (
     <AgentView
       key={store.slug}
       initialConfig={config}
       initialResponders={responders}
+      topics={topics}
       storeName={store.name}
     />
   );

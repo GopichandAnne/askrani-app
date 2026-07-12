@@ -28,10 +28,12 @@ const SECTIONS: Section[] = [
 export function AgentView({
   initialConfig,
   initialResponders,
+  topics,
   storeName,
 }: {
   initialConfig: Record<string, string>;
   initialResponders: Responder[];
+  topics: { key: string; label: string }[];
   storeName: string;
 }) {
   const [values, setValues] = useState<Record<string, string>>(initialConfig);
@@ -196,7 +198,7 @@ export function AgentView({
         </div>
       </div>
 
-      <RespondersSection initial={initialResponders} />
+      <RespondersSection initial={initialResponders} topics={topics} />
     </div>
   );
 }

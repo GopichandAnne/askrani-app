@@ -53,17 +53,18 @@ async function notify(db: SupabaseClient, store: Store, phones: string[], text: 
 export async function notifyResponders(
   db: SupabaseClient,
   store: Store,
-  kind: "escalation" | "order",
+  topic: string,
   text: string,
   opts?: { subject?: string; emailBody?: string },
 ): Promise<void> {
-  const col = kind === "order" ? "notify_orders" : "notify_escalations";
+  // Topic-based subscriptions: notify anyone subscribed to this topic (or '*').
+  // 'order' / 'escalation' are built-in topics; request-type keys are dynamic.
   const { data } = await db
     .from("store_responders")
     .select("phone, email")
     .eq("store_slug", store.slug)
     .eq("active", true)
-    .eq(col, true);
+    .or(`topics.cs.{${topic}},topics.cs.{*}`);
   const rows = (data ?? []) as { phone: string | null; email: string | null }[];
 
   const phones = rows.map((r) => r.phone).filter((p): p is string => !!p);
@@ -73,7 +74,7 @@ export async function notifyResponders(
   if (emails.length) {
     const name = store.store_display_name ?? store.slug;
     const subject = opts?.subject ??
-      (kind === "order" ? `New order — ${name}` : `A customer needs help — ${name}`);
+      (topic === "order" ? `New order — ${name}` : `A customer needs help — ${name}`);
     const body = opts?.emailBody ??
       `${text}\n\nOpen your dashboard to respond: ${PANEL_URL}/tickets`;
     for (const to of emails) await sendEmail(to, subject, body);

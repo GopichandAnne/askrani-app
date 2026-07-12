@@ -32,6 +32,11 @@ import {
   integrationDeclaration,
   type StoreIntegration,
 } from "./integrations.ts";
+import {
+  executeFileRequest,
+  fileRequestDeclaration,
+  type RequestType,
+} from "./requests.ts";
 
 // ── Gemini functionDeclaration shapes ───────────────────────────────────────
 export interface FunctionDeclaration {
@@ -658,6 +663,7 @@ export function buildToolset(
   catalogEnabled = false,
   today: string | null = null,
   integrations: StoreIntegration[] = [],
+  requestTypes: RequestType[] = [],
 ): Toolset {
   const executors: Record<string, ToolExecutor> = {
     search_products: (args) => executeSearchProducts(db, store, args),
@@ -666,6 +672,7 @@ export function buildToolset(
     send_photos: (args) => executeSendPhotos(db, store, sessionId, args),
     send_photo_urls: (args) => executeSendPhotoUrls(db, store, sessionId, args),
     escalate_to_owner: (args) => executeEscalate(db, store, sessionId, args),
+    file_request: (args) => executeFileRequest(db, store, sessionId, requestTypes, args),
     add_to_cart: async (args) => {
       const res = await addToCart(
         db, store, sessionId, String(args.sku ?? ""), Number(args.quantity ?? 1),
@@ -717,6 +724,9 @@ export function buildToolset(
     SEND_PHOTO_URLS_DECL,
     ESCALATE_DECL,
   ];
+  // Generic request capture — offered only when the store has defined request
+  // types (e.g. "Career interest", "Callback"). Nothing here is use-case-specific.
+  if (requestTypes.length) declarations.push(fileRequestDeclaration(requestTypes));
   if (catalogEnabled) declarations.push(SEARCH_PRODUCTS_DECL);
   if (ordersEnabled) {
     if (catalogEnabled) declarations.push(ADD_TO_CART_DECL); // priced catalog add

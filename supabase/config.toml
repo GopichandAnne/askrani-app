@@ -87,12 +87,6 @@ verify_jwt = false
 [functions.mock-catalog]
 verify_jwt = false
 
-# Careers-lead connector for the CVS LOGIC assistant — captures a job-seeker's
-# roles/skills/email into career_requests and emails HR. Auth is the
-# X-Rani-Signature (HMAC), so the gateway JWT check is off like the other connectors.
-[functions.career-intake]
-verify_jwt = false
-
 # Reference Stripe payment-link connector (real Checkout Sessions when
 # STRIPE_SECRET_KEY is set; a demo URL otherwise). Auth is the X-Rani-Signature.
 [functions.stripe-pay]

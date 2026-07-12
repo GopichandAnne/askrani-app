@@ -26,6 +26,7 @@ import { classifyTurn } from "./analytics.ts";
 import { getStoreAccessToken } from "./config.ts";
 import { sendText } from "./wa.ts";
 import { loadStoreIntegrations } from "./integrations.ts";
+import { loadRequestTypes } from "./requests.ts";
 import { accessMode, identityContext, resolveMember } from "./members.ts";
 import {
   cancelFollowup,
@@ -75,6 +76,7 @@ export async function generateTurnReply(
   // Per-store connectors — loaded before the prompt so a live-price connector can
   // lift the request-mode no-price rule. Empty for stores with none → no change.
   const integrations = await loadStoreIntegrations(db, store.id);
+  const requestTypes = await loadRequestTypes(db, store.id);
   const systemInstruction = buildSystemInstruction(config, { hasConnector: integrations.length > 0 });
   // Prefix the CURRENT message (volatile — not the cached prefix) with store-local
   // date/time + open/closed, and any pending priced proposal awaiting a decision.
@@ -110,6 +112,7 @@ export async function generateTurnReply(
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: config.timezone }).format(new Date());
   const toolset = buildToolset(
     db, store, opts.sessionId, config.ordersEnabled, hasProposal, config.catalogEnabled, today, integrations,
+    requestTypes,
   );
   return await generateReply(systemInstruction, contents, toolset);
 }

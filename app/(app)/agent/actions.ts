@@ -116,8 +116,7 @@ export async function addResponder(input: {
   email?: string;
   name?: string;
   role?: "owner" | "staff";
-  notify_escalations?: boolean;
-  notify_orders?: boolean;
+  topics?: string[];
 }): Promise<ResponderResult> {
   const phone = normalizePhone(input.phone ?? "");
   const email = (input.email ?? "").trim().toLowerCase();
@@ -144,8 +143,7 @@ export async function addResponder(input: {
         email: email || null,
         name: (input.name ?? "").trim() || null,
         role: input.role ?? "staff",
-        notify_escalations: input.notify_escalations ?? true,
-        notify_orders: input.notify_orders ?? false,
+        topics: input.topics ?? ["escalation"],
         active: true,
       },
       { onConflict: "store_slug,phone" },
@@ -159,7 +157,7 @@ export async function addResponder(input: {
 
 export async function updateResponder(
   id: string,
-  patch: Partial<Pick<Responder, "notify_escalations" | "notify_orders" | "active">>,
+  patch: Partial<Pick<Responder, "active" | "topics">>,
 ): Promise<ResponderResult> {
   const supabase = await createClient();
   const { data, error } = await supabase

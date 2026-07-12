@@ -126,25 +126,69 @@ Deno.serve(async (req) => {
         if (error) return json({ error: error.message }, 500);
         return json({ store: store.slug, name, ok: true });
       }
-      case "list_career_requests": {
-        // Recruiting leads captured by the web assistant (see career-intake fn).
+      case "list_request_types": {
+        // Per-store request-type definitions the bot's file_request tool offers.
         const { data, error } = await db
-          .from("career_requests")
-          .select("id, email, positions, skills, notes, status, created_at")
+          .from("request_types")
+          .select("id, key, label, description, fields, enabled, updated_at")
           .eq("store_id", store.id)
+          .order("label");
+        if (error) return json({ error: error.message }, 500);
+        return json({ store: store.slug, request_types: data ?? [] });
+      }
+      case "set_request_type": {
+        const key = String(body.key ?? "").trim().toLowerCase();
+        const label = String(body.label ?? "").trim();
+        if (!/^[a-z][a-z0-9_]{1,40}$/.test(key)) {
+          return json({ error: "key must be lowercase letters/numbers/underscores (e.g. career_interest)" }, 400);
+        }
+        if (!label) return json({ error: "label required" }, 400);
+        // deno-lint-ignore no-explicit-any
+        const row: Record<string, any> = {
+          store_id: store.id,
+          key,
+          label,
+          description: body.description != null ? String(body.description) : null,
+          fields: Array.isArray(body.fields) ? body.fields : [],
+          enabled: body.enabled === undefined ? true : !!body.enabled,
+          updated_at: new Date().toISOString(),
+        };
+        const { error } = await db.from("request_types").upsert(row, { onConflict: "store_id,key" });
+        if (error) return json({ error: error.message }, 500);
+        return json({ store: store.slug, key, ok: true });
+      }
+      case "delete_request_type": {
+        const key = String(body.key ?? "").trim();
+        if (!key) return json({ error: "key required" }, 400);
+        const { error } = await db
+          .from("request_types")
+          .delete()
+          .eq("store_id", store.id)
+          .eq("key", key);
+        if (error) return json({ error: error.message }, 500);
+        return json({ store: store.slug, key, ok: true });
+      }
+      case "list_requests": {
+        // Captured requests (any type) for this store.
+        let q = db
+          .from("requests")
+          .select("id, type, fields, contact_email, contact_phone, status, created_at")
+          .eq("store_id", store.id);
+        if (body.type) q = q.eq("type", String(body.type));
+        const { data, error } = await q
           .order("created_at", { ascending: false })
           .limit(Number(body.limit ?? 200));
         if (error) return json({ error: error.message }, 500);
-        return json({ store: store.slug, career_requests: data ?? [] });
+        return json({ store: store.slug, requests: data ?? [] });
       }
-      case "set_career_request_status": {
+      case "set_request_status": {
         const id = String(body.id ?? "").trim();
         const status = String(body.status ?? "").trim();
         if (!id || !["new", "reviewed", "contacted", "closed"].includes(status)) {
           return json({ error: "id and a valid status are required" }, 400);
         }
         const { error } = await db
-          .from("career_requests")
+          .from("requests")
           .update({ status })
           .eq("id", id)
           .eq("store_id", store.id);

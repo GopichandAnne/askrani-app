@@ -11,10 +11,17 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { Loader2, Plus, Trash2, Users } from "lucide-react";
 
-export function RespondersSection({ initial }: { initial: Responder[] }) {
+type Topic = { key: string; label: string };
+
+export function RespondersSection({
+  initial,
+  topics,
+}: {
+  initial: Responder[];
+  topics: Topic[];
+}) {
   const [rows, setRows] = useState<Responder[]>(initial);
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
@@ -37,9 +44,11 @@ export function RespondersSection({ initial }: { initial: Responder[] }) {
     });
   }
 
-  async function toggle(r: Responder, field: "notify_escalations" | "notify_orders" | "active", value: boolean) {
-    setRows((prev) => prev.map((x) => (x.id === r.id ? { ...x, [field]: value } : x)));
-    const res = await updateResponder(r.id, { [field]: value });
+  async function toggleTopic(r: Responder, topicKey: string, on: boolean) {
+    const current = r.topics ?? [];
+    const next = on ? [...new Set([...current, topicKey])] : current.filter((t) => t !== topicKey);
+    setRows((prev) => prev.map((x) => (x.id === r.id ? { ...x, topics: next } : x)));
+    const res = await updateResponder(r.id, { topics: next });
     if (!res.ok) toast.error("Couldn't update", { description: res.error });
   }
 
@@ -56,9 +65,9 @@ export function RespondersSection({ initial }: { initial: Responder[] }) {
         <h2 className="text-sm font-medium">Escalation responders</h2>
       </div>
       <p className="text-muted-foreground text-xs">
-        Owner/staff contacts — a WhatsApp number, an email, or both. Rani notifies
-        them on whichever channel they set when she needs a human (escalations) or
-        an order is placed. WhatsApp responders can reply right in WhatsApp and Rani
+        Owner/staff contacts — a WhatsApp number, an email, or both. Each person
+        subscribes to the topics they care about; Rani notifies them on whichever
+        channel they set. WhatsApp responders can reply right in WhatsApp and Rani
         relays the first answer to the customer.
       </p>
 
@@ -74,14 +83,19 @@ export function RespondersSection({ initial }: { initial: Responder[] }) {
                   {!r.active ? " · inactive" : ""}
                 </p>
               </div>
-              <label className="flex items-center gap-1.5 text-xs">
-                <Switch checked={r.notify_escalations} onCheckedChange={(v) => toggle(r, "notify_escalations", v)} />
-                Escalations
-              </label>
-              <label className="flex items-center gap-1.5 text-xs">
-                <Switch checked={r.notify_orders} onCheckedChange={(v) => toggle(r, "notify_orders", v)} />
-                Orders
-              </label>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                {topics.map((t) => (
+                  <label key={t.key} className="flex items-center gap-1.5 text-xs">
+                    <input
+                      type="checkbox"
+                      className="accent-teal size-3.5"
+                      checked={(r.topics ?? []).includes(t.key)}
+                      onChange={(e) => toggleTopic(r, t.key, e.target.checked)}
+                    />
+                    {t.label}
+                  </label>
+                ))}
+              </div>
               <Button
                 variant="ghost" size="icon"
                 className="text-muted-foreground hover:text-destructive size-8"
