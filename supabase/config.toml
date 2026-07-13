@@ -87,6 +87,11 @@ verify_jwt = false
 [functions.mock-catalog]
 verify_jwt = false
 
+# Reference ATS / scheduling connector for the recruiting demo (status checks +
+# screening bookings). Auth is the X-Rani-Signature, so gateway JWT check is off.
+[functions.mock-ats]
+verify_jwt = false
+
 # Reference Stripe payment-link connector (real Checkout Sessions when
 # STRIPE_SECRET_KEY is set; a demo URL otherwise). Auth is the X-Rani-Signature.
 [functions.stripe-pay]
