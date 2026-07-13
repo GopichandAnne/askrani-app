@@ -92,6 +92,11 @@ verify_jwt = false
 [functions.mock-ats]
 verify_jwt = false
 
+# Reference document-parsing connector (résumé -> structured fields). Swap
+# internals for a real parser (Affinda/Sovren). Auth is the X-Rani-Signature.
+[functions.parse-resume]
+verify_jwt = false
+
 # Reference Stripe payment-link connector (real Checkout Sessions when
 # STRIPE_SECRET_KEY is set; a demo URL otherwise). Auth is the X-Rani-Signature.
 [functions.stripe-pay]
