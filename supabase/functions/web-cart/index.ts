@@ -10,7 +10,7 @@
 
 import { serviceClient } from "../_shared/supabase.ts";
 import { getStoreBySlug } from "../_shared/config.ts";
-import { addToCart, cartSubtotal, type CartLine, removeFromCart, viewCart } from "../_shared/cart.ts";
+import { addToCart, cartSubtotal, type CartLine, clearCart, removeFromCart, viewCart } from "../_shared/cart.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -109,6 +109,10 @@ Deno.serve(async (req) => {
     }
     case "view": {
       return json({ cart: summarize(await viewCart(db, sessionId)) });
+    }
+    case "clear": {
+      await clearCart(db, store, sessionId);
+      return json({ ok: true, cart: summarize([]) });
     }
     default:
       return json({ error: `unknown action: ${action}` }, 400);
