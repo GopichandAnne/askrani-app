@@ -1,11 +1,12 @@
 "use client";
 
-import { Fragment } from "react";
+import { Fragment, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Wordmark } from "@/components/app-shell/wordmark";
 import { NAV_ITEMS } from "@/components/app-shell/nav-items";
+import { getNavCounts } from "@/app/(app)/actions";
 import { useStore } from "@/components/store/store-provider";
 import { Badge } from "@/components/ui/badge";
 
@@ -13,6 +14,20 @@ export function Sidebar() {
   const pathname = usePathname();
   const { active, isPlatformAdmin } = useStore();
   const isOwner = active.role === "owner" || isPlatformAdmin;
+
+  // "Needs attention" counts (open questions, new requests). Refresh on
+  // navigation + store switch (so answering something updates it) + every 60s.
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  useEffect(() => {
+    let alive = true;
+    const load = () => getNavCounts().then((c) => alive && setCounts(c)).catch(() => {});
+    load();
+    const id = setInterval(load, 60_000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [pathname, active.id]);
 
   return (
     <aside className="bg-card hidden w-60 shrink-0 flex-col border-r md:flex">
@@ -63,7 +78,17 @@ export function Sidebar() {
               )}
             >
               <Icon className="size-4" />
-              {item.label}
+              <span className="flex-1">{item.label}</span>
+              {(counts[item.href] ?? 0) > 0 && (
+                <Badge
+                  className={cn(
+                    "px-1.5 py-0 text-[10px]",
+                    isActive ? "bg-white/25 text-white" : "bg-teal text-white",
+                  )}
+                >
+                  {counts[item.href]}
+                </Badge>
+              )}
             </Link>
           );
 

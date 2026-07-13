@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { Ticket } from "@/lib/tickets/types";
 import { TicketsView } from "@/components/tickets/tickets-view";
 
-export const metadata: Metadata = { title: "Tickets · Ask Rani" };
+export const metadata: Metadata = { title: "Questions · Ask Rani" };
 
 export default async function TicketsPage() {
   const ctx = await getActiveStore();

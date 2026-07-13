@@ -58,10 +58,10 @@ export function TicketsView({
   return (
     <div className="mx-auto max-w-4xl space-y-5 p-6">
       <header>
-        <h1 className="font-display text-2xl italic">Tickets</h1>
+        <h1 className="font-display text-2xl italic">Questions</h1>
         <p className="text-muted-foreground text-sm">
-          {storeName} · answer an open ticket here and Rani sends your reply to the customer
-          (WhatsApp or web) — no WhatsApp needed on your end.
+          {storeName} · questions Rani couldn&apos;t answer. Reply here and Rani sends your answer
+          to the customer (WhatsApp or web) — no WhatsApp needed on your end.
         </p>
       </header>
 
