@@ -11,12 +11,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Bot, Loader2, Save } from "lucide-react";
 
-type Section = { key: string; label: string; hint: string; ordersOnly?: boolean };
+type Section = { key: string; label: string; hint: string; ordersOnly?: boolean; essential?: boolean };
 
 // Big prompt areas — each maps to an agent_config key (the bot's source of truth).
 const SECTIONS: Section[] = [
-  { key: "personality", label: "Personality & tone", hint: "Who Rani is and how she speaks — identity, warmth, style rules." },
-  { key: "store_prompt", label: "Store info", hint: "Address, hours, what you sell, anything about the store." },
+  { key: "personality", label: "Personality & tone", hint: "Who Rani is and how she speaks — identity, warmth, style rules.", essential: true },
+  { key: "store_prompt", label: "Store info", hint: "Address, hours, what you sell, anything about the store.", essential: true },
   { key: "language_handling", label: "Language handling", hint: "Which languages to mirror, regional product-name mappings, how to handle mixed languages." },
   { key: "engage_info", label: "Behavior & engagement", hint: "How Rani helps — navigation, escalation, feedback, interaction style, store layout." },
   { key: "off_topic_handling", label: "Off-topic handling", hint: "How to gracefully redirect non-shopping questions." },
@@ -133,26 +133,47 @@ export function AgentView({
         />
       </div>
 
-      {/* Big prompt sections */}
-      <div className="space-y-5">
-        {SECTIONS.map((s) => {
+      {/* Prompt sections — essentials first, then optional fine-tuning. */}
+      {(() => {
+        const renderSection = (s: Section, rows: number) => {
           if (s.ordersOnly && !ordersEnabled) return null;
           return (
             <div key={s.key} className="space-y-1.5">
-              <Label htmlFor={`sec-${s.key}`} className="text-sm font-medium">{s.label}</Label>
+              <div className="flex items-center gap-2">
+                <Label htmlFor={`sec-${s.key}`} className="text-sm font-medium">{s.label}</Label>
+                {!s.essential && (
+                  <span className="text-muted-foreground text-[10px] uppercase tracking-wide">optional</span>
+                )}
+              </div>
               <p className="text-muted-foreground text-xs">{s.hint}</p>
               <Textarea
                 id={`sec-${s.key}`}
                 value={values[s.key] ?? ""}
                 onChange={(e) => set(s.key, e.target.value)}
-                rows={10}
+                rows={rows}
                 className="font-mono text-sm"
                 placeholder={`Write ${s.label.toLowerCase()} instructions…`}
               />
             </div>
           );
-        })}
-      </div>
+        };
+        return (
+          <>
+            <div>
+              <h2 className="text-sm font-medium">The essentials</h2>
+              <p className="text-muted-foreground text-xs">
+                Rani needs these to represent {storeName} well. Everything below is optional fine-tuning.
+              </p>
+            </div>
+            <div className="space-y-5">{SECTIONS.filter((s) => s.essential).map((s) => renderSection(s, 8))}</div>
+            <div className="flex items-center gap-2 pt-1">
+              <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">Fine-tuning</span>
+              <span className="bg-border h-px flex-1" />
+            </div>
+            <div className="space-y-5">{SECTIONS.filter((s) => !s.essential).map((s) => renderSection(s, 6))}</div>
+          </>
+        );
+      })()}
 
       {/* Settings */}
       <div className="space-y-3">

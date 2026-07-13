@@ -4,6 +4,7 @@ import { getActiveStore } from "@/lib/store/active-store";
 import { createClient } from "@/lib/supabase/server";
 import { toOrder } from "@/lib/orders/types";
 import { OrdersBoard } from "@/components/orders/orders-board";
+import { SetupChecklist } from "@/components/setup/setup-checklist";
 
 export const metadata: Metadata = { title: "Orders · Ask Rani" };
 
@@ -32,11 +33,14 @@ export default async function OrdersPage() {
   const taxRate = Number.parseFloat(cfgRes.data?.value ?? "0") || 0;
 
   return (
-    <OrdersBoard
-      initialOrders={orders}
-      storeSlug={store.slug}
-      storeName={store.name}
-      taxRate={taxRate}
-    />
+    <>
+      <SetupChecklist />
+      <OrdersBoard
+        initialOrders={orders}
+        storeSlug={store.slug}
+        storeName={store.name}
+        taxRate={taxRate}
+      />
+    </>
   );
 }
