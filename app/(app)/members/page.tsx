@@ -20,7 +20,8 @@ export default async function MembersPage() {
       <header>
         <h1 className="font-display text-2xl italic">Members &amp; access</h1>
         <p className="text-muted-foreground text-sm">
-          {store.name} — who can use the agent, their roles, and how they&apos;re recognized
+          {store.name} — your customers/residents Rani recognizes, their roles, and how they verify.
+          (Staff who log into this panel live in Team.)
         </p>
       </header>
       <div className="bg-card rounded-lg border p-5">

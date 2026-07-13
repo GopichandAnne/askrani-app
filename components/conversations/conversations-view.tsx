@@ -52,7 +52,9 @@ export function ConversationsView({
     <div className="flex h-full flex-col">
       <header className="border-b p-4">
         <h1 className="font-display text-2xl italic">Conversations</h1>
-        <p className="text-muted-foreground text-sm">{storeName}</p>
+        <p className="text-muted-foreground text-sm">
+          {storeName} — every customer chat in full. Questions Rani couldn&apos;t answer wait for you in Tickets.
+        </p>
       </header>
 
       <div className="flex min-h-0 flex-1">

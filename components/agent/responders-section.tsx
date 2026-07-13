@@ -68,7 +68,9 @@ export function RespondersSection({
         Owner/staff contacts — a WhatsApp number, an email, or both. Each person
         subscribes to the topics they care about; Rani notifies them on whichever
         channel they set. WhatsApp responders can reply right in WhatsApp and Rani
-        relays the first answer to the customer.
+        relays the first answer to the customer. Topics beyond <b>Orders</b> and{" "}
+        <b>Escalations</b> come from the request types you create on the{" "}
+        <a href="/requests" className="text-teal-deep underline">Requests</a> page.
       </p>
 
       {rows.length > 0 && (

@@ -21,7 +21,7 @@ export default async function TeamPage() {
       <header>
         <h1 className="font-display text-2xl italic">Team</h1>
         <p className="text-muted-foreground text-sm">
-          {store.name} — owners and staff who can access this store
+          {store.name} — owners and staff who can log into this panel. (Your customers live in Members.)
         </p>
       </header>
       <div className="bg-card rounded-lg border p-5">

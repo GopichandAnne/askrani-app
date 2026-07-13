@@ -56,6 +56,24 @@ export async function saveAgentConfig(
     if (!editable.has(key)) continue;
     const value = (raw ?? "").toString();
 
+    // Guard settings that are easy to mis-enter. Tax rate is a FRACTION
+    // (0.0825 = 8.25%); a store once saved "8.25" → 825% tax on every order.
+    if (key === "tax_rate" && value.trim() !== "") {
+      const rate = Number(value);
+      if (!Number.isFinite(rate) || rate < 0 || rate > 1) {
+        return {
+          ok: false,
+          error: "Tax rate must be a decimal between 0 and 1 — e.g. 0.0825 for 8.25%. (Not 8.25.)",
+        };
+      }
+    }
+    if ((key === "followup_minutes" || key === "history_turns") && value.trim() !== "") {
+      const n = Number(value);
+      if (!Number.isFinite(n) || n < 0) {
+        return { ok: false, error: `${key.replace("_", " ")} must be a positive number.` };
+      }
+    }
+
     const { data: cur } = await supabase
       .from("agent_config")
       .select("version")

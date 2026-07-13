@@ -168,7 +168,16 @@ export function AgentView({
                 placeholder="0.0825"
                 inputMode="decimal"
               />
-              <p className="text-muted-foreground text-xs">Decimal fraction, e.g. 0.0825 for 8.25 percent.</p>
+              {Number(values.tax_rate) > 1 ? (
+                <p className="text-destructive text-xs">
+                  That looks like a percent, not a fraction. Enter {(Number(values.tax_rate) / 100).toString()} for{" "}
+                  {values.tax_rate}% tax.
+                </p>
+              ) : (
+                <p className="text-muted-foreground text-xs">
+                  Decimal fraction, not a percent — e.g. <b>0.0825</b> for 8.25% (max 1.0).
+                </p>
+              )}
             </div>
           )}
           <div className="space-y-1.5">
