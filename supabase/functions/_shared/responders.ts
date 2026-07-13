@@ -77,7 +77,7 @@ export async function notifyResponders(
       (topic === "order" ? `New order — ${name}` : `A customer needs help — ${name}`);
     const body = opts?.emailBody ??
       `${text}\n\nOpen your dashboard to respond: ${PANEL_URL}/tickets`;
-    for (const to of emails) await sendEmail(to, subject, body);
+    for (const to of emails) await sendEmail(to, subject, body, name);
   }
 }
 

@@ -5,18 +5,27 @@
 
 import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
 
-export async function sendEmail(to: string, subject: string, body: string): Promise<boolean> {
+export async function sendEmail(
+  to: string,
+  subject: string,
+  body: string,
+  fromName?: string,
+): Promise<boolean> {
   const user = Deno.env.get("GMAIL_USER");
   const pass = Deno.env.get("GMAIL_APP_PASSWORD");
   if (!user || !pass) {
     console.warn("[email] GMAIL_USER/GMAIL_APP_PASSWORD not set — skipping email");
     return false;
   }
+  // One shared sending account, but brand the From per store when given a name
+  // (e.g. "CVS LOGIC via Ask Rani <admin@askrani.ai>"). Strip header-breaking chars.
+  const disp = (fromName ? `${fromName} via Ask Rani` : "Ask Rani")
+    .replace(/["<>\r\n]/g, "").trim() || "Ask Rani";
   const client = new SMTPClient({
     connection: { hostname: "smtp.gmail.com", port: 465, tls: true, auth: { username: user, password: pass } },
   });
   try {
-    await client.send({ from: `Ask Rani <${user}>`, to, subject, content: body });
+    await client.send({ from: `"${disp}" <${user}>`, to, subject, content: body });
     return true;
   } catch (e) {
     console.error(`[email] send to ${to} failed: ${e instanceof Error ? e.message : e}`);
