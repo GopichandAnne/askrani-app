@@ -45,6 +45,6 @@ export async function answerTicket(ticketId: string, answer: string): Promise<An
           : "Couldn't send the answer.";
     return { ok: false, error: msg };
   }
-  revalidatePath("/tickets");
+  revalidatePath("/inbox");
   return { ok: true };
 }

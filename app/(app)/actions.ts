@@ -19,12 +19,13 @@ export async function getNavCounts(): Promise<Record<string, number>> {
   const supabase = await createClient();
   const out: Record<string, number> = {};
 
+  // Combined Inbox badge = open questions (tickets) + new requests (owners).
   const { count: openTickets } = await supabase
     .from("tickets")
     .select("ticket_id", { count: "exact", head: true })
     .eq("store_slug", store.slug)
     .in("status", ["created", "sent_to_owner"]);
-  out["/tickets"] = openTickets ?? 0;
+  let inbox = openTickets ?? 0;
 
   // requests is service-role only (RLS) — read via admin, owners only.
   const { data: isOwner } = await supabase.rpc("user_is_owner", { p_store_id: store.id });
@@ -35,8 +36,9 @@ export async function getNavCounts(): Promise<Record<string, number>> {
       .select("id", { count: "exact", head: true })
       .eq("store_id", store.id)
       .eq("status", "new");
-    out["/requests"] = newRequests ?? 0;
+    inbox += newRequests ?? 0;
   }
+  out["/inbox"] = inbox;
   return out;
 }
 

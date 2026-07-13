@@ -59,7 +59,7 @@ export async function setRequestStatus(id: string, status: RequestStatus): Promi
   if (!gate.ok) return gate;
   const res = await callBotAdmin({ action: "set_request_status", store_slug: gate.slug, id, status });
   if (!res.ok) return res;
-  revalidatePath("/requests");
+  revalidatePath("/inbox");
   return { ok: true };
 }
 
@@ -103,7 +103,7 @@ export async function saveRequestType(input: {
     actor: gate.actor,
   });
   if (!res.ok) return res;
-  revalidatePath("/requests");
+  revalidatePath("/inbox");
   return { ok: true };
 }
 
@@ -112,7 +112,7 @@ export async function deleteRequestType(key: string): Promise<Result> {
   if (!gate.ok) return gate;
   const res = await callBotAdmin({ action: "delete_request_type", store_slug: gate.slug, key, actor: gate.actor });
   if (!res.ok) return res;
-  revalidatePath("/requests");
+  revalidatePath("/inbox");
   return { ok: true };
 }
 
@@ -155,7 +155,7 @@ export async function applyConfig(
     actor: gate.actor,
   });
   if (!res.ok) return res;
-  revalidatePath("/requests");
+  revalidatePath("/inbox");
   return {
     ok: true,
     applied: (res.data.applied as string[]) ?? [],
