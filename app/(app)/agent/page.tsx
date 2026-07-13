@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { getActiveStore } from "@/lib/store/active-store";
 import { createClient } from "@/lib/supabase/server";
 import { AgentView } from "@/components/agent/agent-view";
-import { listResponders } from "./actions";
+import { listCharges, listResponders } from "./actions";
 import { listRequestTypes } from "@/app/(app)/requests/actions";
 
 export const metadata: Metadata = { title: "Agent · Ask Rani" };
@@ -20,10 +20,11 @@ export default async function AgentPage() {
   });
   if (!isOwner) redirect("/orders");
 
-  const [{ data: rows }, responders, requestTypes] = await Promise.all([
+  const [{ data: rows }, responders, requestTypes, charges] = await Promise.all([
     supabase.from("agent_config").select("key, value").eq("store_id", store.id),
     listResponders(),
     listRequestTypes(),
+    listCharges(),
   ]);
 
   const config: Record<string, string> = {};
@@ -42,6 +43,7 @@ export default async function AgentPage() {
       initialConfig={config}
       initialResponders={responders}
       topics={topics}
+      charges={charges}
       storeName={store.name}
     />
   );

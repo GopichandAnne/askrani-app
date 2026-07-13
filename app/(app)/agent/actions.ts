@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getActiveStore } from "@/lib/store/active-store";
+import { callBotAdmin } from "@/lib/knowledge/bot-admin";
 import type { Database } from "@/lib/database.types";
 
 type AgentKey = Database["public"]["Enums"]["agent_config_key"];
@@ -195,5 +196,54 @@ export async function removeResponder(id: string): Promise<SaveResult> {
   const { error } = await supabase.from("store_responders").delete().eq("id", id);
   if (error) return { ok: false, error: error.message };
   revalidatePath("/agent");
+  return { ok: true };
+}
+
+// ── Charges & fees (tax, delivery, service…) ──────────────────────────────────
+export type Charge = {
+  id?: string;
+  label: string;
+  kind: "percent" | "flat";
+  value: number;
+  applies_to: "all" | "pickup" | "delivery";
+  enabled: boolean;
+};
+
+async function ownerSlug(): Promise<{ ok: true; slug: string } | { ok: false; error: string }> {
+  const ctx = await getActiveStore();
+  if (!ctx?.active) return { ok: false, error: "No active store." };
+  const supabase = await createClient();
+  const { data: isOwner } = await supabase.rpc("user_is_owner", { p_store_id: ctx.active.id });
+  if (!isOwner) return { ok: false, error: "Only owners can manage charges." };
+  return { ok: true, slug: ctx.active.slug };
+}
+
+export async function listCharges(): Promise<Charge[]> {
+  const gate = await ownerSlug();
+  if (!gate.ok) return [];
+  const res = await callBotAdmin({ action: "list_charges", store_slug: gate.slug });
+  if (!res.ok) return [];
+  return (res.data.charges as Charge[]) ?? [];
+}
+
+export async function saveCharge(input: Charge): Promise<SaveResult> {
+  const gate = await ownerSlug();
+  if (!gate.ok) return gate;
+  if (!input.label.trim()) return { ok: false, error: "Give the charge a name." };
+  if (!Number.isFinite(input.value) || input.value < 0) return { ok: false, error: "Value must be a number ≥ 0." };
+  const res = await callBotAdmin({ action: "set_charge", store_slug: gate.slug, ...input });
+  if (!res.ok) return res;
+  revalidatePath("/agent");
+  revalidatePath("/orders");
+  return { ok: true };
+}
+
+export async function deleteCharge(id: string): Promise<SaveResult> {
+  const gate = await ownerSlug();
+  if (!gate.ok) return gate;
+  const res = await callBotAdmin({ action: "delete_charge", store_slug: gate.slug, id });
+  if (!res.ok) return res;
+  revalidatePath("/agent");
+  revalidatePath("/orders");
   return { ok: true };
 }

@@ -147,6 +147,44 @@ export type Database = {
           },
         ]
       }
+      config_audit: {
+        Row: {
+          actor: string | null
+          created_at: string
+          details: Json
+          id: string
+          source: string
+          store_id: string
+          summary: string
+        }
+        Insert: {
+          actor?: string | null
+          created_at?: string
+          details?: Json
+          id?: string
+          source?: string
+          store_id: string
+          summary: string
+        }
+        Update: {
+          actor?: string | null
+          created_at?: string
+          details?: Json
+          id?: string
+          source?: string
+          store_id?: string
+          summary?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "config_audit_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conversations: {
         Row: {
           analytics_json: string | null
@@ -353,6 +391,7 @@ export type Database = {
       }
       orders: {
         Row: {
+          charges_json: Json
           created_at: string
           currency: string | null
           customer_name: string | null
@@ -374,6 +413,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          charges_json?: Json
           created_at?: string
           currency?: string | null
           customer_name?: string | null
@@ -395,6 +435,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          charges_json?: Json
           created_at?: string
           currency?: string | null
           customer_name?: string | null
@@ -569,6 +610,7 @@ export type Database = {
       }
       request_types: {
         Row: {
+          accepts_upload: boolean
           created_at: string
           description: string | null
           enabled: boolean
@@ -576,10 +618,13 @@ export type Database = {
           id: string
           key: string
           label: string
+          parse_with: string | null
           store_id: string
           updated_at: string
+          upload_types: string[]
         }
         Insert: {
+          accepts_upload?: boolean
           created_at?: string
           description?: string | null
           enabled?: boolean
@@ -587,10 +632,13 @@ export type Database = {
           id?: string
           key: string
           label: string
+          parse_with?: string | null
           store_id: string
           updated_at?: string
+          upload_types?: string[]
         }
         Update: {
+          accepts_upload?: boolean
           created_at?: string
           description?: string | null
           enabled?: boolean
@@ -598,8 +646,10 @@ export type Database = {
           id?: string
           key?: string
           label?: string
+          parse_with?: string | null
           store_id?: string
           updated_at?: string
+          upload_types?: string[]
         }
         Relationships: [
           {
@@ -742,6 +792,53 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "staff_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      store_charges: {
+        Row: {
+          applies_to: string
+          created_at: string
+          enabled: boolean
+          id: string
+          kind: string
+          label: string
+          sort: number
+          store_id: string
+          updated_at: string
+          value: number
+        }
+        Insert: {
+          applies_to?: string
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          kind?: string
+          label: string
+          sort?: number
+          store_id: string
+          updated_at?: string
+          value?: number
+        }
+        Update: {
+          applies_to?: string
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          kind?: string
+          label?: string
+          sort?: number
+          store_id?: string
+          updated_at?: string
+          value?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "store_charges_store_id_fkey"
             columns: ["store_id"]
             isOneToOne: false
             referencedRelation: "stores"

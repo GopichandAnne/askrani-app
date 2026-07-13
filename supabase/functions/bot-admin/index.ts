@@ -299,6 +299,49 @@ Deno.serve(async (req) => {
         if (body.source !== "nl") await logConfig("manual", `Removed request type “${key}”`, { key });
         return json({ store: store.slug, key, ok: true });
       }
+      case "list_charges": {
+        const { data, error } = await db
+          .from("store_charges")
+          .select("id, label, kind, value, applies_to, enabled, sort")
+          .eq("store_id", store.id)
+          .order("sort", { ascending: true })
+          .order("created_at", { ascending: true });
+        if (error) return json({ error: error.message }, 500);
+        return json({ store: store.slug, charges: data ?? [] });
+      }
+      case "set_charge": {
+        const id = body.id ? String(body.id) : null;
+        const label = String(body.label ?? "").trim();
+        if (!label) return json({ error: "label required" }, 400);
+        const value = Number(body.value);
+        if (!Number.isFinite(value) || value < 0) return json({ error: "value must be a number ≥ 0" }, 400);
+        // deno-lint-ignore no-explicit-any
+        const row: Record<string, any> = {
+          store_id: store.id,
+          label,
+          kind: String(body.kind) === "flat" ? "flat" : "percent",
+          value,
+          applies_to: ["all", "pickup", "delivery"].includes(String(body.applies_to)) ? String(body.applies_to) : "all",
+          enabled: body.enabled === undefined ? true : !!body.enabled,
+          sort: Number(body.sort ?? 0),
+          updated_at: new Date().toISOString(),
+        };
+        if (id) {
+          const { error } = await db.from("store_charges").update(row).eq("id", id).eq("store_id", store.id);
+          if (error) return json({ error: error.message }, 500);
+          return json({ store: store.slug, id, ok: true });
+        }
+        const { data, error } = await db.from("store_charges").insert(row).select("id").single();
+        if (error) return json({ error: error.message }, 500);
+        return json({ store: store.slug, id: data.id, ok: true });
+      }
+      case "delete_charge": {
+        const id = String(body.id ?? "").trim();
+        if (!id) return json({ error: "id required" }, 400);
+        const { error } = await db.from("store_charges").delete().eq("id", id).eq("store_id", store.id);
+        if (error) return json({ error: error.message }, 500);
+        return json({ store: store.slug, id, ok: true });
+      }
       case "list_config_audit": {
         const { data, error } = await db
           .from("config_audit")

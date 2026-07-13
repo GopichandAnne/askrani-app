@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendWhatsAppText } from "@/lib/wa/send";
-import { computeTotals, formatMoney } from "@/lib/orders/totals";
+import { computeCharged, formatMoney, type Charge } from "@/lib/orders/totals";
 import { isRequestItem, parseItems } from "@/lib/orders/types";
 import type { OrderItem, OrderStatus } from "@/lib/orders/types";
 import {
@@ -188,7 +188,7 @@ export async function editOrder(
   const { data: currentRow } = await supabase
     .from("orders")
     .select(
-      "status, store_slug, items_json, notes, customer_phone, customer_name",
+      "status, store_slug, items_json, notes, customer_phone, customer_name, fulfillment",
     )
     .eq("order_id", orderId)
     .maybeSingle();
@@ -215,13 +215,15 @@ export async function editOrder(
   });
   const isOwner = ownerFlag ?? false;
 
-  const { data: cfg } = await supabase
-    .from("agent_config")
-    .select("value")
+  // The store's charges & fees (store_charges is service-role only → admin read).
+  const admin = createAdminClient();
+  const { data: chargeRows } = await admin
+    .from("store_charges")
+    .select("label, kind, value, applies_to, enabled")
     .eq("store_id", store.id)
-    .eq("key", "tax_rate")
-    .maybeSingle();
-  const taxRate = Number.parseFloat(cfg?.value ?? "0") || 0;
+    .eq("enabled", true)
+    .order("sort", { ascending: true });
+  const charges = (chargeRows ?? []) as Charge[];
 
   // Normalize incoming items (recompute line_total).
   const normalized: OrderItem[] = items.map((item) => {
@@ -262,7 +264,11 @@ export async function editOrder(
     };
   }
 
-  const totals = computeTotals(normalized, taxRate);
+  const totals = computeCharged(
+    normalized,
+    charges,
+    (currentRow.fulfillment ?? null) as "pickup" | "delivery" | null,
+  );
 
   // Inline audit tag appended to notes (append-only history).
   const stamp = new Date().toISOString().slice(0, 16).replace("T", " ");
@@ -276,8 +282,9 @@ export async function editOrder(
     .update({
       items_json: normalized,
       subtotal: totals.subtotal,
-      tax: totals.tax,
+      tax: totals.chargesTotal,
       total: totals.total,
+      charges_json: totals.charges,
       notes,
     })
     .eq("order_id", orderId);

@@ -12,7 +12,7 @@ import {
   canEdit,
   canReject,
 } from "@/lib/orders/status";
-import { computeTotals, formatMoney, lineTotal } from "@/lib/orders/totals";
+import { computeCharged, formatMoney, lineTotal, type Charge } from "@/lib/orders/totals";
 import { formatDateTime } from "@/lib/format";
 import { eventLabel } from "@/lib/conversations/events";
 import {
@@ -64,13 +64,13 @@ export function OrderDetailSheet({
   order,
   open,
   onOpenChange,
-  taxRate,
+  charges,
   onApplied,
 }: {
   order: Order | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  taxRate: number;
+  charges: Charge[];
   onApplied: (orderId: string, patch: Partial<Order>) => void;
 }) {
   const { active, isPlatformAdmin } = useStore();
@@ -108,8 +108,13 @@ export function OrderDetailSheet({
 
   const currency = order?.currency ?? "USD";
   const previewTotals = useMemo(
-    () => computeTotals(editing ? draft : (order?.items_json ?? []), taxRate),
-    [editing, draft, order?.items_json, taxRate],
+    () =>
+      computeCharged(
+        editing ? draft : (order?.items_json ?? []),
+        charges,
+        (order?.fulfillment ?? null) as "pickup" | "delivery" | null,
+      ),
+    [editing, draft, order?.items_json, order?.fulfillment, charges],
   );
 
   if (!order) {
@@ -134,14 +139,14 @@ export function OrderDetailSheet({
   }
 
   function saveEdit() {
-    const totals = computeTotals(draft, taxRate);
+    const totals = computeCharged(draft, charges, (order?.fulfillment ?? null) as "pickup" | "delivery" | null);
     startTransition(async () => {
       const res = await editOrder(order!.order_id, draft);
       if (res.ok) {
         onApplied(order!.order_id, {
           items_json: draft,
           subtotal: totals.subtotal,
-          tax: totals.tax,
+          tax: totals.chargesTotal,
           total: totals.total,
         });
         toast.success("Order saved");
@@ -304,7 +309,9 @@ export function OrderDetailSheet({
           {/* Totals */}
           <section className="space-y-1.5 text-sm">
             <Row label="Subtotal" value={formatMoney(previewTotals.subtotal, currency)} />
-            <Row label="Tax" value={formatMoney(previewTotals.tax, currency)} />
+            {previewTotals.charges.map((c, i) => (
+              <Row key={i} label={c.label} value={formatMoney(c.amount, currency)} />
+            ))}
             <Separator className="my-1" />
             <Row
               label="Total"

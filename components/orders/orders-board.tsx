@@ -5,6 +5,7 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import type { Order, OrderRow, OrderStatus } from "@/lib/orders/types";
 import { toOrder } from "@/lib/orders/types";
+import type { Charge } from "@/lib/orders/totals";
 import { ORDER_STATUSES } from "@/lib/orders/status";
 import { OrderFilters, type OrderFiltersValue } from "./order-filters";
 import { OrderRow as OrderRowItem } from "./order-row";
@@ -16,12 +17,12 @@ export function OrdersBoard({
   initialOrders,
   storeSlug,
   storeName,
-  taxRate,
+  charges,
 }: {
   initialOrders: Order[];
   storeSlug: string;
   storeName: string;
-  taxRate: number;
+  charges: Charge[];
 }) {
   const [orders, setOrders] = useState<Order[]>(initialOrders);
   const [filters, setFilters] = useState<OrderFiltersValue>({
@@ -203,7 +204,7 @@ export function OrdersBoard({
         onOpenChange={(open) => {
           if (!open) setSelectedId(null);
         }}
-        taxRate={taxRate}
+        charges={charges}
         onApplied={applyLocal}
       />
     </div>

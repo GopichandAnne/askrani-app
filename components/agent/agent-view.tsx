@@ -2,8 +2,9 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { saveAgentConfig, type Responder } from "@/app/(app)/agent/actions";
+import { saveAgentConfig, type Charge, type Responder } from "@/app/(app)/agent/actions";
 import { RespondersSection } from "./responders-section";
+import { ChargesSection } from "./charges-section";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -29,11 +30,13 @@ export function AgentView({
   initialConfig,
   initialResponders,
   topics,
+  charges,
   storeName,
 }: {
   initialConfig: Record<string, string>;
   initialResponders: Responder[];
   topics: { key: string; label: string }[];
+  charges: Charge[];
   storeName: string;
 }) {
   const [values, setValues] = useState<Record<string, string>>(initialConfig);
@@ -179,28 +182,6 @@ export function AgentView({
       <div className="space-y-3">
         <h2 className="text-muted-foreground text-sm font-medium">Settings</h2>
         <div className="grid gap-4 sm:grid-cols-2">
-          {ordersEnabled && (
-            <div className="space-y-1.5">
-              <Label htmlFor="tax_rate">Tax rate</Label>
-              <Input
-                id="tax_rate"
-                value={values.tax_rate ?? ""}
-                onChange={(e) => set("tax_rate", e.target.value)}
-                placeholder="0.0825"
-                inputMode="decimal"
-              />
-              {Number(values.tax_rate) > 1 ? (
-                <p className="text-destructive text-xs">
-                  That looks like a percent, not a fraction. Enter {(Number(values.tax_rate) / 100).toString()} for{" "}
-                  {values.tax_rate}% tax.
-                </p>
-              ) : (
-                <p className="text-muted-foreground text-xs">
-                  Decimal fraction, not a percent — e.g. <b>0.0825</b> for 8.25% (max 1.0).
-                </p>
-              )}
-            </div>
-          )}
           <div className="space-y-1.5">
             <Label htmlFor="history_turns">History turns</Label>
             <Input
@@ -227,6 +208,8 @@ export function AgentView({
           )}
         </div>
       </div>
+
+      {ordersEnabled && <ChargesSection initial={charges} />}
 
       <RespondersSection initial={initialResponders} topics={topics} />
     </div>

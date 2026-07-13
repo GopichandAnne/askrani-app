@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getActiveStore } from "@/lib/store/active-store";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { toOrder } from "@/lib/orders/types";
+import type { Charge } from "@/lib/orders/totals";
 import { OrdersBoard } from "@/components/orders/orders-board";
 import { SetupChecklist } from "@/components/setup/setup-checklist";
 
@@ -14,23 +16,24 @@ export default async function OrdersPage() {
   const store = ctx.active;
 
   const supabase = await createClient();
-  const [ordersRes, cfgRes] = await Promise.all([
+  const admin = createAdminClient();
+  const [ordersRes, chargesRes] = await Promise.all([
     supabase
       .from("orders")
       .select("*")
       .eq("store_slug", store.slug)
       .order("timestamp", { ascending: false, nullsFirst: false })
       .limit(200),
-    supabase
-      .from("agent_config")
-      .select("value")
+    admin
+      .from("store_charges")
+      .select("label, kind, value, applies_to, enabled, sort")
       .eq("store_id", store.id)
-      .eq("key", "tax_rate")
-      .maybeSingle(),
+      .eq("enabled", true)
+      .order("sort", { ascending: true }),
   ]);
 
   const orders = (ordersRes.data ?? []).map(toOrder);
-  const taxRate = Number.parseFloat(cfgRes.data?.value ?? "0") || 0;
+  const charges = (chargesRes.data ?? []) as Charge[];
 
   return (
     <>
@@ -39,7 +42,7 @@ export default async function OrdersPage() {
         initialOrders={orders}
         storeSlug={store.slug}
         storeName={store.name}
-        taxRate={taxRate}
+        charges={charges}
       />
     </>
   );

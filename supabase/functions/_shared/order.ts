@@ -35,6 +35,56 @@ export function computeTotals(lines: CartLine[], taxRate: number): OrderTotals {
   return { subtotal, tax, total, hasUnpriced };
 }
 
+// ── Configurable charges & fees (percent of subtotal or flat $) ───────────────
+export interface Charge {
+  label: string;
+  kind: "percent" | "flat";
+  value: number;
+  applies_to: "all" | "pickup" | "delivery";
+}
+export interface ChargedTotals {
+  subtotal: number;
+  charges: { label: string; amount: number }[];
+  chargesTotal: number;
+  total: number;
+  hasUnpriced: boolean;
+}
+
+/** Apply a store's enabled charges to the subtotal for this fulfillment. Percent
+ *  charges are % of subtotal; flat charges are a fixed dollar amount. */
+export function computeCharged(
+  lines: CartLine[],
+  charges: Charge[],
+  fulfillment: "pickup" | "delivery",
+): ChargedTotals {
+  let subtotal = 0;
+  let hasUnpriced = false;
+  for (const l of lines) {
+    if (l.line_total == null) hasUnpriced = true;
+    else subtotal += l.line_total;
+  }
+  subtotal = round2(subtotal);
+  const applied: { label: string; amount: number }[] = [];
+  for (const c of charges) {
+    if (c.applies_to !== "all" && c.applies_to !== fulfillment) continue;
+    const amount = c.kind === "flat" ? round2(Number(c.value) || 0) : round2(subtotal * (Number(c.value) || 0) / 100);
+    if (amount) applied.push({ label: c.label, amount });
+  }
+  const chargesTotal = round2(applied.reduce((s, a) => s + a.amount, 0));
+  const total = round2(subtotal + chargesTotal);
+  return { subtotal, charges: applied, chargesTotal, total, hasUnpriced };
+}
+
+export async function loadCharges(db: SupabaseClient, storeId: string): Promise<Charge[]> {
+  const { data } = await db
+    .from("store_charges")
+    .select("label, kind, value, applies_to")
+    .eq("store_id", storeId)
+    .eq("enabled", true)
+    .order("sort", { ascending: true });
+  return (data ?? []) as Charge[];
+}
+
 /** Map a cart line to the panel's items_json shape: a priced catalog line ->
  *  CatalogItem; a request item OR an unpriced catalog line -> RequestItem (which
  *  staff price in the Orders module). Notes carry through. */
@@ -162,9 +212,16 @@ export async function placeOrder(
   if (priceChanges.length > 0) return { placed: false, reason: "price_changed", changes: priceChanges };
   revalidated.push(...requestLines); // unpriced request items pass through
 
-  // ── Totals from LIVE prices (priced lines); write the order the panel expects ─
-  const taxRate = await loadTaxRate(db, store.id);
-  const totals = computeTotals(revalidated, taxRate);
+  // ── Totals from LIVE prices (priced lines); apply the store's charges & fees ──
+  const charges = await loadCharges(db, store.id);
+  const charged = computeCharged(revalidated, charges, fulfillment);
+  // Legacy shape: total = subtotal + tax, where tax now holds the charges total.
+  const totals = {
+    subtotal: charged.subtotal,
+    tax: charged.chargesTotal,
+    total: charged.total,
+    hasUnpriced: charged.hasUnpriced,
+  };
   const itemsJson = revalidated.map(toOrderItem);
   const orderMode = revalidated.some((l) => l.unit_price == null) ? "request" : "standard";
   const customerPhone = sessionId.startsWith("wa_") ? sessionId.slice(3) : sessionId;
@@ -193,6 +250,7 @@ export async function placeOrder(
     subtotal: totals.subtotal,
     tax: totals.tax,
     total: totals.total,
+    charges_json: charged.charges,
     currency: "USD",
     fulfillment,
     status: "pending_approval",
