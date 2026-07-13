@@ -16,9 +16,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ImagePicker } from "./product-image";
 import { Loader2, Plus } from "lucide-react";
 
-const EMPTY = { name: "", sku: "", brand: "", size: "", unit: "", price: "" };
+const EMPTY = { name: "", sku: "", brand: "", size: "", unit: "", price: "", image_url: "" };
 
 export function AddProductDialog({
   onAdded,
@@ -44,6 +45,7 @@ export function AddProductDialog({
         size: form.size,
         unit: form.unit,
         price: form.price === "" ? null : Number(form.price),
+        image_url: form.image_url || null,
       });
       if (res.ok) {
         onAdded(res.product);
@@ -112,6 +114,10 @@ export function AddProductDialog({
               onChange={(e) => set("price", e.target.value)}
               placeholder="0.00"
             />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Image</Label>
+            <ImagePicker value={form.image_url || null} onChange={(u) => set("image_url", u ?? "")} />
           </div>
           <DialogFooter>
             <Button type="submit" disabled={pending}>

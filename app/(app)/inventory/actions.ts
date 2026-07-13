@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getActiveStore } from "@/lib/store/active-store";
 import type { Product, ProductInput, ProductPatch } from "@/lib/inventory/types";
 
@@ -11,7 +12,7 @@ export type ProductResult =
 export type SimpleResult = { ok: true } | { ok: false; error: string };
 
 const PRODUCT_COLUMNS =
-  "id, store_id, sku, name, brand, size, unit, price, currency, in_stock, verified, category, created_by, created_at, updated_at";
+  "id, store_id, sku, name, brand, size, unit, price, currency, in_stock, verified, category, image_url, created_by, created_at, updated_at";
 
 function cleanStr(v: string | null | undefined): string | null {
   if (v == null) return null;
@@ -43,6 +44,7 @@ export async function updateProduct(
   if ("size" in patch) next.size = cleanStr(patch.size);
   if ("unit" in patch) next.unit = cleanStr(patch.unit);
   if ("category" in patch) next.category = cleanStr(patch.category);
+  if ("image_url" in patch) next.image_url = cleanStr(patch.image_url);
   if ("price" in patch) next.price = cleanPrice(patch.price);
   if ("in_stock" in patch) next.in_stock = !!patch.in_stock;
   if ("verified" in patch) next.verified = !!patch.verified;
@@ -110,6 +112,7 @@ export async function addProduct(input: ProductInput): Promise<ProductResult> {
       unit: cleanStr(input.unit),
       price: cleanPrice(input.price),
       category: cleanStr(input.category),
+      image_url: cleanStr(input.image_url),
       created_by: user?.id ?? null,
     })
     .select(PRODUCT_COLUMNS)
@@ -119,6 +122,35 @@ export async function addProduct(input: ProductInput): Promise<ProductResult> {
 
   revalidatePath("/inventory");
   return { ok: true, product: data as Product };
+}
+
+/** Upload a product image to the public branding bucket; returns its URL.
+ *  Owners only. The panel then saves the URL onto products.image_url. */
+export async function uploadProductImage(
+  formData: FormData,
+): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+  const ctx = await getActiveStore();
+  if (!ctx?.active) return { ok: false, error: "No active store." };
+  const supabase = await createClient();
+  const { data: ownerFlag } = await supabase.rpc("user_is_owner", { p_store_id: ctx.active.id });
+  if (!ownerFlag) return { ok: false, error: "Only owners can change product images." };
+
+  const file = formData.get("file");
+  if (!(file instanceof File)) return { ok: false, error: "No file uploaded." };
+  if (!file.type.startsWith("image/")) return { ok: false, error: "Please upload an image file." };
+  if (file.size > 5 * 1024 * 1024) return { ok: false, error: "Image must be under 5 MB." };
+
+  const ext = (file.name.split(".").pop() ?? "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
+  const path = `products/${ctx.active.slug}/${crypto.randomUUID()}.${ext}`;
+  const admin = createAdminClient();
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const { error } = await admin.storage.from("branding").upload(path, bytes, {
+    contentType: file.type,
+    upsert: false,
+  });
+  if (error) return { ok: false, error: error.message };
+  const { data } = admin.storage.from("branding").getPublicUrl(path);
+  return { ok: true, url: data.publicUrl };
 }
 
 /** Remove a product. Owners only (also enforced by RLS). */

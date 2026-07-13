@@ -11,6 +11,7 @@ export type ProductInput = {
   unit?: string | null;
   price?: number | null;
   category?: string | null;
+  image_url?: string | null;
 };
 
 /** Inline-editable fields (price + flags + identity bits). */
@@ -26,5 +27,6 @@ export type ProductPatch = Partial<
     | "in_stock"
     | "verified"
     | "category"
+    | "image_url"
   >
 >;

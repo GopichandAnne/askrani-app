@@ -7,9 +7,18 @@ import { removeProduct, updateProduct } from "@/app/(app)/inventory/actions";
 import { useStore } from "@/components/store/store-provider";
 import { formatMoney } from "@/lib/orders/totals";
 import { AddProductDialog } from "./add-product-dialog";
+import { ImagePicker } from "./product-image";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -29,7 +38,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { PackageOpen, Search, Trash2 } from "lucide-react";
+import { ImageIcon, PackageOpen, Search, Trash2 } from "lucide-react";
 
 export function InventoryTable({
   initialProducts,
@@ -121,6 +130,7 @@ export function InventoryTable({
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-14" />
                 <TableHead>Product</TableHead>
                 <TableHead className="w-28">SKU</TableHead>
                 <TableHead className="w-32">Price</TableHead>
@@ -182,6 +192,9 @@ function ProductRow({
 
   return (
     <TableRow className={product.in_stock ? "" : "opacity-60"}>
+      <TableCell>
+        <ImageCell product={product} isOwner={isOwner} onSave={onSave} />
+      </TableCell>
       <TableCell>
         <p className="font-medium">{product.name}</p>
         {meta && <p className="text-muted-foreground text-xs">{meta}</p>}
@@ -262,5 +275,50 @@ function ProductRow({
         )}
       </TableCell>
     </TableRow>
+  );
+}
+
+function ImageCell({
+  product,
+  isOwner,
+  onSave,
+}: {
+  product: Product;
+  isOwner: boolean;
+  onSave: (id: string, patch: ProductPatch) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const thumb = (
+    <div className="bg-muted size-10 overflow-hidden rounded-md border">
+      {product.image_url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={product.image_url} alt="" className="size-full object-cover" />
+      ) : (
+        <div className="text-muted-foreground flex size-full items-center justify-center">
+          <ImageIcon className="size-4" />
+        </div>
+      )}
+    </div>
+  );
+
+  if (!isOwner) return thumb;
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <button type="button" aria-label="Edit image" className="rounded-md hover:opacity-80">
+          {thumb}
+        </button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{product.name} — image</DialogTitle>
+        </DialogHeader>
+        <ImagePicker value={product.image_url} onChange={(u) => onSave(product.id, { image_url: u })} />
+        <DialogFooter>
+          <Button size="sm" onClick={() => setOpen(false)}>Done</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
