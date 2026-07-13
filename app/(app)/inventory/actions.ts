@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getActiveStore } from "@/lib/store/active-store";
+import { callBotAdmin } from "@/lib/knowledge/bot-admin";
 import type { Product, ProductInput, ProductPatch } from "@/lib/inventory/types";
 
 export type ProductResult =
@@ -151,6 +152,51 @@ export async function uploadProductImage(
   if (error) return { ok: false, error: error.message };
   const { data } = admin.storage.from("branding").getPublicUrl(path);
   return { ok: true, url: data.publicUrl };
+}
+
+// ── Intelligent catalogue import (URL / file / text → extract → preview → add) ──
+export type ExtractedProduct = {
+  name: string;
+  category?: string | null;
+  price?: number | null;
+  description?: string | null;
+  sku?: string | null;
+  image_url?: string | null;
+};
+
+async function requireOwnerSlug(): Promise<
+  { ok: true; slug: string } | { ok: false; error: string }
+> {
+  const ctx = await getActiveStore();
+  if (!ctx?.active) return { ok: false, error: "No active store." };
+  const supabase = await createClient();
+  const { data: isOwner } = await supabase.rpc("user_is_owner", { p_store_id: ctx.active.id });
+  if (!isOwner) return { ok: false, error: "Only owners can import a catalogue." };
+  return { ok: true, slug: ctx.active.slug };
+}
+
+export async function extractCatalogue(input: {
+  url?: string;
+  text?: string;
+  file?: { mime: string; base64: string };
+}): Promise<{ ok: true; products: ExtractedProduct[] } | { ok: false; error: string }> {
+  const gate = await requireOwnerSlug();
+  if (!gate.ok) return gate;
+  const res = await callBotAdmin({ action: "extract_catalogue", store_slug: gate.slug, ...input });
+  if (!res.ok) return res;
+  return { ok: true, products: (res.data.products as ExtractedProduct[]) ?? [] };
+}
+
+export async function importProducts(
+  products: ExtractedProduct[],
+  mode: "append" | "replace",
+): Promise<{ ok: true; imported: number } | { ok: false; error: string }> {
+  const gate = await requireOwnerSlug();
+  if (!gate.ok) return gate;
+  const res = await callBotAdmin({ action: "import_products", store_slug: gate.slug, products, mode });
+  if (!res.ok) return res;
+  revalidatePath("/inventory");
+  return { ok: true, imported: (res.data.imported as number) ?? 0 };
 }
 
 /** Remove a product. Owners only (also enforced by RLS). */

@@ -30,7 +30,7 @@ import { placeOrder } from "../_shared/order.ts";
 import { classifyTurn } from "../_shared/analytics.ts";
 import { findResponder, relayStaffAnswer } from "../_shared/responders.ts";
 import { generateTurnReply } from "../_shared/conversation.ts";
-import { generateStructured } from "../_shared/gemini.ts";
+import { generateStructured, generateStructuredFromMedia } from "../_shared/gemini.ts";
 
 const REINDEX_DEFAULT_MAX = 200;
 
@@ -106,6 +106,112 @@ Deno.serve(async (req) => {
         const { chunks } = await ingestDocument(db, store.id, title, text, null, null, vf, vu);
         const reindex = await reindexKnowledge(db, store.id, Number(body.max_rows ?? 200));
         return json({ store: store.slug, title, chunks, ...reindex });
+      }
+      case "extract_catalogue": {
+        // Extract products from a URL, pasted text, or a pdf/image file — Gemini
+        // normalises them. Preview only (no writes). A real deploy could swap in a
+        // menu-parsing API; the panel calls this the same way regardless.
+        const url = String(body.url ?? "").trim();
+        let text = String(body.text ?? "").trim();
+        let media: { mime: string; data: string } | null = null;
+        const f = body.file as { mime?: string; base64?: string } | undefined;
+        if (f?.base64 && /pdf|image/i.test(String(f.mime ?? ""))) {
+          media = { mime: String(f.mime), data: String(f.base64) };
+        }
+        if (!text && !media && url) {
+          try {
+            const r = await fetch(url);
+            const ct = (r.headers.get("content-type") ?? "").toLowerCase();
+            if (ct.includes("pdf") || ct.includes("image")) {
+              media = { mime: ct.split(";")[0], data: encodeBase64(new Uint8Array(await r.arrayBuffer())) };
+            } else {
+              text = (await r.text())
+                .replace(/<script[\s\S]*?<\/script>/gi, " ")
+                .replace(/<style[\s\S]*?<\/style>/gi, " ")
+                .replace(/<[^>]+>/g, " ")
+                .replace(/\s+/g, " ")
+                .trim();
+            }
+          } catch (e) {
+            return json({ error: `Couldn't fetch that URL: ${e instanceof Error ? e.message : e}` }, 200);
+          }
+        }
+        if (!text && !media) return json({ error: "Provide a url, text, or a pdf/image file." }, 400);
+        const SYS =
+          "You extract a store's product catalogue from the provided content. Respond with ONLY JSON " +
+          'of this shape: {"products":[{"name":string,"category":string,"price":string,' +
+          '"description":string,"sku":string,"image_url":string}]}. Rules: include only real ' +
+          "purchasable items; infer a sensible category per item; copy the price EXACTLY as it appears " +
+          'as a string (e.g. "$6.50", "14.00", "8"), empty string if no price is shown — do NOT round ' +
+          "or convert; description is a short line (empty if none); sku empty unless clearly present; " +
+          "image_url only if an item image URL appears in the content, else empty. Never invent items " +
+          "or prices.";
+        const result = media
+          ? await generateStructuredFromMedia(SYS, media.mime, media.data)
+          : await generateStructured(SYS, text.slice(0, 40000));
+        if (!result) return json({ error: "Couldn't read a catalogue from that — try a clearer file or paste the items." }, 200);
+        // deno-lint-ignore no-explicit-any
+        const raw = Array.isArray((result as any).products) ? (result as any).products : [];
+        // Parse the price deterministically from the model's verbatim text — LLMs
+        // mangle numbers, so we extract the value ourselves.
+        // deno-lint-ignore no-explicit-any
+        const products = raw.map((p: any) => {
+          const m = String(p?.price ?? "").replace(/,/g, "").match(/\d+(\.\d+)?/);
+          return {
+            name: p?.name ?? "",
+            category: p?.category ?? "",
+            description: p?.description ?? "",
+            sku: p?.sku ?? "",
+            image_url: p?.image_url ?? "",
+            price: m ? Number(m[0]) : null,
+          };
+        });
+        return json({ store: store.slug, products });
+      }
+      case "import_products": {
+        // Bulk-add confirmed products + embed. mode: append (default) | replace.
+        // deno-lint-ignore no-explicit-any
+        const list: any[] = Array.isArray(body.products) ? body.products : [];
+        const mode = String(body.mode ?? "append");
+        if (!list.length) return json({ error: "no products to import" }, 400);
+        if (mode === "replace") await db.from("products").delete().eq("store_id", store.id);
+        const slugify = (s: string) =>
+          s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+        // Skus must be unique per store (partial unique index). Seed with existing
+        // skus (append mode) so new items never collide; replace already cleared.
+        const seen = new Set<string>();
+        if (mode !== "replace") {
+          const { data: existing } = await db
+            .from("products").select("sku").eq("store_id", store.id).not("sku", "is", null);
+          for (const e of existing ?? []) if (e?.sku) seen.add(String(e.sku));
+        }
+        // deno-lint-ignore no-explicit-any
+        const rows: any[] = [];
+        for (const p of list) {
+          const name = String(p?.name ?? "").trim();
+          if (!name) continue;
+          const base = String(p?.sku ?? "").trim() || slugify(name) || crypto.randomUUID().slice(0, 8);
+          let s = base, n = 1;
+          while (seen.has(s)) s = `${base}-${++n}`;
+          seen.add(s);
+          const price = p?.price;
+          rows.push({
+            store_id: store.id,
+            name,
+            sku: s,
+            category: p?.category ? String(p.category) : null,
+            description: p?.description ? String(p.description) : null,
+            image_url: p?.image_url ? String(p.image_url) : null,
+            price: price == null || price === "" ? null : Number(price),
+            in_stock: true,
+            embedding_stale: true,
+          });
+        }
+        if (!rows.length) return json({ error: "no valid products" }, 400);
+        const { error } = await db.from("products").insert(rows);
+        if (error) return json({ error: error.message }, 500);
+        const reindex = await drainReindex(db, store.id, 500);
+        return json({ store: store.slug, imported: rows.length, mode, ...reindex });
       }
       case "list_integrations": {
         const { data } = await db

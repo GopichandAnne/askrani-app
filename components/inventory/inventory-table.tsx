@@ -7,6 +7,7 @@ import { removeProduct, updateProduct } from "@/app/(app)/inventory/actions";
 import { useStore } from "@/components/store/store-provider";
 import { formatMoney } from "@/lib/orders/totals";
 import { AddProductDialog } from "./add-product-dialog";
+import { ImportCatalogueDialog } from "./import-catalogue-dialog";
 import { ImagePicker } from "./product-image";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -97,9 +98,10 @@ export function InventoryTable({
           <p className="text-muted-foreground text-sm">{storeName}</p>
         </div>
         {isOwner && (
-          <AddProductDialog
-            onAdded={(p) => setProducts((prev) => [p, ...prev])}
-          />
+          <div className="flex items-center gap-2">
+            <ImportCatalogueDialog />
+            <AddProductDialog onAdded={(p) => setProducts((prev) => [p, ...prev])} />
+          </div>
         )}
       </header>
 
