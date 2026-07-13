@@ -19,7 +19,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { History, Inbox, Loader2, Mail, Pencil, Phone, Plus, Sparkles, Trash2 } from "lucide-react";
+import { History, Inbox, Loader2, Mail, Paperclip, Pencil, Phone, Plus, Sparkles, Trash2 } from "lucide-react";
 
 const STATUSES: RequestStatus[] = ["new", "reviewed", "contacted", "closed"];
 const STATUS_STYLE: Record<RequestStatus, string> = {
@@ -99,6 +99,9 @@ export function RequestsView({
   const [fLabel, setFLabel] = useState("");
   const [fDesc, setFDesc] = useState("");
   const [fFields, setFFields] = useState("");
+  const [fUpload, setFUpload] = useState(false);
+  const [fUploadTypes, setFUploadTypes] = useState("");
+  const [fParseWith, setFParseWith] = useState("");
 
   // Natural-language config (LLM proposes → owner confirms → apply).
   const [nl, setNl] = useState("");
@@ -148,6 +151,9 @@ export function RequestsView({
     setFLabel("");
     setFDesc("");
     setFFields("");
+    setFUpload(false);
+    setFUploadTypes("pdf, docx, png, jpg");
+    setFParseWith("");
     setShowForm(true);
   }
   function openEdit(t: RequestType) {
@@ -156,6 +162,9 @@ export function RequestsView({
     setFLabel(t.label);
     setFDesc(t.description ?? "");
     setFFields(fieldsToInput(t.fields));
+    setFUpload(t.accepts_upload);
+    setFUploadTypes((t.upload_types ?? []).join(", "));
+    setFParseWith(t.parse_with ?? "");
     setShowForm(true);
   }
   function saveType() {
@@ -165,6 +174,11 @@ export function RequestsView({
         label: fLabel,
         description: fDesc,
         fields: parseFieldsInput(fFields),
+        accepts_upload: fUpload,
+        upload_types: fUpload
+          ? fUploadTypes.split(",").map((s) => s.trim().replace(/^\./, "").toLowerCase()).filter(Boolean)
+          : [],
+        parse_with: fUpload ? fParseWith : null,
       });
       if (res.ok) {
         setShowForm(false);
@@ -296,6 +310,37 @@ export function RequestsView({
                 placeholder="positions*, skills*, portfolio"
               />
             </div>
+            <div className="space-y-2 rounded-md border p-3">
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <input
+                  type="checkbox"
+                  className="accent-teal size-4"
+                  checked={fUpload}
+                  onChange={(e) => setFUpload(e.target.checked)}
+                />
+                Accept a file upload (e.g. a résumé)
+              </label>
+              {fUpload && (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium">Allowed extensions</label>
+                    <Input
+                      value={fUploadTypes}
+                      onChange={(e) => setFUploadTypes(e.target.value)}
+                      placeholder="pdf, docx, png, jpg"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium">Parse with (connector)</label>
+                    <Input
+                      value={fParseWith}
+                      onChange={(e) => setFParseWith(e.target.value)}
+                      placeholder="parse_resume"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
             <div className="flex gap-2">
               <Button size="sm" onClick={saveType} disabled={!fKey.trim() || !fLabel.trim()}>
                 Save
@@ -324,6 +369,13 @@ export function RequestsView({
                   {t.fields?.length > 0 && (
                     <p className="text-muted-foreground text-xs">
                       Collects: {t.fields.map((f) => (f.required === false ? f.key : `${f.key}*`)).join(", ")}
+                    </p>
+                  )}
+                  {t.accepts_upload && (
+                    <p className="text-muted-foreground flex items-center gap-1 text-xs">
+                      <Paperclip className="size-3" />
+                      Upload: {(t.upload_types ?? []).join(", ") || "any"}
+                      {t.parse_with ? ` → ${t.parse_with}` : ""}
                     </p>
                   )}
                 </div>

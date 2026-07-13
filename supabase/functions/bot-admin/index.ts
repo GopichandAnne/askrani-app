@@ -150,7 +150,7 @@ Deno.serve(async (req) => {
         // Per-store request-type definitions the bot's file_request tool offers.
         const { data, error } = await db
           .from("request_types")
-          .select("id, key, label, description, fields, enabled, updated_at")
+          .select("id, key, label, description, fields, enabled, accepts_upload, upload_types, parse_with, updated_at")
           .eq("store_id", store.id)
           .order("label");
         if (error) return json({ error: error.message }, 500);
@@ -171,6 +171,9 @@ Deno.serve(async (req) => {
           description: body.description != null ? String(body.description) : null,
           fields: Array.isArray(body.fields) ? body.fields : [],
           enabled: body.enabled === undefined ? true : !!body.enabled,
+          accepts_upload: !!body.accepts_upload,
+          upload_types: Array.isArray(body.upload_types) ? body.upload_types.map(String) : [],
+          parse_with: body.parse_with ? String(body.parse_with) : null,
           updated_at: new Date().toISOString(),
         };
         const { error } = await db.from("request_types").upsert(row, { onConflict: "store_id,key" });

@@ -16,6 +16,9 @@ export type RequestType = {
   description: string | null;
   fields: RequestField[];
   enabled: boolean;
+  accepts_upload: boolean;
+  upload_types: string[];
+  parse_with: string | null;
 };
 
 export type CapturedRequest = {
@@ -75,6 +78,9 @@ export async function saveRequestType(input: {
   description?: string;
   fields: RequestField[];
   enabled?: boolean;
+  accepts_upload?: boolean;
+  upload_types?: string[];
+  parse_with?: string | null;
 }): Promise<Result> {
   const gate = await requireOwner();
   if (!gate.ok) return gate;
@@ -91,6 +97,9 @@ export async function saveRequestType(input: {
     description: input.description?.trim() || null,
     fields: input.fields,
     enabled: input.enabled ?? true,
+    accepts_upload: input.accepts_upload ?? false,
+    upload_types: input.upload_types ?? [],
+    parse_with: input.parse_with?.trim() || null,
     actor: gate.actor,
   });
   if (!res.ok) return res;

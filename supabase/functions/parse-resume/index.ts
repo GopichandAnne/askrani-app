@@ -7,7 +7,8 @@
 // store via bot-admin set_integration. PARSE_RESUME_SECRET must match the
 // store_integrations auth_secret.
 
-import { generateStructured } from "../_shared/gemini.ts";
+import { generateStructured, generateStructuredFromMedia } from "../_shared/gemini.ts";
+import { encodeBase64 } from "jsr:@std/encoding@1/base64";
 
 function json(obj: unknown, status = 200): Response {
   return new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json" } });
@@ -49,29 +50,35 @@ Deno.serve(async (req) => {
   }
   const a = parsed.args ?? {};
 
-  // Prefer text the caller already has (e.g. the model read an uploaded image);
-  // otherwise fetch a text file_url. Binary formats are the real-parser's job.
+  // Three inputs: (1) resume_text the caller already has; (2) a file_url to a
+  // text file; (3) a file_url to a PDF/image, which Gemini reads natively. A real
+  // parser (Affinda/Sovren) would replace this binary path with its own OCR.
   let text = String(a.resume_text ?? "").trim();
+  let media: { mime: string; data: string } | null = null;
   if (!text && a.file_url) {
     try {
       const r = await fetch(String(a.file_url));
-      const ct = r.headers.get("content-type") ?? "";
+      const ct = (r.headers.get("content-type") ?? "").toLowerCase();
       if (ct.includes("text") || ct.includes("json")) {
         text = (await r.text()).trim();
+      } else if (ct.includes("pdf") || ct.includes("image")) {
+        media = { mime: ct.split(";")[0], data: encodeBase64(new Uint8Array(await r.arrayBuffer())) };
       } else {
         return json({
           ok: false,
-          note: `This reference parser handles text; a production parser would extract ${ct || "this file"}.`,
+          note: `This reference parser reads text, PDF and images; a production parser would handle ${ct || "this file"}.`,
         });
       }
     } catch {
       return json({ ok: false, note: "Couldn't fetch that file." });
     }
   }
-  if (!text) return json({ ok: false, note: "Provide resume_text, or a text file_url." });
 
-  const fields = await generateStructured(SYS, text.slice(0, 12000));
+  let fields: Record<string, unknown> | null = null;
+  if (text) fields = await generateStructured(SYS, text.slice(0, 12000));
+  else if (media) fields = await generateStructuredFromMedia(SYS, media.mime, media.data);
+  else return json({ ok: false, note: "Provide resume_text or a file_url." });
+
   if (!fields) return json({ ok: false, note: "Couldn't parse the resume right now." });
-
   return json({ ok: true, fields });
 });

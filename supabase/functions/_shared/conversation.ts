@@ -49,6 +49,7 @@ export async function generateTurnReply(
     sessionId: string;
     inboundText: string;
     image?: { base64: string; mime: string }; // a photo the customer just sent
+    document?: { url: string; name: string; mime: string }; // a file they uploaded (résumé, etc.)
     activeListing?: string; // listing-scoped ("yard sign") token: lead with this listing, stay open
     listingRetired?: boolean; // the scanned listing is sold/off-market → pivot to similar
   },
@@ -100,7 +101,12 @@ export async function generateTurnReply(
       ? `\n[RETIRED LISTING — the visitor scanned a QR sign for a home that is NO LONGER AVAILABLE (sold or off-market): ${opts.activeListing} Briefly and warmly let them know it's no longer on the market, then help them find similar or other listings using your tools. Do not offer a tour of THIS specific home.]`
       : `\n[ACTIVE LISTING — the visitor scanned the QR sign in front of THIS specific home. Lead with it: open by naming this listing and offer its details, a tour, or neighborhood info. They may also ask about other listings or services — help freely and use your tools (e.g. search other listings). This listing: ${opts.activeListing}]`)
     : "";
-  const contents = buildContents(history, `${nowCtx}${proposalCtx}${listingCtx}${idCtx}\n${opts.inboundText}`);
+  // A visitor uploaded a document — hand its URL to the model so it calls the
+  // right parse connector (e.g. parse_resume with file_url) to read it.
+  const docCtx = opts.document
+    ? `\n[The visitor uploaded a file "${opts.document.name}" (${opts.document.mime}). Its URL is ${opts.document.url} — if it's relevant (e.g. a résumé for a request type that accepts uploads), call the appropriate parse tool with file_url set to this URL, then use the returned fields to fill and confirm the request.]`
+    : "";
+  const contents = buildContents(history, `${nowCtx}${proposalCtx}${listingCtx}${docCtx}${idCtx}\n${opts.inboundText}`);
   // Attach the customer's photo (if any) to the current user turn so the model sees it.
   if (opts.image && contents.length > 0) {
     contents[contents.length - 1].parts.unshift({

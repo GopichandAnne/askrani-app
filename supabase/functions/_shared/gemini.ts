@@ -119,6 +119,50 @@ export async function generateStructured(
 }
 
 /**
+ * Structured extraction from a MEDIA file (PDF, image) — Gemini reads it
+ * natively. Returns a parsed JSON object or null. Used by document-parsing
+ * connectors (e.g. parse-resume) for binary résumés.
+ */
+export async function generateStructuredFromMedia(
+  systemInstruction: string,
+  mime: string,
+  dataBase64: string,
+): Promise<Record<string, unknown> | null> {
+  const key = Deno.env.get("GEMINI_API_KEY");
+  if (!key) return null;
+  const model = Deno.env.get("GEMINI_MODEL") ?? DEFAULT_MODEL;
+  const url = `${API_BASE}/models/${model}:generateContent?key=${key}`;
+  const body = JSON.stringify({
+    systemInstruction: { parts: [{ text: systemInstruction }] },
+    contents: [{
+      role: "user",
+      parts: [
+        { inlineData: { mimeType: mime, data: dataBase64 } },
+        { text: "Extract the fields from this document." },
+      ],
+    }],
+    generationConfig: { temperature: 0.2, maxOutputTokens: 8192, responseMimeType: "application/json" },
+  });
+  try {
+    const res = await fetchWithRetry(url, body);
+    if (!res.ok) {
+      console.error(`[gemini] media ${res.status}: ${await res.text()}`);
+      return null;
+    }
+    // deno-lint-ignore no-explicit-any
+    const json: any = await res.json();
+    const text: string = (json?.candidates?.[0]?.content?.parts ?? [])
+      // deno-lint-ignore no-explicit-any
+      .map((p: any) => p.text ?? "").join("");
+    if (!text.trim()) return null;
+    return JSON.parse(text) as Record<string, unknown>;
+  } catch (e) {
+    console.error("[gemini] media error:", e);
+    return null;
+  }
+}
+
+/**
  * Generate a reply, running the tool loop if a toolset is given. Returns the
  * final text (null on no-key/failure) and the ordered list of tools invoked.
  */

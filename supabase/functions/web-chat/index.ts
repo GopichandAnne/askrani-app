@@ -13,7 +13,7 @@ import { getStoreBySlug } from "../_shared/config.ts";
 import { generateTurnReply } from "../_shared/conversation.ts";
 import { classifyTurn } from "../_shared/analytics.ts";
 import { splitBubbles } from "../_shared/prompt.ts";
-import { storeChatImage } from "../_shared/chat-media.ts";
+import { storeChatFile, storeChatImage } from "../_shared/chat-media.ts";
 import {
   bindMemberSession,
   findMemberByIdentity,
@@ -67,8 +67,23 @@ Deno.serve(async (req) => {
     image = { base64: rawImage.base64, mime: String(rawImage.mime ?? "image/jpeg") };
   }
 
-  if (!slug || !sessionId || (!message && !image)) {
-    return json({ error: "slug, session_id and a message or image are required" }, 400);
+  // Optional inbound document (résumé, etc.) — stored, then a parse connector
+  // reads it via its signed URL. Owner-gated by the request type's upload config.
+  let file: { base64: string; mime: string; name: string } | undefined;
+  const rawFile = body.file as { base64?: string; mime?: string; name?: string } | undefined;
+  if (rawFile?.base64 && typeof rawFile.base64 === "string") {
+    if (rawFile.base64.length > MAX_IMAGE_B64) {
+      return json({ error: "That file is too large — please upload one under ~2.5 MB." }, 413);
+    }
+    file = {
+      base64: rawFile.base64,
+      mime: String(rawFile.mime ?? "application/octet-stream"),
+      name: String(rawFile.name ?? "document").slice(0, 120),
+    };
+  }
+
+  if (!slug || !sessionId || (!message && !image && !file)) {
+    return json({ error: "slug, session_id and a message, image or file are required" }, 400);
   }
   if (!sessionId.startsWith("web_")) return json({ error: "invalid session" }, 400);
 
@@ -148,6 +163,10 @@ Deno.serve(async (req) => {
   const inboundMediaUrl = image
     ? await storeChatImage(db, store, sessionId, image.base64, image.mime)
     : null;
+  // Store an uploaded document and get a signed URL the parse connector can fetch.
+  const fileUrl = file
+    ? await storeChatFile(db, store, sessionId, file.base64, file.mime)
+    : null;
 
   // ── Persist the thread + inbound message (customer_phone stands in as the web id). ──
   await db.from("threads").upsert(
@@ -161,8 +180,8 @@ Deno.serve(async (req) => {
     customer_phone: sessionId,
     direction: "inbound",
     sender: "customer",
-    text: message || "[photo]",
-    media_url: inboundMediaUrl,
+    text: message || (file ? `[uploaded ${file.name}]` : "[photo]"),
+    media_url: inboundMediaUrl ?? fileUrl,
     kind: "message",
     created_at: now,
   });
@@ -175,8 +194,9 @@ Deno.serve(async (req) => {
   const startedAt = Date.now();
   const { text: reply, toolsUsed } = await generateTurnReply(db, store, {
     sessionId,
-    inboundText: message || "[photo]",
+    inboundText: message || (file ? `[uploaded a file: ${file.name}]` : "[photo]"),
     image,
+    document: file && fileUrl ? { url: fileUrl, name: file.name, mime: file.mime } : undefined,
     activeListing,
     listingRetired,
   });
