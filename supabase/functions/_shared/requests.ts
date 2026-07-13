@@ -115,6 +115,30 @@ export async function executeFileRequest(
   const phone = args.phone ? String(args.phone).trim() : null;
 
   const orgName = store.store_display_name ?? store.slug;
+
+  // Idempotency: the model sometimes calls file_request on the info turn AND
+  // again on the confirm turn. Collapse repeats of the same type within the same
+  // session to one row (and skip the duplicate notification).
+  try {
+    const cutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    const { data: existing } = await db
+      .from("requests")
+      .select("id")
+      .eq("store_id", store.id)
+      .eq("type", rt.key)
+      .eq("session_id", sessionId)
+      .gte("created_at", cutoff)
+      .limit(1)
+      .maybeSingle();
+    if (existing) {
+      return {
+        filed: true,
+        reference: existing.id,
+        message: `Your ${rt.label.toLowerCase()} is already with the team — they'll follow up.`,
+      };
+    }
+  } catch { /* best-effort dedup — fall through to insert */ }
+
   const { data: inserted, error } = await db
     .from("requests")
     .insert({
