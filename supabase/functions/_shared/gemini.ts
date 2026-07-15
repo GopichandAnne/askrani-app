@@ -20,7 +20,10 @@ import type { Toolset } from "./tools.ts";
 // pulling gemini-2.5-flash) can't 404 the whole bot. Override with GEMINI_MODEL.
 const DEFAULT_MODEL = "gemini-flash-latest";
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta";
-const MAX_TOOL_ITERATIONS = 4;
+// Multi-line orders need several rounds: search, search, add, add, view_cart.
+// Four was too few — wholesale carts ("12 beakers and 2 cases of cones") ran out
+// mid-order and the turn died with no reply after the items were already added.
+const MAX_TOOL_ITERATIONS = 6;
 
 export interface FunctionCall {
   name: string;
@@ -241,8 +244,34 @@ export async function generateReply(
         })),
       });
     }
-    console.warn(`[gemini] hit MAX_TOOL_ITERATIONS (${MAX_TOOL_ITERATIONS})`);
-    return { text: null, toolsUsed };
+    // Out of tool rounds. The side effects already happened (items are in the
+    // cart), so failing here would tell the customer "something went wrong"
+    // about work that actually succeeded. Ask once more with no tools offered,
+    // which forces the model to answer from what it has.
+    console.warn(`[gemini] hit MAX_TOOL_ITERATIONS (${MAX_TOOL_ITERATIONS}) — final pass without tools`);
+    const finalRes = await fetchWithRetry(
+      url,
+      JSON.stringify({
+        systemInstruction: { parts: [{ text: systemInstruction }] },
+        contents: convo,
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 1024,
+          thinkingConfig: { thinkingBudget: 0 },
+        },
+      }),
+    );
+    if (!finalRes.ok) {
+      console.error(`[gemini] final pass ${finalRes.status}: ${await finalRes.text()}`);
+      return { text: null, toolsUsed };
+    }
+    // deno-lint-ignore no-explicit-any
+    const finalJson: any = await finalRes.json();
+    const finalParts: GeminiPart[] = finalJson?.candidates?.[0]?.content?.parts ?? [];
+    return {
+      text: finalParts.map((p) => p.text ?? "").join("").trim() || null,
+      toolsUsed,
+    };
   } catch (err) {
     console.error("[gemini] error:", err);
     return { text: null, toolsUsed };
