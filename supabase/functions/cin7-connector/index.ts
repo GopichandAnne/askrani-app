@@ -43,7 +43,7 @@ function inDays(n: number): string {
 
 // SKUs the demo catalogue marks out of stock — Cin7 is the source of truth for
 // what's actually on the shelf, and for what's on the way.
-const BACKORDERED = new Set(["GRAV-UPL-STR"]);
+const BACKORDERED = new Set(["GRAV-OWP"]);
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);

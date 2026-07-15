@@ -437,14 +437,15 @@ async function executeEscalate(
 const SEND_IMAGE_DECL: FunctionDeclaration = {
   name: "send_image",
   description:
-    "Send the customer ONE picture the store has on file — a product photo, its menu, " +
-    "or a promo flyer. Use it when they ask to see one ('show me the menu', 'do you " +
-    "have a picture of X?'), and you MAY also use it on your own initiative when it " +
-    "genuinely helps — to show a product you're recommending or a promotion you're " +
-    "mentioning — occasionally, at most one per reply, never as spam. For SEVERAL " +
-    "photos of one subject (e.g. a home listing), use send_photos instead. Pass a " +
-    "short query describing what to show. If it returns sent:false, don't mention a " +
-    "picture and never claim you sent one.",
+    "Send the customer ONE picture from the store's uploaded images — its menu, a " +
+    "promo flyer, the store front. Use it when they ask to see one ('show me the " +
+    "menu'), and you MAY also use it on your own initiative when it genuinely helps — " +
+    "occasionally, at most one per reply, never as spam. This only searches images the " +
+    "store uploaded; it does NOT reach catalogue product photos. To show a CATALOGUE " +
+    "product's picture, pass the image_url that search_products returned to " +
+    "send_photo_urls instead. For SEVERAL photos of one subject (e.g. a home listing), " +
+    "use send_photos. Pass a short query describing what to show. If it returns " +
+    "sent:false, don't mention a picture and never claim you sent one.",
   parameters: {
     type: "object",
     properties: {
@@ -483,11 +484,13 @@ const SEND_PHOTOS_DECL: FunctionDeclaration = {
 const SEND_PHOTO_URLS_DECL: FunctionDeclaration = {
   name: "send_photo_urls",
   description:
-    "Show the customer photos from image URLs that another tool returned — e.g. an " +
-    "MLS listing's photos (its media/photos list). Pass the URLs and an optional " +
-    "caption; it sends a few inline. Use it right after a listing search or details " +
-    "call returns photo URLs, to actually show the pictures. Only pass URLs a tool " +
-    "returned — never invent or guess an image URL.",
+    "Show the customer photos from image URLs that another tool returned — a " +
+    "CATALOGUE product's image_url from search_products, or e.g. an MLS listing's " +
+    "photos (its media/photos list). This is THE way to show a product's picture: " +
+    "search_products first, then pass the image_url values it returned. Pass the URLs " +
+    "and an optional caption; it sends a few inline. Use it right after a product or " +
+    "listing search returns image URLs, to actually show the pictures. Only pass URLs " +
+    "a tool returned — never invent or guess an image URL.",
   parameters: {
     type: "object",
     properties: {
