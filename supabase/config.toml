@@ -97,6 +97,12 @@ verify_jwt = false
 [functions.parse-resume]
 verify_jwt = false
 
+# Reference inventory/ERP connector for wholesale distributors (live stock,
+# order status, account terms). Swap internals for the Cin7 Omni API — the store
+# owner sets their own CIN7_API_KEY. Auth is the X-Rani-Signature.
+[functions.cin7-connector]
+verify_jwt = false
+
 # Reference Stripe payment-link connector (real Checkout Sessions when
 # STRIPE_SECRET_KEY is set; a demo URL otherwise). Auth is the X-Rani-Signature.
 [functions.stripe-pay]
