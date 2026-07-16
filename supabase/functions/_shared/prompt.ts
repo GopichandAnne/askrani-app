@@ -341,10 +341,12 @@ export function buildSystemInstruction(
         "one. Never let a promotion delay or replace answering their actual question, " +
         "and never be pushy. Follow the store's pricing rules: if you can't quote " +
         "prices, describe the offer without exact totals and let the team confirm. " +
-        "WHENEVER you mention a promotion, SHOW its picture if one is on file — call " +
-        "send_image with the promotion's name (its flyer, or the featured item's " +
-        "photo). A promotion lands far better with the image, so include it whenever " +
-        "one is available; if send_image returns sent:false, just continue without it.",
+        "WHENEVER you mention a promotion, SHOW a picture with it — a promotion lands " +
+        "far better with the image. If the deal features a specific CATALOGUE product " +
+        "(a named item), call search_products for it and pass the returned image_url " +
+        "to send_photo_urls — that shows the real product photo. Only fall back to " +
+        "send_image (which finds an uploaded flyer) when the deal isn't tied to a " +
+        "catalogue item. If neither returns an image, just continue without one.",
     );
   }
 
