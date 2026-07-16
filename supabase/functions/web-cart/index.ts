@@ -11,7 +11,14 @@
 import { serviceClient } from "../_shared/supabase.ts";
 import { getStoreBySlug } from "../_shared/config.ts";
 import { addToCart, cartSubtotal, type CartLine, clearCart, removeFromCart, viewCart } from "../_shared/cart.ts";
-import { browseProducts, catalogLabel, coerceFilter, maySeePrices } from "../_shared/catalog.ts";
+import {
+  browseProducts,
+  catalogLabel,
+  coerceFilter,
+  maySeePrices,
+  verifyBrowseIdentity,
+} from "../_shared/catalog.ts";
+import { bindMemberSession, cartSessionFor } from "../_shared/members.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -72,6 +79,23 @@ Deno.serve(async (req) => {
     return json({ error: "invalid or expired link" }, 403);
   }
 
+  // A browse link carries a signed identity (?k=). Redeem it BEFORE anything
+  // else: it decides whether this visitor sees prices and, crucially, WHICH cart
+  // they're touching. Verified server-side — the client only relays the key.
+  const browseKey = String(body.browse_key ?? "").trim();
+  if (browseKey) {
+    const claim = await verifyBrowseIdentity(slug, browseKey);
+    if (claim) {
+      await bindMemberSession(db, sessionId, store.id, claim.member, {
+        cartSessionId: claim.cart,
+        expiresAt: new Date(claim.exp).toISOString(),
+      });
+    }
+  }
+  // Cart operations act on the adopted cart when there is one, so the grid and
+  // the customer's WhatsApp thread are the same basket.
+  const cartSession = await cartSessionFor(db, store.id, sessionId);
+
   // Gate on catalogue mode — the overlay is only for catalogue stores.
   const { data: cat } = await db
     .from("agent_config")
@@ -121,7 +145,7 @@ Deno.serve(async (req) => {
         const sku = String(body.sku ?? "").trim();
         const qty = Number(body.quantity ?? 1);
         if (!sku) return json({ error: "sku required" }, 400);
-        const res = await addToCart(db, store, sessionId, sku, qty);
+        const res = await addToCart(db, store, cartSession, sku, qty);
         return json({
           ok: res.status === "added" || res.status === "removed",
           status: res.status,
@@ -129,14 +153,14 @@ Deno.serve(async (req) => {
         });
       }
       if (action === "remove") {
-        const res = await removeFromCart(db, store, sessionId, String(body.sku ?? "").trim());
+        const res = await removeFromCart(db, store, cartSession, String(body.sku ?? "").trim());
         return json({ ok: true, cart: summarize(res.lines) });
       }
       if (action === "clear") {
-        await clearCart(db, store, sessionId);
+        await clearCart(db, store, cartSession);
         return json({ ok: true, cart: summarize([]) });
       }
-      return json({ cart: summarize(await viewCart(db, sessionId)) });
+      return json({ cart: summarize(await viewCart(db, cartSession)) });
     }
     default:
       return json({ error: `unknown action: ${action}` }, 400);

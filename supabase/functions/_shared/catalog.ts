@@ -156,10 +156,82 @@ export function coerceFilter(raw: Record<string, unknown> | undefined | null): C
 }
 
 const WEB_BASE = "https://askrani.ai";
+/** How long a browse link stays good. Long enough to walk to the counter and
+ *  browse; short enough that a forwarded link is worthless tomorrow. */
+const LINK_TTL_MIN = 60;
 
 /** base64url — WhatsApp mangles nothing, but `+` and `/` in a URL do. */
 function b64url(s: string): string {
   return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function unb64url(s: string): string {
+  return atob(s.replace(/-/g, "+").replace(/_/g, "/"));
+}
+
+function linkSecret(): string | null {
+  return Deno.env.get("BROWSE_LINK_SECRET") ?? null;
+}
+
+async function hmac(secret: string, body: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
+  );
+  const mac = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body));
+  return [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** Constant-time compare — a fast `!==` leaks how much of a forged tag matched. */
+function safeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+export type BrowseIdentity = { store: string; member: string; cart: string; exp: number };
+
+/**
+ * Sign WHO a browse link belongs to. Without this the link is a downgrade: a
+ * verified WhatsApp customer taps it, lands as an anonymous web visitor, and
+ * gets "Log in for pricing" plus a brand-new empty cart.
+ *
+ * The key proves identity — it is never trusted from the client without
+ * verification, and it carries the cart to adopt so both channels stay one
+ * basket.
+ */
+export async function signBrowseIdentity(
+  slug: string,
+  memberId: string,
+  cartSession: string,
+): Promise<string | null> {
+  const secret = linkSecret();
+  if (!secret) return null;
+  const payload: BrowseIdentity = {
+    store: slug,
+    member: memberId,
+    cart: cartSession,
+    exp: Date.now() + LINK_TTL_MIN * 60_000,
+  };
+  const body = b64url(JSON.stringify(payload));
+  return `${body}.${await hmac(secret, body)}`;
+}
+
+/** Verify a browse key. Returns null on any doubt — bad signature, expiry,
+ *  wrong store, or no secret configured. */
+export async function verifyBrowseIdentity(slug: string, key: string): Promise<BrowseIdentity | null> {
+  const secret = linkSecret();
+  if (!secret || !key || !key.includes(".")) return null;
+  const [body, tag] = key.split(".", 2);
+  try {
+    if (!safeEqual(tag, await hmac(secret, body))) return null;
+    const claim = JSON.parse(unb64url(body)) as BrowseIdentity;
+    if (claim.store !== slug) return null;
+    if (!claim.exp || claim.exp < Date.now()) return null;
+    if (!claim.member) return null;
+    return claim;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -175,6 +247,10 @@ export async function browseLink(
   db: SupabaseClient,
   store: Store,
   filter: CatalogFilter,
+  /** The session the link is being sent to — when it belongs to a member, the
+   *  link carries their identity and their cart so the web grid isn't a
+   *  downgrade (anonymous prices, empty basket). */
+  sessionId?: string,
 ): Promise<string | null> {
   const { data } = await db
     .from("store_tokens")
@@ -198,7 +274,16 @@ export async function browseLink(
     slim[k] = v;
   }
   const v = b64url(JSON.stringify(slim));
-  return `${WEB_BASE}/s/${store.slug}?t=${token}&v=${v}`;
+  let url = `${WEB_BASE}/s/${store.slug}?t=${token}&v=${v}`;
+
+  if (sessionId) {
+    const member = await resolveMember(db, store, sessionId);
+    if (member && !member.blocked) {
+      const key = await signBrowseIdentity(store.slug, member.id, sessionId);
+      if (key) url += `&k=${key}`;
+    }
+  }
+  return url;
 }
 
 /** A short human summary of a filter — for chat copy and link previews. */

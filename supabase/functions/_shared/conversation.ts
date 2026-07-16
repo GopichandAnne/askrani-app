@@ -189,7 +189,8 @@ export async function handleConversation(
   // link only says what to show — pricing is still gated server-side there.
   let outbound = reply;
   if (catalogView) {
-    const link = await browseLink(db, store, catalogView.filter);
+    // Pass the session so a member's link carries their identity + cart.
+    const link = await browseLink(db, store, catalogView.filter, ctx.sessionId);
     if (link) {
       const what = describeFilter(catalogView.filter) || "the catalogue";
       outbound += `\n\n🛍️ Browse ${what} (${catalogView.total}) → ${link}`;

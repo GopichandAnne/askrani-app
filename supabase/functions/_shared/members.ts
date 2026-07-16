@@ -68,6 +68,9 @@ export async function resolveMember(
       .select("member_id")
       .eq("session_id", sessionId)
       .eq("store_id", store.id)
+      // A lapsed binding is not an identity. Null = no expiry (email-verified
+      // sessions, which die with the session id itself).
+      .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
       .maybeSingle();
     if (!sess?.member_id) return null;
     const { data: m } = await db
@@ -207,10 +210,38 @@ export async function bindMemberSession(
   sessionId: string,
   storeId: string,
   memberId: string,
+  opts?: {
+    /** Operate on this cart instead of the session's own — a browse link adopts
+     *  the cart the sender's WhatsApp thread is already using. */
+    cartSessionId?: string;
+    /** Cap the binding so a borrowed browser doesn't stay signed in forever. */
+    expiresAt?: string;
+  },
 ): Promise<void> {
   await db
     .from("member_sessions")
-    .upsert({ session_id: sessionId, store_id: storeId, member_id: memberId }, { onConflict: "session_id" });
+    .upsert({
+      session_id: sessionId,
+      store_id: storeId,
+      member_id: memberId,
+      ...(opts?.cartSessionId ? { cart_session_id: opts.cartSessionId } : {}),
+      ...(opts?.expiresAt ? { expires_at: opts.expiresAt } : {}),
+    }, { onConflict: "session_id" });
+}
+
+/** The cart a web session should operate on: its own, unless it adopted one. */
+export async function cartSessionFor(
+  db: SupabaseClient,
+  storeId: string,
+  sessionId: string,
+): Promise<string> {
+  const { data } = await db
+    .from("member_sessions")
+    .select("cart_session_id")
+    .eq("session_id", sessionId)
+    .eq("store_id", storeId)
+    .maybeSingle();
+  return (data?.cart_session_id as string | null) ?? sessionId;
 }
 
 export function accessMode(store: Store): AccessMode {

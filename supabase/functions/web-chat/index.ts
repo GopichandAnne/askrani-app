@@ -20,6 +20,7 @@ import {
   provisionMember,
   verifyIdentityToken,
 } from "../_shared/members.ts";
+import { verifyBrowseIdentity } from "../_shared/catalog.ts";
 import {
   cancelFollowup,
   getFollowupSettings,
@@ -144,6 +145,20 @@ Deno.serve(async (req) => {
   // Embedded SSO: if the host site passed a signed identity token, verify it and
   // bind this session to the matching member — the store's own login drives it,
   // no separate login from us. (Best-effort; failure just leaves them anonymous.)
+  // A browse link's signed identity (?k=) — the same key web-cart redeems, so
+  // the chat greets them as the member they already are on WhatsApp instead of
+  // asking them to verify all over again.
+  const browseKey = typeof body.browse_key === "string" ? body.browse_key : "";
+  if (browseKey) {
+    const claim = await verifyBrowseIdentity(slug, browseKey);
+    if (claim) {
+      await bindMemberSession(db, sessionId, store.id, claim.member, {
+        cartSessionId: claim.cart,
+        expiresAt: new Date(claim.exp).toISOString(),
+      });
+    }
+  }
+
   const identityToken = typeof body.identity_token === "string" ? body.identity_token : "";
   if (identityToken && store.access_control && (store as { identity_secret?: string | null }).identity_secret) {
     const claim = await verifyIdentityToken((store as { identity_secret?: string | null }).identity_secret, identityToken);
