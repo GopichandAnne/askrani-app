@@ -7,7 +7,8 @@
 import { serviceClient } from "../_shared/supabase.ts";
 import { getStoreBySlug } from "../_shared/config.ts";
 import { sendEmail } from "../_shared/email.ts";
-import { bindMemberSession, findMemberByIdentity } from "../_shared/members.ts";
+import { bindMemberSession, findMemberByIdentity, resolveMember } from "../_shared/members.ts";
+import { verifyBrowseIdentity } from "../_shared/catalog.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -48,6 +49,25 @@ Deno.serve(async (req) => {
     .eq("active", true)
     .limit(1);
   if (!tok || tok.length === 0) return json({ error: "invalid link" }, 403);
+
+  // "status" answers "who is this session?" and must work regardless of the
+  // email-verify feature — a browse link from WhatsApp identifies a member
+  // without any email step. Redeem the key here too, so the verify bar can drop
+  // its "verify your email" nag the moment a member lands from a browse link.
+  if (action === "status") {
+    const browseKey = String(body.browse_key ?? "").trim();
+    if (browseKey) {
+      const claim = await verifyBrowseIdentity(slug, browseKey);
+      if (claim) {
+        await bindMemberSession(db, sessionId, store.id, claim.member, {
+          cartSessionId: claim.cart,
+          expiresAt: new Date(claim.exp).toISOString(),
+        });
+      }
+    }
+    const member = await resolveMember(db, store, sessionId);
+    return json({ member: member ? { role: member.role, name: member.name } : null });
+  }
 
   // Owner gate: the feature must be turned on.
   const { data: srow } = await db

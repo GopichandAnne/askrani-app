@@ -19,8 +19,8 @@ import {
   splitBubbles,
 } from "./prompt.ts";
 import { generateReply, type GeminiReply } from "./gemini.ts";
-import { buildToolset, type UiDirectives } from "./tools.ts";
-import { browseLink, describeFilter } from "./catalog.ts";
+import { buildToolset, recordAndSend, type UiDirectives } from "./tools.ts";
+import { browseLink, browseProducts, describeFilter } from "./catalog.ts";
 
 /** A turn's reply plus any view the assistant pushed to the client. */
 export type TurnReply = GeminiReply & { catalogView?: UiDirectives["catalog_view"] };
@@ -198,6 +198,22 @@ export async function handleConversation(
   }
   const conversationId = await logTurn(db, store, ctx, outbound, responseTimeMs);
   await sendAndPersist(db, store, ctx, outbound);
+
+  // WhatsApp is a visual channel, but a catalogue view there is only a link —
+  // the chat itself has no images and feels like test data. Send a few real
+  // product photos inline so browsing looks like browsing. Best-effort and after
+  // the text, so a slow image fetch never delays the reply.
+  if (catalogView && ctx.deviceType === "whatsapp") {
+    try {
+      const preview = await browseProducts(db, store, { ...catalogView.filter, limit: 3 }, false);
+      const withImages = preview.items.filter((p) => typeof p.image_url === "string" && p.image_url);
+      for (const p of withImages.slice(0, 3)) {
+        await recordAndSend(db, store, ctx.sessionId, String(p.image_url), String(p.name ?? ""));
+      }
+    } catch (e) {
+      console.error(`[conv] catalog preview images failed: ${e instanceof Error ? e.message : e}`);
+    }
+  }
 
   // Schedule a single silence check-back unless the customer is clearly wrapping up.
   try {

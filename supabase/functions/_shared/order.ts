@@ -254,7 +254,8 @@ export async function placeOrder(
     currency: "USD",
     fulfillment,
     status: "pending_approval",
-    source_channel: "whatsapp",
+    // Was hardcoded "whatsapp", so every web order lied about where it came from.
+    source_channel: sessionId.startsWith("web_") ? "web" : "whatsapp",
     order_mode: orderMode,
   });
   if (error) return { placed: false, reason: "db_error", detail: error.message };

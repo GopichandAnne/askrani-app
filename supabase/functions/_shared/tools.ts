@@ -9,6 +9,7 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Store } from "./types.ts";
 import { embedQuery, toVectorLiteral } from "./embeddings.ts";
+import { resolveMember } from "./members.ts";
 import {
   browseProducts,
   type CatalogFilter,
@@ -500,6 +501,108 @@ const SEND_PHOTOS_DECL: FunctionDeclaration = {
   },
 };
 
+const MY_ORDERS_DECL: FunctionDeclaration = {
+  name: "my_orders",
+  description:
+    "Look up THIS customer's own past orders — what they bought, how many, and when. " +
+    "Use it whenever they refer to their history rather than naming products: 'send me " +
+    "my usual', 'same as last time', 'what did I order last month', 'reorder that', " +
+    "'did my order ship'. Read the lines back and, once they confirm, put them in the " +
+    "cart with add_to_cart using the sku of each line — adjust any quantity they change. " +
+    "Never invent a past order: if it returns none, say you don't see previous orders on " +
+    "their account and offer to build one.",
+  parameters: {
+    type: "object",
+    properties: {
+      limit: { type: "number", description: "how many recent orders to look at (default 3)" },
+    },
+    required: [],
+  },
+};
+
+/**
+ * This customer's own order history. Web session ids rotate every session, so a
+ * member's past orders are found through every session ever bound to them (plus
+ * their phone for WhatsApp) — otherwise "send me my usual" only ever sees today.
+ */
+async function executeMyOrders(
+  db: SupabaseClient,
+  store: Store,
+  sessionId: string,
+  args: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const limit = Math.min(Math.max(Number(args.limit ?? 3), 1), 5);
+  const member = await resolveMember(db, store, sessionId);
+
+  const sessions = new Set<string>([sessionId]);
+  let phone = sessionId.startsWith("wa_") ? sessionId.slice(3).replace(/\D/g, "") : "";
+  if (member) {
+    const { data } = await db
+      .from("member_sessions")
+      .select("session_id")
+      .eq("store_id", store.id)
+      .eq("member_id", member.id);
+    for (const r of data ?? []) sessions.add((r as { session_id: string }).session_id);
+    if (member.phone) phone = member.phone.replace(/\D/g, "");
+  }
+
+  const cols = "order_id, timestamp, items_json, total, fulfillment, status";
+  const rows: Record<string, unknown>[] = [];
+  const { data: bySession } = await db
+    .from("orders")
+    .select(cols)
+    .eq("store_slug", store.slug)
+    .in("session_id", [...sessions])
+    .order("timestamp", { ascending: false })
+    .limit(limit);
+  rows.push(...(bySession ?? []));
+  if (phone) {
+    const { data: byPhone } = await db
+      .from("orders")
+      .select(cols)
+      .eq("store_slug", store.slug)
+      .eq("customer_phone", phone)
+      .order("timestamp", { ascending: false })
+      .limit(limit);
+    rows.push(...(byPhone ?? []));
+  }
+
+  // Merge the two lookups (a customer can appear under both), newest first.
+  const seen = new Set<string>();
+  const orders = rows
+    .filter((o) => {
+      const id = String(o.order_id);
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    })
+    .sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)))
+    .slice(0, limit)
+    .map((o) => ({
+      order_ref: o.order_id,
+      placed: String(o.timestamp).slice(0, 10),
+      status: o.status,
+      fulfillment: o.fulfillment,
+      total: o.total,
+      lines: (Array.isArray(o.items_json) ? o.items_json : []).map((l: Record<string, unknown>) => ({
+        sku: l.sku,
+        name: l.name,
+        quantity: l.quantity,
+      })),
+    }));
+
+  if (orders.length === 0) {
+    return {
+      orders: [],
+      note: "No previous orders on this account — don't imply otherwise; offer to build an order instead.",
+    };
+  }
+  return {
+    orders,
+    note: "Their real history. Read the lines back and only add to the cart after they confirm.",
+  };
+}
+
 const SHOW_PRODUCTS_DECL: FunctionDeclaration = {
   name: "show_products",
   description:
@@ -581,7 +684,11 @@ async function rankImages(
 /** Record one image URL as an outbound thread message (panel + web Realtime),
  *  and — on WhatsApp — also push it over the WhatsApp media API. The URL must be
  *  publicly reachable (a signed KB URL, or a connector-provided public photo). */
-async function recordAndSend(
+/** Deliver ONE image to a session — records it (web delivery) or sends it via
+ *  WhatsApp. Exported so the conversation layer can put a few product photos in
+ *  a WhatsApp chat when it opens a catalogue view (otherwise WhatsApp only gets
+ *  a bare link and the chat feels empty). */
+export async function recordAndSend(
   db: SupabaseClient,
   store: Store,
   sessionId: string,
@@ -777,6 +884,7 @@ export function buildToolset(
   const executors: Record<string, ToolExecutor> = {
     search_products: (args) => executeSearchProducts(db, store, args),
     show_products: (args) => executeShowProducts(db, store, sessionId, ui, args),
+    my_orders: (args) => executeMyOrders(db, store, sessionId, args),
     search_knowledge: (args) => executeSearchKnowledge(db, store, args, today),
     send_image: (args) => executeSendImage(db, store, sessionId, args),
     send_photos: (args) => executeSendPhotos(db, store, sessionId, args),
@@ -838,6 +946,7 @@ export function buildToolset(
   // types (e.g. "Career interest", "Callback"). Nothing here is use-case-specific.
   if (requestTypes.length) declarations.push(fileRequestDeclaration(requestTypes));
   if (catalogEnabled) declarations.push(SEARCH_PRODUCTS_DECL, SHOW_PRODUCTS_DECL);
+  if (ordersEnabled) declarations.push(MY_ORDERS_DECL);
   if (ordersEnabled) {
     if (catalogEnabled) declarations.push(ADD_TO_CART_DECL); // priced catalog add
     declarations.push(
