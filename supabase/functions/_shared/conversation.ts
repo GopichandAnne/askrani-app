@@ -19,7 +19,11 @@ import {
   splitBubbles,
 } from "./prompt.ts";
 import { generateReply, type GeminiReply } from "./gemini.ts";
-import { buildToolset } from "./tools.ts";
+import { buildToolset, type UiDirectives } from "./tools.ts";
+import { browseLink, describeFilter } from "./catalog.ts";
+
+/** A turn's reply plus any view the assistant pushed to the client. */
+export type TurnReply = GeminiReply & { catalogView?: UiDirectives["catalog_view"] };
 import { getPendingProposals } from "./order.ts";
 import { buildNowContext } from "./clock.ts";
 import { classifyTurn } from "./analytics.ts";
@@ -53,7 +57,7 @@ export async function generateTurnReply(
     activeListing?: string; // listing-scoped ("yard sign") token: lead with this listing, stay open
     listingRetired?: boolean; // the scanned listing is sold/off-market → pivot to similar
   },
-): Promise<GeminiReply> {
+): Promise<TurnReply> {
   const config = await loadAgentConfig(db, store);
 
   // End-user identity + access control. Resolve who's chatting, then gate:
@@ -116,11 +120,15 @@ export async function generateTurnReply(
   // Store-local date (YYYY-MM-DD) so knowledge retrieval can hide entries that
   // are outside their effective window (expired promos, not-yet-active notices).
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: config.timezone }).format(new Date());
+  // show_products writes the filtered view here; the caller hands it to the
+  // client (a grid in the web chat, a browse link on WhatsApp).
+  const ui: UiDirectives = {};
   const toolset = buildToolset(
     db, store, opts.sessionId, config.ordersEnabled, hasProposal, config.catalogEnabled, today, integrations,
-    requestTypes,
+    requestTypes, ui,
   );
-  return await generateReply(systemInstruction, contents, toolset);
+  const reply = await generateReply(systemInstruction, contents, toolset);
+  return { ...reply, catalogView: ui.catalog_view };
 }
 
 export interface ConversationContext {
@@ -155,7 +163,7 @@ export async function handleConversation(
 
   // ── Generate the reply (tool loop; no-op without GEMINI_API_KEY). ───────────
   const startedAt = Date.now();
-  const { text: reply, toolsUsed } = await generateTurnReply(db, store, {
+  const { text: reply, toolsUsed, catalogView } = await generateTurnReply(db, store, {
     sessionId: ctx.sessionId,
     inboundText: ctx.inboundText,
     image: ctx.image,
@@ -176,8 +184,19 @@ export async function handleConversation(
   if (toolsUsed.length) console.log(`[conv] ${ctx.threadId} tools: ${toolsUsed.join(", ")}`);
 
   // ── Log the turn + send + persist outbound. ────────────────────────────────
-  const conversationId = await logTurn(db, store, ctx, reply, responseTimeMs);
-  await sendAndPersist(db, store, ctx, reply);
+  // WhatsApp has no grid, so a catalogue view becomes a browse LINK: the same
+  // filter, serialized into a URL, landing on the same filtered catalogue. The
+  // link only says what to show — pricing is still gated server-side there.
+  let outbound = reply;
+  if (catalogView) {
+    const link = await browseLink(db, store, catalogView.filter);
+    if (link) {
+      const what = describeFilter(catalogView.filter) || "the catalogue";
+      outbound += `\n\n🛍️ Browse ${what} (${catalogView.total}) → ${link}`;
+    }
+  }
+  const conversationId = await logTurn(db, store, ctx, outbound, responseTimeMs);
+  await sendAndPersist(db, store, ctx, outbound);
 
   // Schedule a single silence check-back unless the customer is clearly wrapping up.
   try {

@@ -10,6 +10,13 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Store } from "./types.ts";
 import { embedQuery, toVectorLiteral } from "./embeddings.ts";
 import {
+  browseProducts,
+  type CatalogFilter,
+  coerceFilter,
+  describeFilter,
+  maySeePrices,
+} from "./catalog.ts";
+import {
   addRequestItem,
   addToCart,
   type CartLine,
@@ -61,6 +68,18 @@ export interface Toolset {
   declarations: FunctionDeclaration[];
   execute: (name: string, args: Record<string, unknown>) => Promise<Record<string, unknown>>;
 }
+
+/** Side channel from a tool to the CLIENT (not to the model). show_products
+ *  fills this in; the web chat turns it into a filtered grid, WhatsApp turns it
+ *  into a browse link. */
+export type UiDirectives = {
+  catalog_view?: {
+    filter: CatalogFilter;
+    total: number;
+    note?: string;
+    prices_hidden: boolean;
+  };
+};
 
 // ── product <-> text (index-time embedding input; keep stable & descriptive) ─
 /** The text embedded for a product. Name + brand + category — NOT price/stock
@@ -481,6 +500,33 @@ const SEND_PHOTOS_DECL: FunctionDeclaration = {
   },
 };
 
+const SHOW_PRODUCTS_DECL: FunctionDeclaration = {
+  name: "show_products",
+  description:
+    "Open the customer's catalogue view FILTERED to what you're talking about, so " +
+    "they can browse and tap instead of reading a long list. Use it whenever they " +
+    "ask to see, browse or compare a group of things ('show me your GRAV pipes', " +
+    "'what disposables do you have under $50', 'show me the kratom capsules'), " +
+    "especially when there are more matches than you'd list in a message. Pass any " +
+    "combination of a free-text query, categories, brands, a price range, or " +
+    "in_stock — use the exact category and brand names the catalogue uses. Say one " +
+    "short line about what you're showing; do NOT also list every item. On WhatsApp " +
+    "this sends a browse link instead of a grid, which is fine — call it the same way.",
+  parameters: {
+    type: "object",
+    properties: {
+      q: { type: "string", description: "free-text, e.g. 'mini beaker' or 'coconut charcoal'" },
+      categories: { type: "array", items: { type: "string" }, description: "exact category names" },
+      brands: { type: "array", items: { type: "string" }, description: "exact brand names" },
+      price_min: { type: "number" },
+      price_max: { type: "number" },
+      in_stock: { type: "boolean", description: "true = only what's on the shelf" },
+      note: { type: "string", description: "optional short caption, e.g. 'GRAV glass, in stock'" },
+    },
+    required: [],
+  },
+};
+
 const SEND_PHOTO_URLS_DECL: FunctionDeclaration = {
   name: "send_photo_urls",
   description:
@@ -637,6 +683,67 @@ async function executeSendPhotos(
   };
 }
 
+/**
+ * Push a filtered catalogue view to the customer's screen. Returns a SUMMARY to
+ * the model (count + a few names, so it can speak about what it just showed)
+ * and stashes the filter in `ui` for the client to render.
+ */
+async function executeShowProducts(
+  db: SupabaseClient,
+  store: Store,
+  sessionId: string,
+  ui: UiDirectives,
+  args: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const filter = coerceFilter(args);
+  filter.limit = 24;
+  const showPrices = await maySeePrices(db, store, {
+    sessionId,
+    phone: sessionId.startsWith("wa_") ? sessionId.slice(3) : undefined,
+  });
+  let page;
+  try {
+    page = await browseProducts(db, store, filter, showPrices);
+    // The model guesses brand/category names from the conversation, so an exact
+    // filter can miss ("GRAV" when the catalogue never filled brand in). Rather
+    // than show an empty grid, fold the guess into the search text and retry.
+    if (page.total === 0 && (filter.brands?.length || filter.categories?.length)) {
+      const guessed = [...(filter.brands ?? []), ...(filter.categories ?? [])].join(" ");
+      const relaxed: CatalogFilter = {
+        ...filter,
+        brands: null,
+        categories: null,
+        q: [filter.q, guessed].filter(Boolean).join(" ").trim(),
+      };
+      const retry = await browseProducts(db, store, relaxed, showPrices);
+      if (retry.total > 0) {
+        filter.brands = null;
+        filter.categories = null;
+        filter.q = relaxed.q;
+        page = retry;
+      }
+    }
+  } catch (e) {
+    console.error(`[tools] show_products: ${e instanceof Error ? e.message : e}`);
+    return { shown: 0, note: "couldn't open the catalogue view" };
+  }
+  if (page.total === 0) {
+    return { shown: 0, note: "nothing matched — don't claim you showed anything; offer to search differently" };
+  }
+  const note = typeof args.note === "string" ? args.note.slice(0, 80) : undefined;
+  ui.catalog_view = { filter, total: page.total, note, prices_hidden: page.prices_hidden };
+  return {
+    shown: page.total,
+    showing: describeFilter(filter) || "the catalogue",
+    // Enough for the model to talk about the set without listing it all.
+    sample: page.items.slice(0, 5).map((i) => i.name),
+    prices_hidden: page.prices_hidden,
+    note: page.prices_hidden
+      ? "Opened their catalogue view. Prices are hidden — they are not a verified account."
+      : "Opened their catalogue view, filtered. Say one short line about it; don't list every item.",
+  };
+}
+
 /** Show photos from URLs a connector returned (e.g. an MLS Media list). */
 async function executeSendPhotoUrls(
   db: SupabaseClient,
@@ -667,9 +774,11 @@ export function buildToolset(
   today: string | null = null,
   integrations: StoreIntegration[] = [],
   requestTypes: RequestType[] = [],
+  ui: UiDirectives = {},
 ): Toolset {
   const executors: Record<string, ToolExecutor> = {
     search_products: (args) => executeSearchProducts(db, store, args),
+    show_products: (args) => executeShowProducts(db, store, sessionId, ui, args),
     search_knowledge: (args) => executeSearchKnowledge(db, store, args, today),
     send_image: (args) => executeSendImage(db, store, sessionId, args),
     send_photos: (args) => executeSendPhotos(db, store, sessionId, args),
@@ -730,7 +839,7 @@ export function buildToolset(
   // Generic request capture — offered only when the store has defined request
   // types (e.g. "Career interest", "Callback"). Nothing here is use-case-specific.
   if (requestTypes.length) declarations.push(fileRequestDeclaration(requestTypes));
-  if (catalogEnabled) declarations.push(SEARCH_PRODUCTS_DECL);
+  if (catalogEnabled) declarations.push(SEARCH_PRODUCTS_DECL, SHOW_PRODUCTS_DECL);
   if (ordersEnabled) {
     if (catalogEnabled) declarations.push(ADD_TO_CART_DECL); // priced catalog add
     declarations.push(

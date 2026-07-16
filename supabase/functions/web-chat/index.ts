@@ -192,7 +192,7 @@ Deno.serve(async (req) => {
 
   // ── Generate the reply with the full toolset (identical to WhatsApp). ──
   const startedAt = Date.now();
-  const { text: reply, toolsUsed } = await generateTurnReply(db, store, {
+  const { text: reply, toolsUsed, catalogView } = await generateTurnReply(db, store, {
     sessionId,
     inboundText: message || (file ? `[uploaded a file: ${file.name}]` : "[photo]"),
     image,
@@ -279,6 +279,8 @@ Deno.serve(async (req) => {
     reply: replies[0]?.text ?? finalReply,
     message_id: replies[0]?.message_id,
     toolsUsed,
+    // Set when the assistant opened a filtered catalogue view for this turn.
+    ...(catalogView ? { catalog_view: catalogView } : {}),
   });
 });
 

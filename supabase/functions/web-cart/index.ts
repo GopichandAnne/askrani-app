@@ -11,6 +11,7 @@
 import { serviceClient } from "../_shared/supabase.ts";
 import { getStoreBySlug } from "../_shared/config.ts";
 import { addToCart, cartSubtotal, type CartLine, clearCart, removeFromCart, viewCart } from "../_shared/cart.ts";
+import { browseProducts, catalogLabel, coerceFilter, maySeePrices } from "../_shared/catalog.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -83,36 +84,59 @@ Deno.serve(async (req) => {
   }
 
   switch (action) {
+    // Filtered, faceted, gate-aware page of the catalogue. Replaces the old
+    // "dump 500 rows with prices at anyone holding the link" behaviour: a
+    // 1,100-item catalogue was both unusable AND leaked trade pricing straight
+    // past the gate the chat enforces.
     case "menu": {
-      const { data, error } = await db
-        .from("products")
-        .select("sku, name, price, currency, category, description, image_url, in_stock")
-        .eq("store_id", store.id)
-        .not("sku", "is", null)
-        .order("category", { ascending: true, nullsFirst: false })
-        .order("name", { ascending: true })
-        .limit(500);
-      if (error) return json({ error: error.message }, 500);
-      return json({ store: store.slug, items: data ?? [] });
+      try {
+        const showPrices = await maySeePrices(db, store, { sessionId });
+        const filter = coerceFilter(body.filter as Record<string, unknown>);
+        const page = await browseProducts(db, store, filter, showPrices);
+        return json({
+          store: store.slug,
+          label: await catalogLabel(db, store.id),
+          filter,
+          ...page,
+        });
+      } catch (e) {
+        console.error(`[web-cart] menu: ${e instanceof Error ? e.message : e}`);
+        return json({ error: "could not load the catalogue" }, 500);
+      }
     }
-    case "add": {
-      const sku = String(body.sku ?? "").trim();
-      const qty = Number(body.quantity ?? 1);
-      if (!sku) return json({ error: "sku required" }, 400);
-      const res = await addToCart(db, store, sessionId, sku, qty);
-      return json({ ok: res.status === "added" || res.status === "removed", status: res.status, cart: summarize(res.lines) });
-    }
-    case "remove": {
-      const sku = String(body.sku ?? "").trim();
-      const res = await removeFromCart(db, store, sessionId, sku);
-      return json({ ok: true, cart: summarize(res.lines) });
-    }
-    case "view": {
-      return json({ cart: summarize(await viewCart(db, sessionId)) });
-    }
+    // Cart lines carry unit prices and lead to checkout, so when pricing is
+    // members-only the cart is members-only too — otherwise an unverified
+    // visitor just reads the prices back out of their own cart.
+    case "add":
+    case "remove":
+    case "view":
     case "clear": {
-      await clearCart(db, store, sessionId);
-      return json({ ok: true, cart: summarize([]) });
+      if (!(await maySeePrices(db, store, { sessionId }))) {
+        return json({
+          error: "Ordering is for approved accounts — verify your account email to unlock pricing.",
+          needs_member: true,
+        }, 403);
+      }
+      if (action === "add") {
+        const sku = String(body.sku ?? "").trim();
+        const qty = Number(body.quantity ?? 1);
+        if (!sku) return json({ error: "sku required" }, 400);
+        const res = await addToCart(db, store, sessionId, sku, qty);
+        return json({
+          ok: res.status === "added" || res.status === "removed",
+          status: res.status,
+          cart: summarize(res.lines),
+        });
+      }
+      if (action === "remove") {
+        const res = await removeFromCart(db, store, sessionId, String(body.sku ?? "").trim());
+        return json({ ok: true, cart: summarize(res.lines) });
+      }
+      if (action === "clear") {
+        await clearCart(db, store, sessionId);
+        return json({ ok: true, cart: summarize([]) });
+      }
+      return json({ cart: summarize(await viewCart(db, sessionId)) });
     }
     default:
       return json({ error: `unknown action: ${action}` }, 400);
