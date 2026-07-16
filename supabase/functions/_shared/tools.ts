@@ -697,10 +697,8 @@ async function executeShowProducts(
 ): Promise<Record<string, unknown>> {
   const filter = coerceFilter(args);
   filter.limit = 24;
-  const showPrices = await maySeePrices(db, store, {
-    sessionId,
-    phone: sessionId.startsWith("wa_") ? sessionId.slice(3) : undefined,
-  });
+  // resolveMember reads the channel off the session id itself (wa_ / web_).
+  const showPrices = await maySeePrices(db, store, { sessionId });
   let page;
   try {
     page = await browseProducts(db, store, filter, showPrices);

@@ -9,6 +9,7 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Store } from "./types.ts";
 import { embedQuery, toVectorLiteral } from "./embeddings.ts";
+import { resolveMember } from "./members.ts";
 
 /** The shared view state. The web grid, the bot and a browse link all speak this. */
 export type CatalogFilter = {
@@ -63,53 +64,25 @@ export async function catalogLabel(db: SupabaseClient, storeId: string): Promise
   return v || "Menu";
 }
 
-/** Is this web session bound to a verified member of this store? */
-export async function sessionIsMember(
-  db: SupabaseClient,
-  storeId: string,
-  sessionId: string,
-): Promise<boolean> {
-  if (!sessionId) return false;
-  const { data } = await db
-    .from("member_sessions")
-    .select("member_id")
-    .eq("session_id", sessionId)
-    .eq("store_id", storeId)
-    .maybeSingle();
-  return !!data?.member_id;
-}
-
-/** A WhatsApp sender is identified by their phone, not a session. */
-export async function phoneIsMember(
-  db: SupabaseClient,
-  storeId: string,
-  phone: string,
-): Promise<boolean> {
-  if (!phone) return false;
-  const { data } = await db
-    .from("store_members")
-    .select("id")
-    .eq("store_id", storeId)
-    .eq("phone", phone)
-    .eq("active", true)
-    .eq("blocked", false)
-    .maybeSingle();
-  return !!data?.id;
-}
-
 /**
  * Resolve the price gate for a visitor. Returns true when prices may be shown.
  * Callers must NEVER take this from the client.
+ *
+ * Membership comes from resolveMember — the SAME resolution the chat uses — so
+ * the gate can't disagree with the assistant. It matters: resolveMember matches
+ * a WhatsApp number tolerantly (last 10+ digits, because stored numbers carry
+ * different prefixes/formatting), and an exact match here meant a member the
+ * chat greeted by name was a stranger to the price gate.
  */
 export async function maySeePrices(
   db: SupabaseClient,
   store: Store,
-  opts: { sessionId?: string; phone?: string },
+  opts: { sessionId?: string },
 ): Promise<boolean> {
   if ((await priceVisibility(db, store.id)) === "public") return true;
-  if (opts.sessionId && (await sessionIsMember(db, store.id, opts.sessionId))) return true;
-  if (opts.phone && (await phoneIsMember(db, store.id, opts.phone))) return true;
-  return false;
+  if (!opts.sessionId) return false;
+  const member = await resolveMember(db, store, opts.sessionId);
+  return !!member && !member.blocked;
 }
 
 /** Run a filtered, faceted, gate-aware page of the catalogue. */
