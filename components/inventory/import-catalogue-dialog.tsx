@@ -18,7 +18,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, Sparkles, Upload } from "lucide-react";
 
-type Row = ExtractedProduct & { include: boolean };
+type Row = ExtractedProduct & { include: boolean; source?: string };
+type PickedFile = { name: string; mime: string; base64?: string; text?: string };
 
 export function ImportCatalogueDialog() {
   const router = useRouter();
@@ -28,9 +29,12 @@ export function ImportCatalogueDialog() {
 
   const [url, setUrl] = useState("");
   const [paste, setPaste] = useState("");
-  const [file, setFile] = useState<{ name: string; mime: string; base64?: string; text?: string } | null>(null);
+  // Several files at once — a store's whole "menu" or a realtor's listing folder
+  // is rarely one file.
+  const [files, setFiles] = useState<PickedFile[]>([]);
 
   const [extracting, setExtracting] = useState(false);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
   const [mode, setMode] = useState<"append" | "replace">("append");
   const [importing, setImporting] = useState(false);
@@ -39,43 +43,72 @@ export function ImportCatalogueDialog() {
     setStep("input");
     setUrl("");
     setPaste("");
-    setFile(null);
+    setFiles([]);
     setRows([]);
+    setProgress(null);
     setMode("append");
   }
 
-  function pickFile(f: File) {
-    if (f.type.includes("pdf") || f.type.startsWith("image/")) {
+  function addFiles(list: FileList) {
+    Array.from(list).forEach((f) => {
+      const binary = f.type.includes("pdf") || f.type.startsWith("image/");
       const r = new FileReader();
-      r.onload = () => setFile({ name: f.name, mime: f.type, base64: String(r.result).split(",")[1] ?? "" });
-      r.readAsDataURL(f);
-    } else {
-      const r = new FileReader();
-      r.onload = () => setFile({ name: f.name, mime: f.type || "text/plain", text: String(r.result) });
-      r.readAsText(f);
-    }
+      r.onload = () => {
+        const picked: PickedFile = binary
+          ? { name: f.name, mime: f.type, base64: String(r.result).split(",")[1] ?? "" }
+          : { name: f.name, mime: f.type || "text/plain", text: String(r.result) };
+        setFiles((prev) => [...prev, picked]);
+      };
+      if (binary) r.readAsDataURL(f);
+      else r.readAsText(f);
+    });
   }
 
   async function extract() {
-    const input: { url?: string; text?: string; file?: { mime: string; base64: string } } = {};
-    if (file?.base64) input.file = { mime: file.mime, base64: file.base64 };
-    else if (file?.text) input.text = file.text;
-    else if (url.trim()) input.url = url.trim();
-    else if (paste.trim()) input.text = paste.trim();
-    else return;
+    // Every source becomes one extract call; results merge into a single review.
+    const sources: { label: string; input: { url?: string; text?: string; file?: { mime: string; base64: string } } }[] = [];
+    for (const f of files) {
+      if (f.base64) sources.push({ label: f.name, input: { file: { mime: f.mime, base64: f.base64 } } });
+      else if (f.text) sources.push({ label: f.name, input: { text: f.text } });
+    }
+    if (url.trim()) sources.push({ label: "URL", input: { url: url.trim() } });
+    if (paste.trim()) sources.push({ label: "Pasted", input: { text: paste.trim() } });
+    if (!sources.length) return;
 
     setExtracting(true);
-    const res = await extractCatalogue(input);
+    setProgress({ done: 0, total: sources.length });
+    const merged: Row[] = [];
+    const seen = new Set<string>(); // dedupe by name — the same item across files
+    const failed: string[] = [];
+
+    for (let i = 0; i < sources.length; i++) {
+      const s = sources[i];
+      const res = await extractCatalogue(s.input);
+      setProgress({ done: i + 1, total: sources.length });
+      if (!res.ok || !res.products.length) {
+        if (!res.ok) failed.push(s.label);
+        continue;
+      }
+      for (const p of res.products) {
+        const key = (p.name ?? "").trim().toLowerCase();
+        if (!key || seen.has(key)) continue; // first file wins on a duplicate name
+        seen.add(key);
+        merged.push({ ...p, include: true, source: s.label });
+      }
+    }
+
     setExtracting(false);
-    if (!res.ok) {
-      toast.error("Couldn't read that", { description: res.error });
+    setProgress(null);
+    if (failed.length) {
+      toast.warning(`Couldn't read ${failed.length} source${failed.length === 1 ? "" : "s"}`, {
+        description: failed.join(", "),
+      });
+    }
+    if (!merged.length) {
+      toast.error("No products found", { description: "Try clearer files, a different URL, or paste the items." });
       return;
     }
-    if (!res.products.length) {
-      toast.error("No products found", { description: "Try a clearer file, a different URL, or paste the items." });
-      return;
-    }
-    setRows(res.products.map((p) => ({ ...p, include: true })));
+    setRows(merged);
     setStep("preview");
   }
 
@@ -123,8 +156,9 @@ export function ImportCatalogueDialog() {
             <DialogHeader>
               <DialogTitle>Import catalogue</DialogTitle>
               <DialogDescription>
-                Paste a menu/catalogue URL, upload a file (PDF, image, JSON, CSV), or paste the items.
-                Rani extracts the products for you to review.
+                Paste a menu/catalogue URL, upload several files at once (PDFs, images, JSON, CSV —
+                a whole listing folder is fine), or paste the items. Rani reads them all and merges
+                the products for you to review.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
@@ -138,21 +172,38 @@ export function ImportCatalogueDialog() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>Or a file</Label>
+                <Label>Or files (add several)</Label>
                 <input
                   ref={fileRef}
                   type="file"
+                  multiple
                   accept=".pdf,.png,.jpg,.jpeg,.webp,.json,.csv,.txt,image/*,application/pdf"
                   hidden
                   onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) pickFile(f);
+                    if (e.target.files?.length) addFiles(e.target.files);
                     e.target.value = "";
                   }}
                 />
                 <Button type="button" variant="outline" size="sm" onClick={() => fileRef.current?.click()}>
-                  <Upload className="size-4" /> {file ? file.name : "Choose file"}
+                  <Upload className="size-4" /> {files.length ? "Add more files" : "Choose files"}
                 </Button>
+                {files.length > 0 && (
+                  <ul className="space-y-1 pt-1">
+                    {files.map((f, i) => (
+                      <li key={i} className="flex items-center justify-between rounded border px-2 py-1 text-xs">
+                        <span className="truncate">{f.name}</span>
+                        <button
+                          type="button"
+                          className="text-muted-foreground hover:text-destructive ml-2 shrink-0"
+                          aria-label={`Remove ${f.name}`}
+                          onClick={() => setFiles((prev) => prev.filter((_, idx) => idx !== i))}
+                        >
+                          ✕
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="imp-paste">Or paste items</Label>
@@ -166,16 +217,27 @@ export function ImportCatalogueDialog() {
               </div>
             </div>
             <DialogFooter>
-              <Button onClick={extract} disabled={extracting || (!url.trim() && !paste.trim() && !file)}>
+              <Button
+                onClick={extract}
+                disabled={extracting || (!url.trim() && !paste.trim() && files.length === 0)}
+              >
                 {extracting ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
-                Extract products
+                {extracting && progress
+                  ? `Reading ${progress.done}/${progress.total}…`
+                  : "Extract products"}
               </Button>
             </DialogFooter>
           </>
         ) : (
           <>
             <DialogHeader>
-              <DialogTitle>Review {rows.length} extracted product{rows.length === 1 ? "" : "s"}</DialogTitle>
+              <DialogTitle>
+                Review {rows.length} product{rows.length === 1 ? "" : "s"}
+                {(() => {
+                  const n = new Set(rows.map((r) => r.source).filter(Boolean)).size;
+                  return n > 1 ? ` from ${n} sources` : "";
+                })()}
+              </DialogTitle>
               <DialogDescription>Uncheck any you don&apos;t want, and fix names/prices before importing.</DialogDescription>
             </DialogHeader>
             <div className="space-y-1.5">
@@ -206,6 +268,11 @@ export function ImportCatalogueDialog() {
                     inputMode="decimal"
                     placeholder="Price"
                   />
+                  {r.source && (
+                    <span className="text-muted-foreground w-24 shrink-0 truncate text-[11px]" title={r.source}>
+                      {r.source}
+                    </span>
+                  )}
                 </div>
               ))}
             </div>
