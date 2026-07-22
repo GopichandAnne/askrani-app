@@ -39,8 +39,12 @@ export async function loadGiveGet(): Promise<GiveGetConfig | null> {
     .limit(1)
     .maybeSingle();
   if (!rule) return null;
-  // deno-lint-ignore no-explicit-any
-  const r = rule as any;
+  const r = rule as unknown as {
+    amount_cents: number | null;
+    recipient_amount_cents: number | null;
+    recipient_min_order_cents: number | null;
+    reward_campaigns: { status: string; budget_cap_cents: number | null };
+  };
   return {
     active: r.reward_campaigns.status === "active",
     recipientAmountUsd: (r.recipient_amount_cents ?? 0) / 100,
@@ -78,8 +82,7 @@ export async function saveGiveGet(input: GiveGetConfig): Promise<SaveResult> {
     .maybeSingle();
 
   if (existing) {
-    // deno-lint-ignore no-explicit-any
-    const e = existing as any;
+    const e = existing as unknown as { id: string; campaign_id: string };
     await admin.from("reward_campaigns").update({ status, budget_cap_cents: budgetCents }).eq("id", e.campaign_id);
     const { error } = await admin.from("reward_rules").update({
       amount_model: "flat",
