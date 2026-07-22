@@ -194,13 +194,14 @@ export async function generateReply(
         systemInstruction: { parts: [{ text: systemInstruction }] },
         contents: convo,
         ...(tools ? { tools } : {}),
-        // Disable 2.5-flash "thinking": it consumed the output budget and left
-        // some replies empty (no reply), and it added latency we don't need for a
-        // grocery assistant. thinkingBudget:0 -> the budget goes to the reply.
+        // Minimize "thinking": it consumes the output budget and adds latency we
+        // don't need for a grocery assistant. NOTE: current gemini-flash-latest
+        // models REJECT thinkingBudget:0 (400 INVALID_ARGUMENT) — thinking can no
+        // longer be fully disabled — so use the minimum accepted budget (128).
         generationConfig: {
           temperature: 0.7,
           maxOutputTokens: 1024,
-          thinkingConfig: { thinkingBudget: 0 },
+          thinkingConfig: { thinkingBudget: 128 },
         },
       });
       const res = await fetchWithRetry(url, body);
@@ -257,7 +258,7 @@ export async function generateReply(
         generationConfig: {
           temperature: 0.7,
           maxOutputTokens: 1024,
-          thinkingConfig: { thinkingBudget: 0 },
+          thinkingConfig: { thinkingBudget: 128 },
         },
       }),
     );

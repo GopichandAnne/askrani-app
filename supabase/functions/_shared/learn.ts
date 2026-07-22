@@ -65,7 +65,7 @@ async function judge(storeName: string, question: string, answer: string): Promi
         generationConfig: {
           temperature: 0,
           maxOutputTokens: 600,
-          thinkingConfig: { thinkingBudget: 0 },
+          thinkingConfig: { thinkingBudget: 128 }, // 0 now 400s on gemini-flash-latest
           responseMimeType: "application/json",
           responseSchema: {
             type: "object",

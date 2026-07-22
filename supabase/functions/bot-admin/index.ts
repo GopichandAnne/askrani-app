@@ -648,8 +648,8 @@ Deno.serve(async (req) => {
               contents: [{ role: "user", parts: [{ text: context }] }],
               generationConfig: {
                 temperature: 0.7,
-                maxOutputTokens: 300,
-                thinkingConfig: { thinkingBudget: 0 },
+                maxOutputTokens: 512, // room for the 128-token thinking budget + JSON
+                thinkingConfig: { thinkingBudget: 128 }, // 0 now 400s on gemini-flash-latest
                 responseMimeType: "application/json",
                 responseSchema: {
                   type: "object",

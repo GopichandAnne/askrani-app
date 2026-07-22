@@ -27,7 +27,9 @@ async function checkGemini(): Promise<Check> {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [{ role: "user", parts: [{ text: "ping" }] }],
-        generationConfig: { maxOutputTokens: 5, temperature: 0, thinkingConfig: { thinkingBudget: 0 } },
+        // maxOutputTokens must exceed thinkingBudget (thinking counts toward it),
+        // or the ping truncates mid-thought and returns empty.
+        generationConfig: { maxOutputTokens: 256, temperature: 0, thinkingConfig: { thinkingBudget: 128 } },
       }),
     });
     if (!res.ok) return { ok: false, detail: `${model} HTTP ${res.status}: ${(await res.text()).slice(0, 160)}` };
