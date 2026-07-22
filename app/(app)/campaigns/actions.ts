@@ -1,18 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getActiveStore } from "@/lib/store/active-store";
 
-// Owner config for the give-and-get (share & earn) campaign. Campaigns are
-// owner-managed. The reward tables are service-role-only and not in the generated
-// database.types yet, so a schema-loose admin client is used (regenerate types
-// when the reward migrations are pushed to prod).
-function rewardsAdmin(): SupabaseClient {
-  return createAdminClient() as unknown as SupabaseClient;
-}
+// Owner config for the give-and-get (share & earn) campaign — owner-managed. The
+// reward tables are service-role-only (RLS), so writes go through the admin client.
 
 export type GiveGetConfig = {
   active: boolean;
@@ -36,7 +30,7 @@ async function requireOwner(): Promise<{ ok: true; storeId: string } | { ok: fal
 export async function loadGiveGet(): Promise<GiveGetConfig | null> {
   const gate = await requireOwner();
   if (!gate.ok) return null;
-  const admin = rewardsAdmin();
+  const admin = createAdminClient();
   const { data: rule } = await admin
     .from("reward_rules")
     .select("amount_cents, recipient_amount_cents, recipient_min_order_cents, reward_campaigns!inner(status, store_id, budget_cap_cents)")
@@ -72,7 +66,7 @@ export async function saveGiveGet(input: GiveGetConfig): Promise<SaveResult> {
     return { ok: false, error: "Monthly budget should cover at least one reward." };
   }
 
-  const admin = rewardsAdmin();
+  const admin = createAdminClient();
   const status = input.active ? "active" : "paused";
 
   const { data: existing } = await admin

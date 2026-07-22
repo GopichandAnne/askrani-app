@@ -1,18 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getActiveStore } from "@/lib/store/active-store";
-
-// The reward tables + RPCs (redemption_passes, reward_ledger, confirm_redemption,
-// reward_balance) ship with this feature and aren't in the generated
-// lib/database.types yet. Use a schema-loose admin client for them here;
-// regenerate database.types.ts when the reward migrations are pushed to prod.
-function rewardsAdmin(): SupabaseClient {
-  return createAdminClient() as unknown as SupabaseClient;
-}
 
 // Redemption confirmation surfaces (control panel). The reward tables are
 // service-role-only (RLS), so we read/write them through the admin client — but
@@ -58,7 +49,7 @@ async function requireStaff(): Promise<
   return { ok: true, storeId: ctx.active.id, staffId: staff?.id ?? null };
 }
 
-async function balanceUsd(admin: SupabaseClient, storeId: string, memberId: string): Promise<number> {
+async function balanceUsd(admin: ReturnType<typeof createAdminClient>, storeId: string, memberId: string): Promise<number> {
   const { data } = await admin.rpc("reward_balance", { p_store_id: storeId, p_member_id: memberId });
   return Number(data ?? 0) / 100;
 }
@@ -69,7 +60,7 @@ export async function lookupByCode(code: string): Promise<LookupResult<PassMatch
   if (!gate.ok) return gate;
   const clean = code.replace(/\D/g, "").slice(0, 4);
   if (clean.length !== 4) return { ok: false, error: "Enter the 4-digit code." };
-  const admin = rewardsAdmin();
+  const admin = createAdminClient();
   const { data: pass } = await admin
     .from("redemption_passes")
     .select("id, member_id, amount_cents, first_name, expires_at, status")
@@ -97,14 +88,16 @@ export async function lookupByCode(code: string): Promise<LookupResult<PassMatch
 export async function confirmPass(passId: string, billUsd?: number): Promise<ConfirmResult> {
   const gate = await requireStaff();
   if (!gate.ok) return gate;
-  const admin = rewardsAdmin();
+  const admin = createAdminClient();
   const billCents = billUsd != null && Number.isFinite(billUsd) ? Math.round(billUsd * 100) : null;
+  // supabase's type-gen marks all SQL function args non-nullable, but these are
+  // nullable in SQL (staff/order-ref optional; a null bill = redeem the full pass).
   const { data, error } = await admin.rpc("confirm_redemption", {
     p_pass_id: passId,
     p_surface: "panel_code",
-    p_staff_id: gate.staffId,
-    p_order_ref: null,
-    p_bill_cents: billCents,
+    p_staff_id: gate.staffId as string,
+    p_order_ref: null as unknown as string,
+    p_bill_cents: billCents as number,
   });
   if (error) return { ok: false, error: "Couldn't confirm — please try again." };
   const r = data as { ok: boolean; error?: string; redeemed_cents?: number; remaining_balance_cents?: number };
@@ -119,7 +112,7 @@ export async function lookupByPhone(last4: string): Promise<LookupResult<PhoneMa
   if (!gate.ok) return gate;
   const clean = last4.replace(/\D/g, "").slice(-4);
   if (clean.length !== 4) return { ok: false, error: "Enter the last 4 digits of their phone." };
-  const admin = rewardsAdmin();
+  const admin = createAdminClient();
   const { data: members } = await admin
     .from("store_members")
     .select("id, display_name, phone")
@@ -149,7 +142,7 @@ export async function confirmByPhone(memberId: string, amountUsd: number): Promi
   if (!gate.ok) return gate;
   const amountCents = Math.round(amountUsd * 100);
   if (!(amountCents > 0)) return { ok: false, error: "Enter an amount to redeem." };
-  const admin = rewardsAdmin();
+  const admin = createAdminClient();
   const bal = Math.round((await balanceUsd(admin, gate.storeId, memberId)) * 100);
   if (bal <= 0) return { ok: false, error: "That customer has no credit to redeem." };
   const { data: pass, error: passErr } = await admin
@@ -169,8 +162,8 @@ export async function confirmByPhone(memberId: string, amountUsd: number): Promi
   const { data, error } = await admin.rpc("confirm_redemption", {
     p_pass_id: pass.id,
     p_surface: "phone_lookup",
-    p_staff_id: gate.staffId,
-    p_order_ref: null,
+    p_staff_id: gate.staffId as string, // nullable in SQL; type-gen over-strict
+    p_order_ref: null as unknown as string,
     p_bill_cents: Math.min(amountCents, bal),
   });
   if (error) return { ok: false, error: "Couldn't confirm — please try again." };
