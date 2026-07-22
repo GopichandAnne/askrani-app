@@ -11,6 +11,7 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Store } from "./types.ts";
 import { buildLine, type CartLine, clearCart, round2, viewCart } from "./cart.ts";
 import { notifyResponders } from "./responders.ts";
+import { attributeReferralOrder } from "./referral.ts";
 
 export interface OrderTotals {
   subtotal: number;
@@ -262,6 +263,19 @@ export async function placeOrder(
 
   await emitOrderCreated(db, store, customerPhone, orderId, totals, revalidated.length);
   await clearCart(db, store, sessionId); // one-way: cart -> order
+
+  // Give-and-get: if this buyer arrived via a referral, credit the initiator on
+  // the NET goods value (ex-charges). Best-effort — a reward hiccup must never
+  // fail the order. Idempotent per order id inside.
+  try {
+    await attributeReferralOrder(db, store, {
+      sessionId,
+      orderId,
+      netCents: Math.round(totals.subtotal * 100),
+    });
+  } catch (e) {
+    console.error(`[order] referral attribution ${orderId}: ${e instanceof Error ? e.message : e}`);
+  }
 
   // DM responders who opted into order alerts.
   const totalLabel = totals.hasUnpriced ? `$${totals.total} + items to price` : `$${totals.total}`;

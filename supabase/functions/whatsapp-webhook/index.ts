@@ -12,6 +12,7 @@ import { getStoreAccessToken, getStoreByPhoneNumberId } from "../_shared/config.
 import { handleConversation } from "../_shared/conversation.ts";
 import { findResponder, relayStaffAnswer, type Responder } from "../_shared/responders.ts";
 import { downloadMedia, sendText } from "../_shared/wa.ts";
+import { captureReferral, parseRefTag } from "../_shared/referral.ts";
 import { storeChatImage } from "../_shared/chat-media.ts";
 import { encodeBase64 } from "jsr:@std/encoding@1/base64";
 import type { Store, WaContact, WaMessage, WaWebhook } from "../_shared/types.ts";
@@ -164,6 +165,18 @@ async function handleMessage(
   }
 
   console.log(`[webhook] ${store.slug} <- ${from}: ${text?.slice(0, 80)}`);
+
+  // Give-and-get: a forwarded referral card's wa.me deep link prefilled a
+  // [ref:CODE] marker into this first message. Bind the sender to the initiator
+  // (once — we're past the retry-dedup above). Best-effort, never blocks.
+  const refCode = parseRefTag(text);
+  if (refCode) {
+    try {
+      await captureReferral(db, store, `wa_${from}`, refCode);
+    } catch (e) {
+      console.error(`[webhook] referral capture: ${e instanceof Error ? e.message : e}`);
+    }
+  }
 
   // If the customer sent a photo, download it (Meta media API) so the model can
   // see it. Best-effort: on failure we proceed text-only with the caption. Also

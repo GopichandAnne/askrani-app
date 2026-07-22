@@ -9,6 +9,8 @@ import {
   Package,
   Plug,
   QrCode,
+  Megaphone,
+  Ticket,
   ShieldCheck,
   ShoppingCart,
   Users,
@@ -30,6 +32,8 @@ export type NavItem = {
 /** Information architecture for the panel (built in order across phases). */
 export const NAV_ITEMS: NavItem[] = [
   { label: "Orders", href: "/orders", icon: ShoppingCart, available: true },
+  { label: "Redemptions", href: "/redemptions", icon: Ticket, available: true },
+  { label: "Campaigns", href: "/campaigns", icon: Megaphone, available: true, ownerOnly: true },
   { label: "Conversations", href: "/conversations", icon: MessagesSquare, available: true },
   { label: "Catalog", href: "/inventory", icon: Package, available: true },
   { label: "Agent", href: "/agent", icon: Bot, available: true, ownerOnly: true },

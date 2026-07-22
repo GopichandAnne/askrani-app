@@ -10,6 +10,9 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Store } from "./types.ts";
 import { embedQuery, toVectorLiteral } from "./embeddings.ts";
 import { resolveMember } from "./members.ts";
+import { getOrCreateReferralLink, trackedUrl } from "./referral.ts";
+import { composeAndStoreCard } from "./card.ts";
+import { issueRedemptionPass, rewardBalanceCents } from "./rewards.ts";
 import {
   browseProducts,
   type CatalogFilter,
@@ -867,6 +870,193 @@ async function executeSendPhotoUrls(
   return { sent, total: urls.length };
 }
 
+const START_SHARE_EARN_DECL: FunctionDeclaration = {
+  name: "start_share_earn",
+  description:
+    "Call this when the customer wants to SHARE the store with friends, REFER someone, " +
+    "or asks about a 'share and earn' / referral / invite offer. It creates THEIR personal " +
+    "share card + link and sends the card into the chat; when a friend orders through it, " +
+    "the customer earns store credit. Only call it if they show interest in sharing/referring " +
+    "— never pitch it unprompted. After it runs, tell them in one short line what they and " +
+    "their friend each get. If it returns no_active_campaign, there is no offer running — do " +
+    "not promise any reward.",
+  parameters: { type: "object", properties: {}, required: [] },
+};
+
+/** Mint (or reuse) the customer's referral link, compose their branded card, and
+ *  send it into the chat. When a friend orders through the link, the initiator is
+ *  credited (see referral.ts attributeReferralOrder). Card is best-effort. */
+async function executeStartShareEarn(
+  db: SupabaseClient,
+  store: Store,
+  sessionId: string,
+  _args: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  // 1. Identify (or lightly provision) the sharer.
+  let initiatorId = (await resolveMember(db, store, sessionId))?.id ?? null;
+  if (!initiatorId && sessionId.startsWith("wa_")) {
+    const phone = sessionId.slice(3);
+    const ins = await db.from("store_members").insert({ store_id: store.id, phone }).select("id").maybeSingle();
+    initiatorId = ins.data?.id ?? (await resolveMember(db, store, sessionId))?.id ?? null;
+  }
+  if (!initiatorId) {
+    return {
+      ok: false,
+      reason: "needs_identity",
+      note: "Can't start sharing without knowing who they are. Ask them to verify their identity (or continue on WhatsApp), then try again.",
+    };
+  }
+
+  // 2. The store's active give-and-get campaign + its amounts.
+  const { data: rule } = await db
+    .from("reward_rules")
+    .select("campaign_id, amount_cents, recipient_amount_cents, recipient_min_order_cents, reward_campaigns!inner(status, store_id)")
+    .eq("trigger", "referral_first_order")
+    .eq("reward_campaigns.store_id", store.id)
+    .eq("reward_campaigns.status", "active")
+    .limit(1)
+    .maybeSingle();
+  if (!rule) {
+    return { ok: false, reason: "no_active_campaign", note: "No share-and-earn offer is running. Don't promise a reward." };
+  }
+  // deno-lint-ignore no-explicit-any
+  const r = rule as any;
+
+  // 3. Their link.
+  const link = await getOrCreateReferralLink(db, { campaignId: r.campaign_id, initiatorMemberId: initiatorId });
+  const url = trackedUrl(link.code);
+
+  const recip = Math.round(Number(r.recipient_amount_cents ?? 0)) / 100;
+  const minOrder = Math.round(Number(r.recipient_min_order_cents ?? 0)) / 100;
+  const initReward = Math.round(Number(r.amount_cents ?? 0)) / 100;
+  const storeName = store.store_display_name || "our store";
+  const headline = recip > 0 ? `$${recip} off your first order` : "A gift for you";
+
+  // 4. Compose + deliver the card (best-effort — fall back to a text+link handover).
+  let cardDelivered = false;
+  try {
+    const cardUrl = await composeAndStoreCard(db, store, link, {
+      storeName,
+      headline,
+      sub: "A friend sent you this",
+    });
+    const caption = `${headline} at ${storeName}${minOrder > 0 ? ` (min $${minOrder} order)` : ""} — order here: ${url}`;
+    cardDelivered = await recordAndSend(db, store, sessionId, cardUrl, caption);
+  } catch (e) {
+    console.error(`[tools] start_share_earn card: ${e instanceof Error ? e.message : e}`);
+  }
+
+  return {
+    ok: true,
+    link: url,
+    friend_gets: headline,
+    you_get: initReward > 0 ? `$${initReward} store credit when a friend orders` : "a reward when a friend orders",
+    card_delivered: cardDelivered,
+    note: cardDelivered
+      ? "Sent them their share card + link. Tell them to forward it to friends; say in one line what they and their friend each get."
+      : "Give them their link to share and say in one line what they and their friend each get.",
+  };
+}
+
+const MY_CREDIT_DECL: FunctionDeclaration = {
+  name: "my_credit",
+  description:
+    "Check THIS customer's store-credit balance — what they've earned (e.g. from sharing/referrals) " +
+    "and can spend in store. Use it when they ask 'how much credit do I have', 'what's my balance', " +
+    "'do I have any rewards', or before helping them redeem. Report the amount plainly; if they have " +
+    "a balance and want to use it, call redeem_credit next. Never invent a balance.",
+  parameters: { type: "object", properties: {}, required: [] },
+};
+
+const REDEEM_CREDIT_DECL: FunctionDeclaration = {
+  name: "redeem_credit",
+  description:
+    "Give the customer a redemption CODE to use their store credit in store right now. Use it when " +
+    "they say they want to use / redeem / spend their credit. It returns a short code they show at " +
+    "checkout — staff confirm it and apply the discount on the store's own register (you never process " +
+    "payment). Only call it if they have a balance (check my_credit if unsure). Then tell them the code, " +
+    "the amount, and that it's good for about 15 minutes.",
+  parameters: {
+    type: "object",
+    properties: {
+      amount: { type: "number", description: "optional dollars they want to redeem; omit to make the full balance available" },
+    },
+    required: [],
+  },
+};
+
+/** This customer's spendable store-credit balance (+ what's still in the hold
+ *  window, and the soonest expiry) so Rani can answer "how much credit do I have". */
+async function executeMyCredit(
+  db: SupabaseClient,
+  store: Store,
+  sessionId: string,
+  _args: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const member = await resolveMember(db, store, sessionId);
+  if (!member?.id) {
+    return { ok: false, reason: "needs_identity", note: "Can't check credit without knowing who they are — ask them to verify (or continue on WhatsApp)." };
+  }
+  const balanceCents = await rewardBalanceCents(db, store.id, member.id);
+  const { data: held } = await db
+    .from("reward_ledger")
+    .select("amount_cents")
+    .eq("store_id", store.id).eq("member_id", member.id).eq("status", "held");
+  const onTheWayCents = (held ?? []).reduce((s, r) => s + Number((r as { amount_cents: number }).amount_cents || 0), 0);
+  const { data: soon } = await db
+    .from("reward_ledger")
+    .select("expires_at")
+    .eq("store_id", store.id).eq("member_id", member.id).eq("status", "released")
+    .not("expires_at", "is", null)
+    .order("expires_at", { ascending: true }).limit(1).maybeSingle();
+  return {
+    ok: true,
+    balance_usd: balanceCents / 100,
+    on_the_way_usd: onTheWayCents > 0 ? onTheWayCents / 100 : undefined,
+    soonest_expiry: soon?.expires_at ?? undefined,
+    note: balanceCents > 0
+      ? "They can spend this in store. If they want to use it now, call redeem_credit."
+      : onTheWayCents > 0
+        ? "No spendable credit yet — some is still in the hold window and will be ready soon."
+        : "They have no store credit yet. Don't imply they do.",
+  };
+}
+
+/** Issue a redemption pass (a 4-digit code) for up to the member's balance. Staff
+ *  confirm it in store; the discount is applied on the store's own register. */
+async function executeRedeemCredit(
+  db: SupabaseClient,
+  store: Store,
+  sessionId: string,
+  args: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const member = await resolveMember(db, store, sessionId);
+  if (!member?.id) {
+    return { ok: false, reason: "needs_identity", note: "Can't redeem without knowing who they are — ask them to verify (or continue on WhatsApp)." };
+  }
+  const requestedCents = args.amount != null && Number.isFinite(Number(args.amount))
+    ? Math.round(Number(args.amount) * 100)
+    : undefined;
+  const pass = await issueRedemptionPass(db, {
+    storeId: store.id,
+    memberId: member.id,
+    requestedCents,
+    firstName: member.name ?? undefined,
+  });
+  if (!pass) {
+    return { ok: false, reason: "no_balance", note: "They have no store credit to redeem right now — don't give a code." };
+  }
+  const mins = Math.max(1, Math.round((new Date(pass.expires_at).getTime() - Date.now()) / 60000));
+  const amount = pass.amount_cents / 100;
+  return {
+    ok: true,
+    code: pass.code4,
+    amount_usd: amount,
+    expires_in_minutes: mins,
+    note: `Give them their code ${pass.code4} for up to $${amount.toFixed(2)}. They show it at checkout within ~${mins} min; staff confirm it and apply the discount on the register. Say the code and amount clearly.`,
+  };
+}
+
 /** Build the toolset bound to a store + session context. Cart/order tools are
  *  attached only when ordering is enabled for the store (Agent Setup). */
 export function buildToolset(
@@ -885,6 +1075,9 @@ export function buildToolset(
     search_products: (args) => executeSearchProducts(db, store, args),
     show_products: (args) => executeShowProducts(db, store, sessionId, ui, args),
     my_orders: (args) => executeMyOrders(db, store, sessionId, args),
+    start_share_earn: (args) => executeStartShareEarn(db, store, sessionId, args),
+    my_credit: (args) => executeMyCredit(db, store, sessionId, args),
+    redeem_credit: (args) => executeRedeemCredit(db, store, sessionId, args),
     search_knowledge: (args) => executeSearchKnowledge(db, store, args, today),
     send_image: (args) => executeSendImage(db, store, sessionId, args),
     send_photos: (args) => executeSendPhotos(db, store, sessionId, args),
@@ -946,7 +1139,7 @@ export function buildToolset(
   // types (e.g. "Career interest", "Callback"). Nothing here is use-case-specific.
   if (requestTypes.length) declarations.push(fileRequestDeclaration(requestTypes));
   if (catalogEnabled) declarations.push(SEARCH_PRODUCTS_DECL, SHOW_PRODUCTS_DECL);
-  if (ordersEnabled) declarations.push(MY_ORDERS_DECL);
+  if (ordersEnabled) declarations.push(MY_ORDERS_DECL, START_SHARE_EARN_DECL, MY_CREDIT_DECL, REDEEM_CREDIT_DECL);
   if (ordersEnabled) {
     if (catalogEnabled) declarations.push(ADD_TO_CART_DECL); // priced catalog add
     declarations.push(

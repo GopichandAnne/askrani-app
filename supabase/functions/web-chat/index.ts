@@ -21,6 +21,7 @@ import {
   verifyIdentityToken,
 } from "../_shared/members.ts";
 import { verifyBrowseIdentity } from "../_shared/catalog.ts";
+import { captureReferral } from "../_shared/referral.ts";
 import {
   cancelFollowup,
   getFollowupSettings,
@@ -168,6 +169,18 @@ Deno.serve(async (req) => {
       let m = await findMemberByIdentity(db, store.id, claim.email, claim.phone);
       if (!m) m = await provisionMember(db, store.id, claim);
       if (m) await bindMemberSession(db, sessionId, store.id, m.id);
+    }
+  }
+
+  // Give-and-get: a recipient who arrived via a forwarded referral card (?ref=)
+  // gets bound to the initiator here (after any identity binding above, so a
+  // verified member is credited). Best-effort — never blocks the chat.
+  const refCode = String(body.ref ?? "").trim();
+  if (refCode) {
+    try {
+      await captureReferral(db, store, sessionId, refCode);
+    } catch (e) {
+      console.error(`[web-chat] referral capture: ${e instanceof Error ? e.message : e}`);
     }
   }
 

@@ -112,3 +112,8 @@ verify_jwt = false
 # monitor. Exposes only pass/fail status, nothing sensitive.
 [functions.health]
 verify_jwt = false
+
+# Public referral short-link resolver (askrani.ai/r/<code>). No secret — only a
+# public short code — and it must open from any forwarded WhatsApp chat.
+[functions.ref]
+verify_jwt = false
