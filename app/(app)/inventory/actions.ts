@@ -175,10 +175,19 @@ async function requireOwnerSlug(): Promise<
   return { ok: true, slug: ctx.active.slug };
 }
 
+export type ApiImportSource = {
+  url: string;
+  headers?: Record<string, string>;
+  list_path?: string;
+  map?: Partial<Record<"name" | "price" | "sku" | "category" | "description" | "image_url", string>>;
+  paginate?: { next_path?: string; page_param?: string; start?: number; max_pages?: number };
+};
+
 export async function extractCatalogue(input: {
   url?: string;
   text?: string;
   file?: { mime: string; base64: string };
+  api?: ApiImportSource;
 }): Promise<{ ok: true; products: ExtractedProduct[] } | { ok: false; error: string }> {
   const gate = await requireOwnerSlug();
   if (!gate.ok) return gate;

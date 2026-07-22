@@ -24,6 +24,7 @@ import {
   syncSavedQaToIndex,
 } from "../_shared/knowledge.ts";
 import { extractFileText } from "../_shared/extract.ts";
+import { type ApiSource, pullApiCatalogue } from "../_shared/api-catalogue.ts";
 import { encodeBase64 } from "jsr:@std/encoding@1/base64";
 import { addToCart } from "../_shared/cart.ts";
 import { placeOrder } from "../_shared/order.ts";
@@ -117,6 +118,16 @@ Deno.serve(async (req) => {
         const f = body.file as { mime?: string; base64?: string } | undefined;
         if (f?.base64 && /pdf|image/i.test(String(f.mime ?? ""))) {
           media = { mime: String(f.mime), data: String(f.base64) };
+        }
+        // API source: fetch a JSON endpoint WITH auth headers + pagination. With a
+        // field map it returns products directly (no LLM); without one it hands the
+        // raw JSON to the same LLM extractor the URL/text paths use.
+        const api = body.api as ApiSource | undefined;
+        if (api?.url && !text && !media) {
+          const pulled = await pullApiCatalogue(api);
+          if (pulled.kind === "error") return json({ error: pulled.error }, 200);
+          if (pulled.kind === "products") return json({ store: store.slug, products: pulled.products });
+          text = pulled.text; // no map -> LLM extraction below
         }
         if (!text && !media && url) {
           try {

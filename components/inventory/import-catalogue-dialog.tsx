@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { extractCatalogue, importProducts, type ExtractedProduct } from "@/app/(app)/inventory/actions";
+import { type ApiImportSource, extractCatalogue, importProducts, type ExtractedProduct } from "@/app/(app)/inventory/actions";
 import {
   Dialog,
   DialogContent,
@@ -33,6 +33,15 @@ export function ImportCatalogueDialog() {
   // is rarely one file.
   const [files, setFiles] = useState<PickedFile[]>([]);
 
+  // API source: an authenticated JSON endpoint (auth header + optional field map +
+  // pagination). With a map it imports exactly; without one it's AI-extracted.
+  const [apiOpen, setApiOpen] = useState(false);
+  const [api, setApi] = useState({
+    url: "", headerName: "Authorization", headerValue: "",
+    listPath: "", mapName: "", mapPrice: "", mapCategory: "", mapSku: "", pageParam: "",
+  });
+  const setApiField = (k: keyof typeof api, v: string) => setApi((p) => ({ ...p, [k]: v }));
+
   const [extracting, setExtracting] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
@@ -44,9 +53,28 @@ export function ImportCatalogueDialog() {
     setUrl("");
     setPaste("");
     setFiles([]);
+    setApiOpen(false);
+    setApi({ url: "", headerName: "Authorization", headerValue: "", listPath: "", mapName: "", mapPrice: "", mapCategory: "", mapSku: "", pageParam: "" });
     setRows([]);
     setProgress(null);
     setMode("append");
+  }
+
+  /** Build the API source from the form, or null if no endpoint given. */
+  function apiSource(): ApiImportSource | null {
+    if (!api.url.trim()) return null;
+    const map: NonNullable<ApiImportSource["map"]> = {};
+    if (api.mapName.trim()) map.name = api.mapName.trim();
+    if (api.mapPrice.trim()) map.price = api.mapPrice.trim();
+    if (api.mapCategory.trim()) map.category = api.mapCategory.trim();
+    if (api.mapSku.trim()) map.sku = api.mapSku.trim();
+    return {
+      url: api.url.trim(),
+      headers: api.headerValue.trim() ? { [api.headerName.trim() || "Authorization"]: api.headerValue.trim() } : undefined,
+      list_path: api.listPath.trim() || undefined,
+      map: Object.keys(map).length ? map : undefined,
+      paginate: api.pageParam.trim() ? { page_param: api.pageParam.trim(), start: 1, max_pages: 20 } : undefined,
+    };
   }
 
   function addFiles(list: FileList) {
@@ -66,13 +94,15 @@ export function ImportCatalogueDialog() {
 
   async function extract() {
     // Every source becomes one extract call; results merge into a single review.
-    const sources: { label: string; input: { url?: string; text?: string; file?: { mime: string; base64: string } } }[] = [];
+    const sources: { label: string; input: { url?: string; text?: string; file?: { mime: string; base64: string }; api?: ApiImportSource } }[] = [];
     for (const f of files) {
       if (f.base64) sources.push({ label: f.name, input: { file: { mime: f.mime, base64: f.base64 } } });
       else if (f.text) sources.push({ label: f.name, input: { text: f.text } });
     }
     if (url.trim()) sources.push({ label: "URL", input: { url: url.trim() } });
     if (paste.trim()) sources.push({ label: "Pasted", input: { text: paste.trim() } });
+    const apiSrc = apiSource();
+    if (apiSrc) sources.push({ label: "API", input: { api: apiSrc } });
     if (!sources.length) return;
 
     setExtracting(true);
@@ -215,11 +245,61 @@ export function ImportCatalogueDialog() {
                   className="border-input bg-background min-h-24 w-full rounded-md border p-2 text-sm"
                 />
               </div>
+              <div className="space-y-1.5">
+                <button
+                  type="button"
+                  onClick={() => setApiOpen((o) => !o)}
+                  className="text-muted-foreground hover:text-foreground text-sm underline underline-offset-2"
+                >
+                  {apiOpen ? "− Hide API pull" : "+ Pull from an API (with a key)"}
+                </button>
+                {apiOpen && (
+                  <div className="space-y-3 rounded-md border p-3">
+                    <p className="text-muted-foreground text-xs">
+                      Fetch products from a JSON API — unlike a plain URL, this sends an auth header and
+                      follows pages. Add a field map for an exact import; leave it blank to let Rani read the JSON.
+                    </p>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="api-url" className="text-xs">Endpoint URL</Label>
+                      <Input id="api-url" value={api.url} onChange={(e) => setApiField("url", e.target.value)} placeholder="https://api.yourstore.com/v1/products" />
+                    </div>
+                    <div className="grid grid-cols-[1fr_2fr] gap-2">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Auth header</Label>
+                        <Input value={api.headerName} onChange={(e) => setApiField("headerName", e.target.value)} placeholder="Authorization" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Value</Label>
+                        <Input type="password" value={api.headerValue} onChange={(e) => setApiField("headerValue", e.target.value)} placeholder="Bearer sk_live_…" />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Items path <span className="text-muted-foreground">(optional)</span></Label>
+                        <Input value={api.listPath} onChange={(e) => setApiField("listPath", e.target.value)} placeholder="data.products" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Paginate by <span className="text-muted-foreground">(optional)</span></Label>
+                        <Input value={api.pageParam} onChange={(e) => setApiField("pageParam", e.target.value)} placeholder="page" />
+                      </div>
+                    </div>
+                    <div>
+                      <Label className="text-xs">Field map <span className="text-muted-foreground">(optional — the JSON key for each)</span></Label>
+                      <div className="grid grid-cols-2 gap-2 pt-1 sm:grid-cols-4">
+                        <Input value={api.mapName} onChange={(e) => setApiField("mapName", e.target.value)} placeholder="name ← title" />
+                        <Input value={api.mapPrice} onChange={(e) => setApiField("mapPrice", e.target.value)} placeholder="price ← price" />
+                        <Input value={api.mapCategory} onChange={(e) => setApiField("mapCategory", e.target.value)} placeholder="category ← …" />
+                        <Input value={api.mapSku} onChange={(e) => setApiField("mapSku", e.target.value)} placeholder="sku ← …" />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
             <DialogFooter>
               <Button
                 onClick={extract}
-                disabled={extracting || (!url.trim() && !paste.trim() && files.length === 0)}
+                disabled={extracting || (!url.trim() && !paste.trim() && files.length === 0 && !api.url.trim())}
               >
                 {extracting ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
                 {extracting && progress
