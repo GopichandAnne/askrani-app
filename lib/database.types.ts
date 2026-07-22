@@ -1,4 +1,4 @@
-﻿export type Json =
+export type Json =
   | string
   | number
   | boolean
@@ -99,6 +99,61 @@ export type Database = {
             columns: ["store_id"]
             isOneToOne: false
             referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      attribution_events: {
+        Row: {
+          campaign_id: string
+          dedupe_hash: string | null
+          geo_city: string | null
+          id: string
+          member_id: string | null
+          occurred_at: string
+          referral_link_id: string | null
+          type: Database["public"]["Enums"]["attribution_type"]
+        }
+        Insert: {
+          campaign_id: string
+          dedupe_hash?: string | null
+          geo_city?: string | null
+          id?: string
+          member_id?: string | null
+          occurred_at?: string
+          referral_link_id?: string | null
+          type: Database["public"]["Enums"]["attribution_type"]
+        }
+        Update: {
+          campaign_id?: string
+          dedupe_hash?: string | null
+          geo_city?: string | null
+          id?: string
+          member_id?: string | null
+          occurred_at?: string
+          referral_link_id?: string | null
+          type?: Database["public"]["Enums"]["attribution_type"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attribution_events_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "reward_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attribution_events_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
+            referencedRelation: "store_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attribution_events_referral_link_id_fkey"
+            columns: ["referral_link_id"]
+            isOneToOne: false
+            referencedRelation: "referral_links"
             referencedColumns: ["id"]
           },
         ]
@@ -329,19 +384,25 @@ export type Database = {
       }
       member_sessions: {
         Row: {
+          cart_session_id: string | null
           created_at: string
+          expires_at: string | null
           member_id: string
           session_id: string
           store_id: string
         }
         Insert: {
+          cart_session_id?: string | null
           created_at?: string
+          expires_at?: string | null
           member_id: string
           session_id: string
           store_id: string
         }
         Update: {
+          cart_session_id?: string | null
           created_at?: string
+          expires_at?: string | null
           member_id?: string
           session_id?: string
           store_id?: string
@@ -608,6 +669,121 @@ export type Database = {
           },
         ]
       }
+      redemption_passes: {
+        Row: {
+          amount_cents: number
+          code4: string
+          confirmed_at: string | null
+          created_at: string
+          expires_at: string
+          first_name: string | null
+          id: string
+          member_id: string
+          qr_token: string
+          staff_id: string | null
+          status: Database["public"]["Enums"]["redemption_pass_status"]
+          store_id: string
+          surface: Database["public"]["Enums"]["redemption_surface"] | null
+        }
+        Insert: {
+          amount_cents: number
+          code4: string
+          confirmed_at?: string | null
+          created_at?: string
+          expires_at: string
+          first_name?: string | null
+          id?: string
+          member_id: string
+          qr_token: string
+          staff_id?: string | null
+          status?: Database["public"]["Enums"]["redemption_pass_status"]
+          store_id: string
+          surface?: Database["public"]["Enums"]["redemption_surface"] | null
+        }
+        Update: {
+          amount_cents?: number
+          code4?: string
+          confirmed_at?: string | null
+          created_at?: string
+          expires_at?: string
+          first_name?: string | null
+          id?: string
+          member_id?: string
+          qr_token?: string
+          staff_id?: string | null
+          status?: Database["public"]["Enums"]["redemption_pass_status"]
+          store_id?: string
+          surface?: Database["public"]["Enums"]["redemption_surface"] | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "redemption_passes_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
+            referencedRelation: "store_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "redemption_passes_staff_id_fkey"
+            columns: ["staff_id"]
+            isOneToOne: false
+            referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "redemption_passes_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      referral_links: {
+        Row: {
+          campaign_id: string
+          card_image_ref: string | null
+          code: string
+          created_at: string
+          destination_type: string
+          id: string
+          initiator_member_id: string
+        }
+        Insert: {
+          campaign_id: string
+          card_image_ref?: string | null
+          code: string
+          created_at?: string
+          destination_type?: string
+          id?: string
+          initiator_member_id: string
+        }
+        Update: {
+          campaign_id?: string
+          card_image_ref?: string | null
+          code?: string
+          created_at?: string
+          destination_type?: string
+          id?: string
+          initiator_member_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "referral_links_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "reward_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "referral_links_initiator_member_id_fkey"
+            columns: ["initiator_member_id"]
+            isOneToOne: false
+            referencedRelation: "store_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       request_types: {
         Row: {
           accepts_upload: boolean
@@ -701,6 +877,324 @@ export type Database = {
             columns: ["store_id"]
             isOneToOne: false
             referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reward_campaigns: {
+        Row: {
+          attribution_window_days: number
+          budget_cap_cents: number | null
+          budget_spent_cents: number
+          channel_flags: Json
+          created_at: string
+          credit_expiry_days: number
+          ends_at: string | null
+          hold_hours: number
+          id: string
+          name: string
+          per_poster_cap_cents: number | null
+          preset: string | null
+          starts_at: string | null
+          status: Database["public"]["Enums"]["reward_campaign_status"]
+          store_id: string
+          tier_config: Json
+          updated_at: string
+        }
+        Insert: {
+          attribution_window_days?: number
+          budget_cap_cents?: number | null
+          budget_spent_cents?: number
+          channel_flags?: Json
+          created_at?: string
+          credit_expiry_days?: number
+          ends_at?: string | null
+          hold_hours?: number
+          id?: string
+          name: string
+          per_poster_cap_cents?: number | null
+          preset?: string | null
+          starts_at?: string | null
+          status?: Database["public"]["Enums"]["reward_campaign_status"]
+          store_id: string
+          tier_config?: Json
+          updated_at?: string
+        }
+        Update: {
+          attribution_window_days?: number
+          budget_cap_cents?: number | null
+          budget_spent_cents?: number
+          channel_flags?: Json
+          created_at?: string
+          credit_expiry_days?: number
+          ends_at?: string | null
+          hold_hours?: number
+          id?: string
+          name?: string
+          per_poster_cap_cents?: number | null
+          preset?: string | null
+          starts_at?: string | null
+          status?: Database["public"]["Enums"]["reward_campaign_status"]
+          store_id?: string
+          tier_config?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reward_campaigns_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reward_events: {
+        Row: {
+          campaign_id: string
+          computed_amount_cents: number
+          created_at: string
+          flags: Json
+          funding_source: string
+          id: string
+          member_id: string
+          product_sku: string | null
+          source_id: string
+          source_type: string
+          status: Database["public"]["Enums"]["reward_event_status"]
+          tier: string | null
+        }
+        Insert: {
+          campaign_id: string
+          computed_amount_cents: number
+          created_at?: string
+          flags?: Json
+          funding_source?: string
+          id?: string
+          member_id: string
+          product_sku?: string | null
+          source_id: string
+          source_type: string
+          status?: Database["public"]["Enums"]["reward_event_status"]
+          tier?: string | null
+        }
+        Update: {
+          campaign_id?: string
+          computed_amount_cents?: number
+          created_at?: string
+          flags?: Json
+          funding_source?: string
+          id?: string
+          member_id?: string
+          product_sku?: string | null
+          source_id?: string
+          source_type?: string
+          status?: Database["public"]["Enums"]["reward_event_status"]
+          tier?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reward_events_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "reward_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reward_events_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
+            referencedRelation: "store_members"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reward_ledger: {
+        Row: {
+          amount_cents: number
+          campaign_id: string | null
+          created_at: string
+          expires_at: string | null
+          hold_until: string | null
+          id: string
+          kind: Database["public"]["Enums"]["reward_kind"]
+          member_id: string
+          reward_event_id: string | null
+          status: Database["public"]["Enums"]["reward_ledger_status"]
+          store_id: string
+          updated_at: string
+        }
+        Insert: {
+          amount_cents: number
+          campaign_id?: string | null
+          created_at?: string
+          expires_at?: string | null
+          hold_until?: string | null
+          id?: string
+          kind?: Database["public"]["Enums"]["reward_kind"]
+          member_id: string
+          reward_event_id?: string | null
+          status?: Database["public"]["Enums"]["reward_ledger_status"]
+          store_id: string
+          updated_at?: string
+        }
+        Update: {
+          amount_cents?: number
+          campaign_id?: string | null
+          created_at?: string
+          expires_at?: string | null
+          hold_until?: string | null
+          id?: string
+          kind?: Database["public"]["Enums"]["reward_kind"]
+          member_id?: string
+          reward_event_id?: string | null
+          status?: Database["public"]["Enums"]["reward_ledger_status"]
+          store_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reward_ledger_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "reward_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reward_ledger_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
+            referencedRelation: "store_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reward_ledger_reward_event_id_fkey"
+            columns: ["reward_event_id"]
+            isOneToOne: true
+            referencedRelation: "reward_events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reward_ledger_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reward_redemptions: {
+        Row: {
+          amount_cents: number
+          id: string
+          ledger_id: string
+          order_ref: string | null
+          pass_id: string | null
+          redeemed_at: string
+          remainder_cents: number
+        }
+        Insert: {
+          amount_cents: number
+          id?: string
+          ledger_id: string
+          order_ref?: string | null
+          pass_id?: string | null
+          redeemed_at?: string
+          remainder_cents?: number
+        }
+        Update: {
+          amount_cents?: number
+          id?: string
+          ledger_id?: string
+          order_ref?: string | null
+          pass_id?: string | null
+          redeemed_at?: string
+          remainder_cents?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reward_redemptions_ledger_id_fkey"
+            columns: ["ledger_id"]
+            isOneToOne: false
+            referencedRelation: "reward_ledger"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reward_redemptions_pass_id_fkey"
+            columns: ["pass_id"]
+            isOneToOne: false
+            referencedRelation: "redemption_passes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      reward_rules: {
+        Row: {
+          amount_cents: number | null
+          amount_model: Database["public"]["Enums"]["reward_amount_model"]
+          campaign_id: string
+          conditions: Json
+          created_at: string
+          format: string | null
+          id: string
+          min_order_cents: number
+          percent_bps: number | null
+          platform: string | null
+          product_sku: string | null
+          recipient_amount_cents: number | null
+          recipient_expiry_days: number
+          recipient_kind: Database["public"]["Enums"]["reward_kind"] | null
+          recipient_min_order_cents: number
+          reward_kind: Database["public"]["Enums"]["reward_kind"]
+          tiers: Json | null
+          trigger: Database["public"]["Enums"]["reward_trigger"]
+        }
+        Insert: {
+          amount_cents?: number | null
+          amount_model?: Database["public"]["Enums"]["reward_amount_model"]
+          campaign_id: string
+          conditions?: Json
+          created_at?: string
+          format?: string | null
+          id?: string
+          min_order_cents?: number
+          percent_bps?: number | null
+          platform?: string | null
+          product_sku?: string | null
+          recipient_amount_cents?: number | null
+          recipient_expiry_days?: number
+          recipient_kind?: Database["public"]["Enums"]["reward_kind"] | null
+          recipient_min_order_cents?: number
+          reward_kind?: Database["public"]["Enums"]["reward_kind"]
+          tiers?: Json | null
+          trigger: Database["public"]["Enums"]["reward_trigger"]
+        }
+        Update: {
+          amount_cents?: number | null
+          amount_model?: Database["public"]["Enums"]["reward_amount_model"]
+          campaign_id?: string
+          conditions?: Json
+          created_at?: string
+          format?: string | null
+          id?: string
+          min_order_cents?: number
+          percent_bps?: number | null
+          platform?: string | null
+          product_sku?: string | null
+          recipient_amount_cents?: number | null
+          recipient_expiry_days?: number
+          recipient_kind?: Database["public"]["Enums"]["reward_kind"] | null
+          recipient_min_order_cents?: number
+          reward_kind?: Database["public"]["Enums"]["reward_kind"]
+          tiers?: Json | null
+          trigger?: Database["public"]["Enums"]["reward_trigger"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reward_rules_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "reward_campaigns"
             referencedColumns: ["id"]
           },
         ]
@@ -910,9 +1404,12 @@ export type Database = {
           display_name: string | null
           email: string | null
           id: string
+          ig_handle: string | null
           metadata: Json
           phone: string | null
+          referred_by: string | null
           role: string
+          social_optin_at: string | null
           store_id: string
           updated_at: string
         }
@@ -923,9 +1420,12 @@ export type Database = {
           display_name?: string | null
           email?: string | null
           id?: string
+          ig_handle?: string | null
           metadata?: Json
           phone?: string | null
+          referred_by?: string | null
           role?: string
+          social_optin_at?: string | null
           store_id: string
           updated_at?: string
         }
@@ -936,13 +1436,23 @@ export type Database = {
           display_name?: string | null
           email?: string | null
           id?: string
+          ig_handle?: string | null
           metadata?: Json
           phone?: string | null
+          referred_by?: string | null
           role?: string
+          social_optin_at?: string | null
           store_id?: string
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "store_members_referred_by_fkey"
+            columns: ["referred_by"]
+            isOneToOne: false
+            referencedRelation: "store_members"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "store_members_store_id_fkey"
             columns: ["store_id"]
@@ -1487,10 +1997,43 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      browse_products: {
+        Args: {
+          p_brands?: string[]
+          p_categories?: string[]
+          p_in_stock?: boolean
+          p_limit?: number
+          p_offset?: number
+          p_price_max?: number
+          p_price_min?: number
+          p_query?: string
+          p_query_embedding?: string
+          p_show_prices?: boolean
+          p_skus?: string[]
+          p_store_id: string
+        }
+        Returns: Json
+      }
+      confirm_redemption: {
+        Args: {
+          p_bill_cents: number
+          p_order_ref: string
+          p_pass_id: string
+          p_staff_id: string
+          p_surface: string
+        }
+        Returns: Json
+      }
+      expire_due_credits: { Args: never; Returns: number }
       get_public_store: { Args: { p_slug: string }; Returns: Json }
       is_platform_admin: { Args: never; Returns: boolean }
       next_order_seq: {
         Args: { p_store_slug: string; p_year: number }
+        Returns: number
+      }
+      release_due_holds: { Args: never; Returns: number }
+      reward_balance: {
+        Args: { p_member_id: string; p_store_id: string }
         Returns: number
       }
       search_knowledge: {
@@ -1534,6 +2077,8 @@ export type Database = {
           unit: string
         }[]
       }
+      sweep_expired_member_sessions: { Args: never; Returns: number }
+      sweep_idle_carts: { Args: { p_days?: number }; Returns: number }
       user_is_owner: { Args: { p_store_id: string }; Returns: boolean }
       user_store_ids: { Args: never; Returns: string[] }
       user_store_slugs: { Args: never; Returns: string[] }
@@ -1563,6 +2108,13 @@ export type Database = {
         | "followup_minutes"
         | "order_item_details"
         | "kb_prices_ok"
+        | "price_visibility"
+        | "catalog_label"
+      attribution_type:
+        | "link_click"
+        | "chat_started"
+        | "first_order"
+        | "repeat_order"
       device_type: "whatsapp" | "web"
       fulfillment_type: "pickup" | "delivery"
       message_direction: "inbound" | "outbound" | "system"
@@ -1576,8 +2128,26 @@ export type Database = {
         | "confirmed"
         | "rejected"
         | "cancelled"
+      redemption_pass_status: "active" | "confirmed" | "expired" | "cancelled"
+      redemption_surface: "qr" | "panel_code" | "phone_lookup"
+      reward_amount_model: "flat" | "percent" | "tier"
+      reward_campaign_status: "draft" | "active" | "paused" | "ended"
+      reward_event_status: "accrued" | "capped" | "reversed"
+      reward_kind: "store_credit" | "free_item"
+      reward_ledger_status:
+        | "pending"
+        | "held"
+        | "released"
+        | "redeemed"
+        | "expired"
+        | "reversed"
+      reward_trigger:
+        | "referral_first_order"
+        | "referral_order"
+        | "ugc_post"
+        | "influencer"
       routing_state: "idle" | "active_owner_handling"
-      staff_role: "owner" | "staff"
+      staff_role: "owner" | "staff" | "redemption"
       staff_status: "active" | "inactive"
       ticket_status: "created" | "sent_to_owner" | "answered" | "timed_out"
     }
@@ -1727,6 +2297,14 @@ export const Constants = {
         "followup_minutes",
         "order_item_details",
         "kb_prices_ok",
+        "price_visibility",
+        "catalog_label",
+      ],
+      attribution_type: [
+        "link_click",
+        "chat_started",
+        "first_order",
+        "repeat_order",
       ],
       device_type: ["whatsapp", "web"],
       fulfillment_type: ["pickup", "delivery"],
@@ -1742,8 +2320,28 @@ export const Constants = {
         "rejected",
         "cancelled",
       ],
+      redemption_pass_status: ["active", "confirmed", "expired", "cancelled"],
+      redemption_surface: ["qr", "panel_code", "phone_lookup"],
+      reward_amount_model: ["flat", "percent", "tier"],
+      reward_campaign_status: ["draft", "active", "paused", "ended"],
+      reward_event_status: ["accrued", "capped", "reversed"],
+      reward_kind: ["store_credit", "free_item"],
+      reward_ledger_status: [
+        "pending",
+        "held",
+        "released",
+        "redeemed",
+        "expired",
+        "reversed",
+      ],
+      reward_trigger: [
+        "referral_first_order",
+        "referral_order",
+        "ugc_post",
+        "influencer",
+      ],
       routing_state: ["idle", "active_owner_handling"],
-      staff_role: ["owner", "staff"],
+      staff_role: ["owner", "staff", "redemption"],
       staff_status: ["active", "inactive"],
       ticket_status: ["created", "sent_to_owner", "answered", "timed_out"],
     },
