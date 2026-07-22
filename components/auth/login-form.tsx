@@ -38,6 +38,8 @@ export function LoginForm() {
   const [email, setEmail] = useState("");
   const [googleLoading, setGoogleLoading] = useState(false);
   const [magicLoading, setMagicLoading] = useState(false);
+  const [password, setPassword] = useState("");
+  const [pwLoading, setPwLoading] = useState(false);
   const [sent, setSent] = useState(false);
 
   const callbackUrl = (path: string) =>
@@ -57,8 +59,22 @@ export function LoginForm() {
     // on success the browser redirects to Google.
   }
 
-  async function signInWithMagicLink(e: React.FormEvent) {
+  async function signInWithPassword(e: React.FormEvent) {
     e.preventDefault();
+    if (!email.trim() || !password) return;
+    setPwLoading(true);
+    const supabase = createClient();
+    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    setPwLoading(false);
+    if (error) {
+      toast.error("Sign-in failed", { description: error.message });
+      return;
+    }
+    // Full navigation so the server re-reads the freshly-set auth cookies.
+    window.location.assign(next.startsWith("/") ? next : "/");
+  }
+
+  async function signInWithMagicLink() {
     if (!email.trim()) return;
     setMagicLoading(true);
     const supabase = createClient();
@@ -119,7 +135,7 @@ export function LoginForm() {
         <span className="bg-border h-px flex-1" />
       </div>
 
-      <form onSubmit={signInWithMagicLink} className="space-y-3">
+      <form onSubmit={signInWithPassword} className="space-y-3">
         <div className="space-y-2">
           <Label htmlFor="email">Email</Label>
           <Input
@@ -133,9 +149,30 @@ export function LoginForm() {
             required
           />
         </div>
-        <Button type="submit" className="w-full" disabled={magicLoading}>
+        <div className="space-y-2">
+          <Label htmlFor="password">Password</Label>
+          <Input
+            id="password"
+            type="password"
+            autoComplete="current-password"
+            placeholder="••••••••"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </div>
+        <Button type="submit" className="w-full" disabled={pwLoading || magicLoading}>
+          {pwLoading && <Loader2 className="size-4 animate-spin" />}
+          Sign in
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          className="w-full"
+          onClick={signInWithMagicLink}
+          disabled={magicLoading || pwLoading}
+        >
           {magicLoading && <Loader2 className="size-4 animate-spin" />}
-          Email me a magic link
+          Email me a magic link instead
         </Button>
       </form>
     </div>
