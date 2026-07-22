@@ -13,6 +13,7 @@ import { resolveMember } from "./members.ts";
 import { getOrCreateReferralLink, trackedUrl } from "./referral.ts";
 import { composeAndStoreCard } from "./card.ts";
 import { issueRedemptionPass, rewardBalanceCents } from "./rewards.ts";
+import { activePostRule, createPostSubmission } from "./social.ts";
 import {
   browseProducts,
   type CatalogFilter,
@@ -1057,6 +1058,64 @@ async function executeRedeemCredit(
   };
 }
 
+const SUBMIT_POST_DECL: FunctionDeclaration = {
+  name: "submit_post_url",
+  description:
+    "Use this when the customer wants to earn store credit by POSTING about the store on social media " +
+    "(Instagram / YouTube / Facebook), or tells you they already posted. FIRST call it with NO url to get " +
+    "the current offer and rules — then tell them they must include the required disclosure tag (#ad or " +
+    "#gifted) in the post. Once they confirm the tag is there AND give you the post link, call it again " +
+    "with url + disclosure_confirmed=true to submit it for the store's review. Credit is NOT instant — it " +
+    "lands after the store approves the post. If it returns no_active_offer, there's no posting reward " +
+    "running; do not promise one.",
+  parameters: {
+    type: "object",
+    properties: {
+      url: { type: "string", description: "the post's public link (omit on the first call to just get the offer)" },
+      platform: { type: "string", description: "instagram | youtube | facebook, if known" },
+      disclosure_confirmed: { type: "boolean", description: "true only once the customer confirms the post includes #ad or #gifted" },
+    },
+    required: [],
+  },
+};
+
+/** Explain the active post-for-credit offer and/or submit a customer's post for
+ *  review. The reward accrues later, when the owner approves it. */
+async function executeSubmitPost(
+  db: SupabaseClient,
+  store: Store,
+  sessionId: string,
+  args: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const active = await activePostRule(db, store.id);
+  if (!active) {
+    return { ok: false, reason: "no_active_offer", note: "No post-for-credit offer is running. Don't promise a reward." };
+  }
+  const rule = active.rule;
+  const offer = rule.amount_model === "tier"
+    ? "store credit based on the post's reach (more views earns more)"
+    : `$${(Math.round(Number(rule.amount_cents ?? 0)) / 100).toFixed(2)} store credit`;
+
+  const url = String(args.url ?? "").trim();
+  if (!url) {
+    return {
+      ok: true,
+      has_offer: true,
+      earns: offer,
+      platform: rule.platform ?? "any",
+      note: `There's a post-for-credit offer: post about the store${rule.platform ? ` on ${rule.platform}` : ""}${rule.format ? ` (a ${rule.format})` : ""}, include the required #ad or #gifted tag, and earn ${offer}. Tell them this, then ask for the post link once they've posted and confirmed the tag. Call this again with the url and disclosure_confirmed=true to submit.`,
+    };
+  }
+
+  const res = await createPostSubmission(db, store, sessionId, {
+    postUrl: url,
+    platform: args.platform ? String(args.platform) : rule.platform,
+    disclosureConfirmed: args.disclosure_confirmed === true,
+  });
+  if (!res.ok) return { ok: false, reason: res.reason, note: res.note };
+  return { ok: true, submitted: true, earns: offer, note: res.note };
+}
+
 /** Build the toolset bound to a store + session context. Cart/order tools are
  *  attached only when ordering is enabled for the store (Agent Setup). */
 export function buildToolset(
@@ -1078,6 +1137,7 @@ export function buildToolset(
     start_share_earn: (args) => executeStartShareEarn(db, store, sessionId, args),
     my_credit: (args) => executeMyCredit(db, store, sessionId, args),
     redeem_credit: (args) => executeRedeemCredit(db, store, sessionId, args),
+    submit_post_url: (args) => executeSubmitPost(db, store, sessionId, args),
     search_knowledge: (args) => executeSearchKnowledge(db, store, args, today),
     send_image: (args) => executeSendImage(db, store, sessionId, args),
     send_photos: (args) => executeSendPhotos(db, store, sessionId, args),
@@ -1139,7 +1199,7 @@ export function buildToolset(
   // types (e.g. "Career interest", "Callback"). Nothing here is use-case-specific.
   if (requestTypes.length) declarations.push(fileRequestDeclaration(requestTypes));
   if (catalogEnabled) declarations.push(SEARCH_PRODUCTS_DECL, SHOW_PRODUCTS_DECL);
-  if (ordersEnabled) declarations.push(MY_ORDERS_DECL, START_SHARE_EARN_DECL, MY_CREDIT_DECL, REDEEM_CREDIT_DECL);
+  if (ordersEnabled) declarations.push(MY_ORDERS_DECL, START_SHARE_EARN_DECL, MY_CREDIT_DECL, REDEEM_CREDIT_DECL, SUBMIT_POST_DECL);
   if (ordersEnabled) {
     if (catalogEnabled) declarations.push(ADD_TO_CART_DECL); // priced catalog add
     declarations.push(

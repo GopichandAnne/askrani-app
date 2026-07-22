@@ -156,6 +156,34 @@ export async function accrueReferralReward(
   return { status: "held", ledgerId: led.id, amountCents: args.amountCents };
 }
 
+/** Generic accrual (post-for-credit, influencer, …) — the SAME engine as the
+ *  referral path. `earnerMemberId` gets the credit; `sourceId` is the idempotency
+ *  key (unique per campaign+sourceType+sourceId). */
+export function accrueReward(
+  db: SupabaseClient,
+  args: {
+    storeId: string;
+    campaignId: string;
+    earnerMemberId: string;
+    sourceType: string;
+    sourceId: string;
+    amountCents: number;
+    productSku?: string | null;
+    fundingSource?: string;
+  },
+): Promise<AccrueResult> {
+  return accrueReferralReward(db, {
+    storeId: args.storeId,
+    campaignId: args.campaignId,
+    initiatorMemberId: args.earnerMemberId,
+    sourceOrderId: args.sourceId,
+    amountCents: args.amountCents,
+    productSku: args.productSku,
+    fundingSource: args.fundingSource,
+    sourceType: args.sourceType,
+  });
+}
+
 // ── redemption pass ──────────────────────────────────────────────────────────
 const PASS_TTL_MS = 15 * 60_000;
 

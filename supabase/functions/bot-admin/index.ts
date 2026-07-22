@@ -25,6 +25,7 @@ import {
 } from "../_shared/knowledge.ts";
 import { extractFileText } from "../_shared/extract.ts";
 import { type ApiSource, pullApiCatalogue } from "../_shared/api-catalogue.ts";
+import { approvePostSubmission, rejectPostSubmission } from "../_shared/social.ts";
 import { encodeBase64 } from "jsr:@std/encoding@1/base64";
 import { addToCart } from "../_shared/cart.ts";
 import { placeOrder } from "../_shared/order.ts";
@@ -178,6 +179,23 @@ Deno.serve(async (req) => {
           };
         });
         return json({ store: store.slug, products });
+      }
+      case "review_submission": {
+        // Owner approves/rejects a post-for-credit submission (panel review queue).
+        // Reuses the verified social.ts logic; on approve, credit accrues.
+        const subId = String(body.submission_id ?? "").trim();
+        if (!subId) return json({ error: "submission_id required" }, 400);
+        const { data: owned } = await db
+          .from("social_submissions").select("id").eq("id", subId).eq("store_id", store.id).maybeSingle();
+        if (!owned) return json({ error: "submission not found for this store" }, 404);
+        const staffId = body.staff_id ? String(body.staff_id) : null;
+        if (String(body.decision) === "reject") {
+          const r = await rejectPostSubmission(db, { submissionId: subId, staffId, note: body.note ? String(body.note) : null });
+          return json({ ok: r.ok, decision: "rejected" });
+        }
+        const reach = body.reach != null && Number.isFinite(Number(body.reach)) ? Math.round(Number(body.reach)) : null;
+        const res = await approvePostSubmission(db, { submissionId: subId, staffId, reach });
+        return json(res.ok ? { ok: true, decision: "approved", amount_cents: res.amountCents, status: res.status } : { ok: false, error: res.reason });
       }
       case "import_products": {
         // Bulk-add confirmed products + embed. mode: append (default) | replace.

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import type { Json } from "@/lib/database.types";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getActiveStore } from "@/lib/store/active-store";
@@ -116,6 +117,115 @@ export async function saveGiveGet(input: GiveGetConfig): Promise<SaveResult> {
       recipient_min_order_cents: minCents,
     });
     if (rErr) return { ok: false, error: "Couldn't save the reward." };
+  }
+
+  revalidatePath("/campaigns");
+  return { ok: true };
+}
+
+// ── Post & Earn (post-for-credit) config ─────────────────────────────────────
+export type ReachBand = { minReach: number; maxReach: number; usd: number };
+export type PostEarnConfig = {
+  active: boolean;
+  platform: string; // instagram | youtube | facebook | any
+  model: "flat" | "tier";
+  flatUsd: number;
+  bands: ReachBand[];
+  budgetUsd: number | null;
+};
+
+const BIG_REACH = 100_000_000;
+
+export async function loadPostEarn(): Promise<PostEarnConfig | null> {
+  const gate = await requireOwner();
+  if (!gate.ok) return null;
+  const admin = createAdminClient();
+  const { data: rule } = await admin
+    .from("reward_rules")
+    .select("platform, amount_model, amount_cents, tiers, reward_campaigns!inner(status, store_id, budget_cap_cents)")
+    .eq("trigger", "ugc_post")
+    .eq("reward_campaigns.store_id", gate.storeId)
+    .limit(1)
+    .maybeSingle();
+  if (!rule) return null;
+  const r = rule as unknown as {
+    platform: string | null;
+    amount_model: "flat" | "tier";
+    amount_cents: number | null;
+    tiers: { min_reach?: number; max_reach?: number; amount_cents: number }[] | null;
+    reward_campaigns: { status: string; budget_cap_cents: number | null };
+  };
+  return {
+    active: r.reward_campaigns.status === "active",
+    platform: r.platform ?? "any",
+    model: r.amount_model === "tier" ? "tier" : "flat",
+    flatUsd: (r.amount_cents ?? 0) / 100,
+    bands: (r.tiers ?? []).map((t) => ({
+      minReach: t.min_reach ?? 0,
+      maxReach: t.max_reach && t.max_reach < BIG_REACH ? t.max_reach : 0,
+      usd: t.amount_cents / 100,
+    })),
+    budgetUsd: r.reward_campaigns.budget_cap_cents != null ? r.reward_campaigns.budget_cap_cents / 100 : null,
+  };
+}
+
+export async function savePostEarn(input: PostEarnConfig): Promise<SaveResult> {
+  const gate = await requireOwner();
+  if (!gate.ok) return gate;
+
+  const budgetCents = input.budgetUsd != null && Number.isFinite(input.budgetUsd)
+    ? Math.max(0, Math.round(input.budgetUsd * 100)) : null;
+  const platform = input.platform === "any" ? null : input.platform;
+
+  let amountCents: number | null = null;
+  let tiers: { min_reach: number; max_reach: number; amount_cents: number }[] | null = null;
+  if (input.model === "flat") {
+    amountCents = Math.max(0, Math.round(input.flatUsd * 100));
+    if (amountCents <= 0) return { ok: false, error: "Set a credit amount per post." };
+  } else {
+    tiers = input.bands
+      .filter((b) => b.usd > 0)
+      .map((b) => ({
+        min_reach: Math.max(0, Math.round(b.minReach)),
+        max_reach: b.maxReach > 0 ? Math.round(b.maxReach) : BIG_REACH,
+        amount_cents: Math.round(b.usd * 100),
+      }))
+      .sort((a, b) => a.min_reach - b.min_reach);
+    if (!tiers.length) return { ok: false, error: "Add at least one reach band with an amount." };
+  }
+  const ruleFields = {
+    trigger: "ugc_post" as const,
+    platform,
+    amount_model: input.model,
+    min_order_cents: 0,
+    amount_cents: amountCents,
+    tiers: tiers as unknown as Json,
+  };
+
+  const admin = createAdminClient();
+  const status = input.active ? "active" : "paused";
+
+  const { data: existing } = await admin
+    .from("reward_rules")
+    .select("id, campaign_id, reward_campaigns!inner(store_id)")
+    .eq("trigger", "ugc_post")
+    .eq("reward_campaigns.store_id", gate.storeId)
+    .limit(1)
+    .maybeSingle();
+
+  if (existing) {
+    const e = existing as unknown as { id: string; campaign_id: string };
+    await admin.from("reward_campaigns").update({ status, budget_cap_cents: budgetCents }).eq("id", e.campaign_id);
+    const { error } = await admin.from("reward_rules").update(ruleFields).eq("id", e.id);
+    if (error) return { ok: false, error: "Couldn't save the offer." };
+  } else {
+    const { data: camp, error: cErr } = await admin.from("reward_campaigns").insert({
+      store_id: gate.storeId, name: "Post & Earn", preset: "launch_buzz", status,
+      channel_flags: { post_for_credit: true }, budget_cap_cents: budgetCents,
+    }).select("id").single();
+    if (cErr || !camp) return { ok: false, error: "Couldn't create the campaign." };
+    const { error: rErr } = await admin.from("reward_rules").insert({ campaign_id: camp.id, ...ruleFields });
+    if (rErr) return { ok: false, error: "Couldn't save the offer." };
   }
 
   revalidatePath("/campaigns");

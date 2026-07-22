@@ -10,6 +10,7 @@ import {
   Plug,
   QrCode,
   Megaphone,
+  BadgeCheck,
   Ticket,
   ShieldCheck,
   ShoppingCart,
@@ -33,6 +34,7 @@ export type NavItem = {
 export const NAV_ITEMS: NavItem[] = [
   { label: "Orders", href: "/orders", icon: ShoppingCart, available: true },
   { label: "Redemptions", href: "/redemptions", icon: Ticket, available: true },
+  { label: "Post reviews", href: "/reviews", icon: BadgeCheck, available: true },
   { label: "Campaigns", href: "/campaigns", icon: Megaphone, available: true, ownerOnly: true },
   { label: "Conversations", href: "/conversations", icon: MessagesSquare, available: true },
   { label: "Catalog", href: "/inventory", icon: Package, available: true },

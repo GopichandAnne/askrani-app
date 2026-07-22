@@ -1252,6 +1252,106 @@ export type Database = {
           },
         ]
       }
+      social_submissions: {
+        Row: {
+          campaign_id: string
+          claimed_reach: number | null
+          created_at: string
+          disclosure_confirmed: boolean
+          format: string | null
+          id: string
+          member_id: string
+          platform: string | null
+          post_url: string
+          review_note: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          reward_event_id: string | null
+          rule_id: string | null
+          status: string
+          store_id: string
+        }
+        Insert: {
+          campaign_id: string
+          claimed_reach?: number | null
+          created_at?: string
+          disclosure_confirmed?: boolean
+          format?: string | null
+          id?: string
+          member_id: string
+          platform?: string | null
+          post_url: string
+          review_note?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          reward_event_id?: string | null
+          rule_id?: string | null
+          status?: string
+          store_id: string
+        }
+        Update: {
+          campaign_id?: string
+          claimed_reach?: number | null
+          created_at?: string
+          disclosure_confirmed?: boolean
+          format?: string | null
+          id?: string
+          member_id?: string
+          platform?: string | null
+          post_url?: string
+          review_note?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          reward_event_id?: string | null
+          rule_id?: string | null
+          status?: string
+          store_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "social_submissions_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "reward_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "social_submissions_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
+            referencedRelation: "store_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "social_submissions_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "social_submissions_reward_event_id_fkey"
+            columns: ["reward_event_id"]
+            isOneToOne: false
+            referencedRelation: "reward_events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "social_submissions_rule_id_fkey"
+            columns: ["rule_id"]
+            isOneToOne: false
+            referencedRelation: "reward_rules"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "social_submissions_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       staff: {
         Row: {
           created_at: string
