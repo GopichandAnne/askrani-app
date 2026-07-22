@@ -895,6 +895,7 @@ export type Database = {
           name: string
           per_poster_cap_cents: number | null
           preset: string | null
+          share_media: Json
           starts_at: string | null
           status: Database["public"]["Enums"]["reward_campaign_status"]
           store_id: string
@@ -914,6 +915,7 @@ export type Database = {
           name: string
           per_poster_cap_cents?: number | null
           preset?: string | null
+          share_media?: Json
           starts_at?: string | null
           status?: Database["public"]["Enums"]["reward_campaign_status"]
           store_id: string
@@ -933,6 +935,7 @@ export type Database = {
           name?: string
           per_poster_cap_cents?: number | null
           preset?: string | null
+          share_media?: Json
           starts_at?: string | null
           status?: Database["public"]["Enums"]["reward_campaign_status"]
           store_id?: string
@@ -1136,6 +1139,7 @@ export type Database = {
           conditions: Json
           created_at: string
           format: string | null
+          format_amounts: Json | null
           id: string
           min_order_cents: number
           percent_bps: number | null
@@ -1156,6 +1160,7 @@ export type Database = {
           conditions?: Json
           created_at?: string
           format?: string | null
+          format_amounts?: Json | null
           id?: string
           min_order_cents?: number
           percent_bps?: number | null
@@ -1176,6 +1181,7 @@ export type Database = {
           conditions?: Json
           created_at?: string
           format?: string | null
+          format_amounts?: Json | null
           id?: string
           min_order_cents?: number
           percent_bps?: number | null
@@ -2230,7 +2236,7 @@ export type Database = {
         | "cancelled"
       redemption_pass_status: "active" | "confirmed" | "expired" | "cancelled"
       redemption_surface: "qr" | "panel_code" | "phone_lookup"
-      reward_amount_model: "flat" | "percent" | "tier"
+      reward_amount_model: "flat" | "percent" | "tier" | "format"
       reward_campaign_status: "draft" | "active" | "paused" | "ended"
       reward_event_status: "accrued" | "capped" | "reversed"
       reward_kind: "store_credit" | "free_item"
@@ -2422,7 +2428,7 @@ export const Constants = {
       ],
       redemption_pass_status: ["active", "confirmed", "expired", "cancelled"],
       redemption_surface: ["qr", "panel_code", "phone_lookup"],
-      reward_amount_model: ["flat", "percent", "tier"],
+      reward_amount_model: ["flat", "percent", "tier", "format"],
       reward_campaign_status: ["draft", "active", "paused", "ended"],
       reward_event_status: ["accrued", "capped", "reversed"],
       reward_kind: ["store_credit", "free_item"],

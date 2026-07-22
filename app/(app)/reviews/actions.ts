@@ -10,13 +10,15 @@ import { callBotAdmin } from "@/lib/knowledge/bot-admin";
 // Reads the submissions via the admin client (service-role table), and approves/
 // rejects through bot-admin (which runs the verified accrual logic).
 
+export type FormatOption = { key: string; usd: number };
 export type PendingSubmission = {
   id: string;
   memberName: string | null;
   platform: string | null;
   format: string | null;
   postUrl: string;
-  banded: boolean; // reach-based -> reviewer enters the reach
+  pricing: "flat" | "tier" | "format"; // tier -> reviewer enters reach; format -> reviewer picks format
+  formats: FormatOption[];             // priced formats (pricing === 'format')
   createdAt: string;
 };
 type Result = { ok: true; amountUsd?: number } | { ok: false; error: string };
@@ -54,28 +56,38 @@ export async function loadSubmissions(): Promise<PendingSubmission[]> {
   const nameById = new Map((members ?? []).map((m) => [m.id as string, m.display_name as string | null]));
 
   const ruleIds = [...new Set(subs.map((s) => s.rule_id).filter(Boolean))] as string[];
-  const bandedById = new Map<string, boolean>();
+  const ruleById = new Map<string, { model: string; formats: FormatOption[] }>();
   if (ruleIds.length) {
-    const { data: rules } = await admin.from("reward_rules").select("id, amount_model").in("id", ruleIds);
-    for (const r of rules ?? []) bandedById.set(r.id as string, (r.amount_model as string) === "tier");
+    const { data: rules } = await admin.from("reward_rules").select("id, amount_model, format_amounts").in("id", ruleIds);
+    for (const r of rules ?? []) {
+      const fa = (r.format_amounts ?? {}) as Record<string, number>;
+      const formats: FormatOption[] = ["reel", "post", "story"]
+        .filter((k) => Number(fa[k] ?? 0) > 0)
+        .map((k) => ({ key: k, usd: Number(fa[k]) / 100 }));
+      ruleById.set(r.id as string, { model: r.amount_model as string, formats });
+    }
   }
 
-  return subs.map((s) => ({
-    id: s.id,
-    memberName: nameById.get(s.member_id) ?? null,
-    platform: s.platform,
-    format: s.format,
-    postUrl: s.post_url,
-    banded: s.rule_id ? !!bandedById.get(s.rule_id) : false,
-    createdAt: s.created_at,
-  }));
+  return subs.map((s) => {
+    const rule = s.rule_id ? ruleById.get(s.rule_id) : undefined;
+    const pricing = rule?.model === "tier" ? "tier" : rule?.model === "format" ? "format" : "flat";
+    return {
+      id: s.id,
+      memberName: nameById.get(s.member_id) ?? null,
+      platform: s.platform,
+      format: s.format,
+      postUrl: s.post_url,
+      pricing: pricing as PendingSubmission["pricing"],
+      formats: rule?.formats ?? [],
+      createdAt: s.created_at,
+    };
+  });
 }
 
 export async function reviewSubmission(
   submissionId: string,
   decision: "approve" | "reject",
-  reach?: number,
-  note?: string,
+  opts: { reach?: number; format?: string; note?: string } = {},
 ): Promise<Result> {
   const gate = await requireStaff();
   if (!gate.ok) return gate;
@@ -84,8 +96,9 @@ export async function reviewSubmission(
     store_slug: gate.slug,
     submission_id: submissionId,
     decision,
-    reach: reach ?? null,
-    note: note ?? null,
+    reach: opts.reach ?? null,
+    format: opts.format ?? null,
+    note: opts.note ?? null,
     staff_id: gate.staffId,
   });
   if (!res.ok) return { ok: false, error: res.error };

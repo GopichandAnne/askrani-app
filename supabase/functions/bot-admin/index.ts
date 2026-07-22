@@ -194,7 +194,8 @@ Deno.serve(async (req) => {
           return json({ ok: r.ok, decision: "rejected" });
         }
         const reach = body.reach != null && Number.isFinite(Number(body.reach)) ? Math.round(Number(body.reach)) : null;
-        const res = await approvePostSubmission(db, { submissionId: subId, staffId, reach });
+        const format = body.format ? String(body.format).toLowerCase() : null;
+        const res = await approvePostSubmission(db, { submissionId: subId, staffId, reach, format });
         return json(res.ok ? { ok: true, decision: "approved", amount_cents: res.amountCents, status: res.status } : { ok: false, error: res.reason });
       }
       case "import_products": {

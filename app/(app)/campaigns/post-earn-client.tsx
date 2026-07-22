@@ -1,31 +1,60 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { savePostEarn, type PostEarnConfig, type ReachBand } from "./actions";
+import {
+  savePostEarn, uploadShareMedia,
+  type PostEarnConfig, type ReachBand, type FormatAmounts, type ShareMediaItem,
+} from "./actions";
 
 const PLATFORMS = ["any", "instagram", "youtube", "facebook"];
+const FORMATS: { key: keyof FormatAmounts; label: string; hint: string }[] = [
+  { key: "reel", label: "Reel", hint: "short video — highest reach" },
+  { key: "post", label: "Post", hint: "feed photo / carousel" },
+  { key: "story", label: "Story", hint: "24h — verify with a live screenshot" },
+];
 const money = (s: string) => s.replace(/[^\d.]/g, "");
 const digits = (s: string) => s.replace(/\D/g, "");
 
 export function PostEarnClient({ initial }: { initial: PostEarnConfig }) {
   const [active, setActive] = useState(initial.active);
   const [platform, setPlatform] = useState(initial.platform);
-  const [model, setModel] = useState<"flat" | "tier">(initial.model);
+  const [model, setModel] = useState<"flat" | "tier" | "format">(initial.model);
   const [flat, setFlat] = useState(initial.flatUsd ? String(initial.flatUsd) : "");
   const [bands, setBands] = useState<ReachBand[]>(
     initial.bands.length ? initial.bands : [{ minReach: 0, maxReach: 5000, usd: 10 }, { minReach: 5000, maxReach: 0, usd: 25 }],
   );
+  const [formatUsd, setFormatUsd] = useState<Record<keyof FormatAmounts, string>>({
+    reel: initial.formatUsd.reel ? String(initial.formatUsd.reel) : "",
+    post: initial.formatUsd.post ? String(initial.formatUsd.post) : "",
+    story: initial.formatUsd.story ? String(initial.formatUsd.story) : "",
+  });
+  const [media, setMedia] = useState<ShareMediaItem[]>(initial.shareMedia);
   const [budget, setBudget] = useState(initial.budgetUsd != null ? String(initial.budgetUsd) : "");
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [pending, start] = useTransition();
 
   const setBand = (i: number, patch: Partial<ReachBand>) =>
     setBands((bs) => bs.map((b, idx) => (idx === i ? { ...b, ...patch } : b)));
+
+  const onPickFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow re-picking the same file
+    if (!file) return;
+    setUploading(true);
+    const fd = new FormData();
+    fd.append("file", file);
+    const r = await uploadShareMedia(fd);
+    setUploading(false);
+    if (r.ok) setMedia((m) => [...m, { url: r.url, label: null }]);
+    else toast.error(r.error);
+  };
 
   const save = () =>
     start(async () => {
@@ -33,6 +62,12 @@ export function PostEarnClient({ initial }: { initial: PostEarnConfig }) {
         active, platform, model,
         flatUsd: Number(flat) || 0,
         bands,
+        formatUsd: {
+          reel: Number(formatUsd.reel) || 0,
+          post: Number(formatUsd.post) || 0,
+          story: Number(formatUsd.story) || 0,
+        },
+        shareMedia: media,
         budgetUsd: budget.trim() ? Number(budget) : null,
       });
       if (r.ok) toast.success(active ? "Post & Earn is live." : "Saved — offer is paused.");
@@ -56,7 +91,7 @@ export function PostEarnClient({ initial }: { initial: PostEarnConfig }) {
       <CardContent className="space-y-5">
         <p className="text-sm text-muted-foreground">
           Customers post about you on social media, paste the link to Rani, and you review it in Post reviews.
-          Approved posts earn store credit. Verification is manual — you confirm each post (and its reach) before it pays.
+          Approved posts earn store credit. Verification is manual — you confirm each post before it pays.
         </p>
 
         <div className="space-y-2">
@@ -70,18 +105,44 @@ export function PostEarnClient({ initial }: { initial: PostEarnConfig }) {
 
         <div className="space-y-2">
           <Label className="text-muted-foreground text-xs">How much they earn</Label>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button type="button" onClick={() => setModel("flat")} className={pill(model === "flat")}>Flat per post</button>
+            <button type="button" onClick={() => setModel("format")} className={pill(model === "format")}>By format</button>
             <button type="button" onClick={() => setModel("tier")} className={pill(model === "tier")}>By reach</button>
           </div>
         </div>
 
-        {model === "flat" ? (
+        {model === "flat" && (
           <div className="max-w-[180px] space-y-1.5">
             <Label className="text-muted-foreground text-xs">Credit per post ($)</Label>
             <Input inputMode="decimal" value={flat} onChange={(e) => setFlat(money(e.target.value))} className="tabular-nums" />
           </div>
-        ) : (
+        )}
+
+        {model === "format" && (
+          <div className="space-y-2">
+            <Label className="text-muted-foreground text-xs">Credit by format ($)</Label>
+            {FORMATS.map((f) => (
+              <div key={f.key} className="flex items-center gap-3">
+                <span className="w-14 text-sm font-medium">{f.label}</span>
+                <span className="text-muted-foreground text-xs">$</span>
+                <Input
+                  inputMode="decimal"
+                  value={formatUsd[f.key]}
+                  onChange={(e) => setFormatUsd((a) => ({ ...a, [f.key]: money(e.target.value) }))}
+                  placeholder="0"
+                  className="w-20 tabular-nums"
+                />
+                <span className="text-muted-foreground text-xs">{f.hint}</span>
+              </div>
+            ))}
+            <p className="text-muted-foreground text-xs">
+              Leave a format at 0 to not pay for it. You pick the format when you approve each post.
+            </p>
+          </div>
+        )}
+
+        {model === "tier" && (
           <div className="space-y-2">
             <Label className="text-muted-foreground text-xs">Reach bands (views → credit)</Label>
             {bands.map((b, i) => (
@@ -98,6 +159,36 @@ export function PostEarnClient({ initial }: { initial: PostEarnConfig }) {
             <p className="text-muted-foreground text-xs">Leave a band&apos;s max blank for &ldquo;and up&rdquo;. You enter each post&apos;s actual reach when you approve it.</p>
           </div>
         )}
+
+        <div className="space-y-2">
+          <Label className="text-muted-foreground text-xs">Ready-to-post media (optional)</Label>
+          <p className="text-muted-foreground text-xs">
+            Upload branded images customers can share. Rani sends them when someone asks to post — so they have
+            content ready and your store gets tagged.
+          </p>
+          {media.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {media.map((m, i) => (
+                <div key={m.url} className="group relative size-20 overflow-hidden rounded-md border">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={m.url} alt="" className="size-full object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => setMedia((ms) => ms.filter((_, idx) => idx !== i))}
+                    className="absolute right-0.5 top-0.5 rounded-full bg-black/60 px-1.5 text-xs text-white opacity-0 group-hover:opacity-100"
+                    aria-label="Remove image"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <input ref={fileRef} type="file" accept="image/*" onChange={onPickFile} className="hidden" />
+          <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()} disabled={uploading}>
+            {uploading ? "Uploading…" : "+ Add image"}
+          </Button>
+        </div>
 
         <div className="max-w-[180px] space-y-1.5">
           <Label className="text-muted-foreground text-xs">Monthly budget cap ($)</Label>

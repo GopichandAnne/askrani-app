@@ -22,6 +22,8 @@ const POST_DEFAULTS: PostEarnConfig = {
   model: "flat",
   flatUsd: 5,
   bands: [],
+  formatUsd: { reel: 8, post: 5, story: 3 },
+  shareMedia: [],
   budgetUsd: 200,
 };
 

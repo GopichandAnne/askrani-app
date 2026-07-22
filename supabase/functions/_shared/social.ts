@@ -8,16 +8,18 @@ import { accrueReward, computeAmountCents, type RewardRule } from "./rewards.ts"
 import { resolveMember } from "./members.ts";
 
 type PostRule = RewardRule & { platform: string | null; format: string | null };
-const RULE_COLS = "id, amount_model, amount_cents, percent_bps, tiers, min_order_cents, platform, format";
+export type ShareMedia = { url: string; label?: string | null };
+const RULE_COLS = "id, amount_model, amount_cents, percent_bps, tiers, format_amounts, min_order_cents, platform, format";
 
-/** The store's active post-for-credit (ugc_post) campaign + rule, or null. */
+/** The store's active post-for-credit (ugc_post) campaign + rule + any
+ *  owner-uploaded shareable media, or null. */
 export async function activePostRule(
   db: SupabaseClient,
   storeId: string,
-): Promise<{ campaignId: string; rule: PostRule } | null> {
+): Promise<{ campaignId: string; rule: PostRule; shareMedia: ShareMedia[] } | null> {
   const { data } = await db
     .from("reward_rules")
-    .select(`${RULE_COLS}, campaign_id, reward_campaigns!inner(status, store_id)`)
+    .select(`${RULE_COLS}, campaign_id, reward_campaigns!inner(status, store_id, share_media)`)
     .eq("trigger", "ugc_post")
     .eq("reward_campaigns.store_id", storeId)
     .eq("reward_campaigns.status", "active")
@@ -26,8 +28,18 @@ export async function activePostRule(
   if (!data) return null;
   // deno-lint-ignore no-explicit-any
   const d = data as any;
-  return { campaignId: d.campaign_id, rule: d as PostRule };
+  const media: ShareMedia[] = Array.isArray(d.reward_campaigns?.share_media)
+    ? d.reward_campaigns.share_media.filter((m: unknown) => {
+      const u = (m as ShareMedia)?.url;
+      return typeof u === "string" && /^https:\/\/\S+$/.test(u);
+    })
+    : [];
+  return { campaignId: d.campaign_id, rule: d as PostRule, shareMedia: media };
 }
+
+/** Format keys the 'format' pricing model prices — for describing the offer and
+ *  validating a reviewer's pick. */
+export const POST_FORMATS = ["reel", "post", "story"] as const;
 
 export type SubmitResult =
   | { ok: true; submissionId: string; note: string }
@@ -38,7 +50,7 @@ export async function createPostSubmission(
   db: SupabaseClient,
   store: Store,
   sessionId: string,
-  args: { postUrl: string; platform?: string | null; disclosureConfirmed: boolean },
+  args: { postUrl: string; platform?: string | null; format?: string | null; disclosureConfirmed: boolean },
 ): Promise<SubmitResult> {
   let memberId = (await resolveMember(db, store, sessionId))?.id ?? null;
   if (!memberId && sessionId.startsWith("wa_")) {
@@ -68,7 +80,7 @@ export async function createPostSubmission(
       rule_id: active.rule.id,
       member_id: memberId,
       platform: args.platform ?? active.rule.platform ?? null,
-      format: active.rule.format ?? null,
+      format: args.format ?? active.rule.format ?? null,
       post_url: url,
       disclosure_confirmed: true,
       status: "submitted",
@@ -87,15 +99,16 @@ export type ApproveResult =
   | { ok: true; amountCents: number; status: string }
   | { ok: false; reason: string };
 
-/** Approve a submission: compute the credit (flat, or the reach band for the
- *  entered reach) and accrue it. Idempotent — only 'submitted' rows approve. */
+/** Approve a submission: compute the credit (flat, the reach band for the
+ *  entered reach, or the amount for the reviewer-picked format) and accrue it.
+ *  Idempotent — only 'submitted' rows approve. */
 export async function approvePostSubmission(
   db: SupabaseClient,
-  args: { submissionId: string; staffId?: string | null; reach?: number | null },
+  args: { submissionId: string; staffId?: string | null; reach?: number | null; format?: string | null },
 ): Promise<ApproveResult> {
   const { data: sub } = await db
     .from("social_submissions")
-    .select("id, store_id, campaign_id, rule_id, member_id, status")
+    .select("id, store_id, campaign_id, rule_id, member_id, status, format")
     .eq("id", args.submissionId)
     .maybeSingle();
   if (!sub) return { ok: false, reason: "not_found" };
@@ -109,14 +122,20 @@ export async function approvePostSubmission(
   if (!rule) rule = (await activePostRule(db, sub.store_id))?.rule ?? null;
   if (!rule) return { ok: false, reason: "no_rule" };
 
-  const amountCents = computeAmountCents(rule, { reach: args.reach ?? 0 });
+  // For the per-format model the reviewer picks the format at approval; fall
+  // back to whatever was recorded on the submission.
+  const format = (args.format ?? sub.format ?? null) as string | null;
+  if (rule.amount_model === "format" && !format) return { ok: false, reason: "needs_format" };
+  const amountCents = computeAmountCents(rule, { reach: args.reach ?? 0, format });
 
-  // Mark approved (with the reviewer + reach) regardless of the computed amount.
+  // Mark approved (with the reviewer, reach, and chosen format) regardless of
+  // the computed amount.
   await db
     .from("social_submissions")
     .update({
       status: "approved",
       claimed_reach: args.reach ?? null,
+      format: format ?? undefined,
       reviewed_by: args.staffId ?? null,
       reviewed_at: new Date().toISOString(),
     })

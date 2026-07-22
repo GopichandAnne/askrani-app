@@ -13,7 +13,7 @@ import { resolveMember } from "./members.ts";
 import { getOrCreateReferralLink, trackedUrl } from "./referral.ts";
 import { composeAndStoreCard } from "./card.ts";
 import { issueRedemptionPass, rewardBalanceCents } from "./rewards.ts";
-import { activePostRule, createPostSubmission } from "./social.ts";
+import { activePostRule, createPostSubmission, POST_FORMATS } from "./social.ts";
 import {
   browseProducts,
   type CatalogFilter,
@@ -1073,6 +1073,7 @@ const SUBMIT_POST_DECL: FunctionDeclaration = {
     properties: {
       url: { type: "string", description: "the post's public link (omit on the first call to just get the offer)" },
       platform: { type: "string", description: "instagram | youtube | facebook, if known" },
+      format: { type: "string", description: "reel | post | story, if the customer says which they made (some offers pay differently per format)" },
       disclosure_confirmed: { type: "boolean", description: "true only once the customer confirms the post includes #ad or #gifted" },
     },
     required: [],
@@ -1092,24 +1093,38 @@ async function executeSubmitPost(
     return { ok: false, reason: "no_active_offer", note: "No post-for-credit offer is running. Don't promise a reward." };
   }
   const rule = active.rule;
+  const fa = rule.format_amounts ?? {};
+  const formatOffer = POST_FORMATS
+    .filter((f) => Number(fa[f] ?? 0) > 0)
+    .map((f) => `${f} $${(Number(fa[f]) / 100).toFixed(2)}`)
+    .join(", ");
   const offer = rule.amount_model === "tier"
     ? "store credit based on the post's reach (more views earns more)"
+    : rule.amount_model === "format"
+    ? (formatOffer ? `store credit by format (${formatOffer})` : "store credit")
     : `$${(Math.round(Number(rule.amount_cents ?? 0)) / 100).toFixed(2)} store credit`;
 
   const url = String(args.url ?? "").trim();
   if (!url) {
+    // Hand over any ready-made media the owner uploaded for people to post.
+    let mediaSent = 0;
+    for (const m of active.shareMedia.slice(0, PHOTO_SEND_LIMIT)) {
+      if (/^https:\/\/\S+$/.test(m.url) && await recordAndSend(db, store, sessionId, m.url, m.label ?? "")) mediaSent++;
+    }
     return {
       ok: true,
       has_offer: true,
       earns: offer,
       platform: rule.platform ?? "any",
-      note: `There's a post-for-credit offer: post about the store${rule.platform ? ` on ${rule.platform}` : ""}${rule.format ? ` (a ${rule.format})` : ""}, include the required #ad or #gifted tag, and earn ${offer}. Tell them this, then ask for the post link once they've posted and confirmed the tag. Call this again with the url and disclosure_confirmed=true to submit.`,
+      media_sent: mediaSent,
+      note: `There's a post-for-credit offer: post about the store${rule.platform ? ` on ${rule.platform}` : ""}${rule.format ? ` (a ${rule.format})` : ""}, include the required #ad or #gifted tag, and earn ${offer}.${mediaSent > 0 ? " I just sent them ready-to-post images — tell them they can share those." : ""} Tell them the offer, then ask for the post link once they've posted and confirmed the tag. Call this again with the url and disclosure_confirmed=true to submit.`,
     };
   }
 
   const res = await createPostSubmission(db, store, sessionId, {
     postUrl: url,
     platform: args.platform ? String(args.platform) : rule.platform,
+    format: args.format ? String(args.format).toLowerCase() : null,
     disclosureConfirmed: args.disclosure_confirmed === true,
   });
   if (!res.ok) return { ok: false, reason: res.reason, note: res.note };

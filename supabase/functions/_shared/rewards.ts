@@ -12,18 +12,20 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 // ── reward_rules amount shapes ───────────────────────────────────────────────
 export type RewardRule = {
   id: string;
-  amount_model: "flat" | "percent" | "tier";
+  amount_model: "flat" | "percent" | "tier" | "format";
   amount_cents: number | null;
   percent_bps: number | null; // basis points: 500 = 5%
   tiers: Array<{ min_reach?: number; max_reach?: number; amount_cents: number }> | null;
+  format_amounts: Record<string, number> | null; // {reel,post,story} -> cents (amount_model 'format')
   min_order_cents: number;
 };
 
-/** What the initiator earns on a referred order. Reach is for the post tiers
- *  (Increment 2); referral rules use flat/percent against the net order. */
+/** What the initiator earns on a referred order. `reach` drives the post tiers
+ *  and `format` the per-format amounts (Increment 2); referral rules use
+ *  flat/percent against the net order. */
 export function computeAmountCents(
   rule: RewardRule,
-  opts: { netOrderCents?: number; reach?: number } = {},
+  opts: { netOrderCents?: number; reach?: number; format?: string | null } = {},
 ): number {
   const net = Math.max(0, Math.floor(opts.netOrderCents ?? 0));
   if (net < (rule.min_order_cents ?? 0)) return 0;
@@ -38,6 +40,11 @@ export function computeAmountCents(
         (t) => r >= (t.min_reach ?? 0) && r <= (t.max_reach ?? Number.MAX_SAFE_INTEGER),
       );
       return band ? Math.max(0, Math.floor(band.amount_cents)) : 0;
+    }
+    case "format": {
+      const key = String(opts.format ?? "").toLowerCase();
+      const cents = (rule.format_amounts ?? {})[key];
+      return cents ? Math.max(0, Math.floor(cents)) : 0;
     }
   }
 }
