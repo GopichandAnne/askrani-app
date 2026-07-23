@@ -58,12 +58,13 @@ export async function loadSubmissions(): Promise<PendingSubmission[]> {
   const ruleIds = [...new Set(subs.map((s) => s.rule_id).filter(Boolean))] as string[];
   const ruleById = new Map<string, { model: string; formats: FormatOption[] }>();
   if (ruleIds.length) {
-    const { data: rules } = await admin.from("reward_rules").select("id, amount_model, format_amounts").in("id", ruleIds);
+    const { data: rules } = await admin.from("reward_rules").select("id, amount_model, amount_cents, format_amounts").in("id", ruleIds);
     for (const r of rules ?? []) {
       const fa = (r.format_amounts ?? {}) as Record<string, number>;
+      const base = Number(r.amount_cents ?? 0); // guaranteed base stacked under the format bonus
       const formats: FormatOption[] = ["reel", "post", "story"]
         .filter((k) => Number(fa[k] ?? 0) > 0)
-        .map((k) => ({ key: k, usd: Number(fa[k]) / 100 }));
+        .map((k) => ({ key: k, usd: (base + Number(fa[k])) / 100 }));
       ruleById.set(r.id as string, { model: r.amount_model as string, formats });
     }
   }

@@ -35,16 +35,22 @@ export function computeAmountCents(
     case "percent":
       return Math.max(0, Math.floor((net * (rule.percent_bps ?? 0)) / 10000));
     case "tier": {
+      // amount_cents is an optional guaranteed base; the matched reach band
+      // stacks on top (base + performance). No band -> just the base.
+      const base = Math.max(0, Math.floor(rule.amount_cents ?? 0));
       const r = opts.reach ?? 0;
       const band = (rule.tiers ?? []).find(
         (t) => r >= (t.min_reach ?? 0) && r <= (t.max_reach ?? Number.MAX_SAFE_INTEGER),
       );
-      return band ? Math.max(0, Math.floor(band.amount_cents)) : 0;
+      return base + (band ? Math.max(0, Math.floor(band.amount_cents)) : 0);
     }
     case "format": {
+      // amount_cents is an optional guaranteed base; the post's format stacks
+      // on top (base + performance). Unpriced format -> just the base.
+      const base = Math.max(0, Math.floor(rule.amount_cents ?? 0));
       const key = String(opts.format ?? "").toLowerCase();
       const cents = (rule.format_amounts ?? {})[key];
-      return cents ? Math.max(0, Math.floor(cents)) : 0;
+      return base + (cents ? Math.max(0, Math.floor(cents)) : 0);
     }
   }
 }

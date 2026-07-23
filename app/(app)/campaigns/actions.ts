@@ -132,6 +132,7 @@ export type PostEarnConfig = {
   platform: string; // instagram | youtube | facebook | any
   model: "flat" | "tier" | "format";
   flatUsd: number;
+  baseUsd: number;              // guaranteed base per post that stacks under a reach/format bonus
   bands: ReachBand[];
   formatUsd: FormatAmounts;      // per-format credit (reel/post/story), in dollars
   shareMedia: ShareMediaItem[];  // owner-uploaded images Rani hands out to post
@@ -174,6 +175,8 @@ export async function loadPostEarn(): Promise<PostEarnConfig | null> {
     platform: r.platform ?? "any",
     model: r.amount_model === "tier" ? "tier" : r.amount_model === "format" ? "format" : "flat",
     flatUsd: (r.amount_cents ?? 0) / 100,
+    // For tier/format, amount_cents is the guaranteed base; for flat it IS the amount.
+    baseUsd: r.amount_model === "flat" ? 0 : (r.amount_cents ?? 0) / 100,
     bands: (r.tiers ?? []).map((t) => ({
       minReach: t.min_reach ?? 0,
       maxReach: t.max_reach && t.max_reach < BIG_REACH ? t.max_reach : 0,
@@ -193,6 +196,9 @@ export async function savePostEarn(input: PostEarnConfig): Promise<SaveResult> {
     ? Math.max(0, Math.round(input.budgetUsd * 100)) : null;
   const platform = input.platform === "any" ? null : input.platform;
 
+  // A guaranteed base per post (paid on approval) that stacks under the reach/
+  // format bonus. Only meaningful for tier/format; flat's amount IS its base.
+  const baseCents = Math.max(0, Math.round((input.baseUsd ?? 0) * 100));
   let amountCents: number | null = null;
   let tiers: { min_reach: number; max_reach: number; amount_cents: number }[] | null = null;
   let formatAmounts: Record<string, number> | null = null;
@@ -200,6 +206,7 @@ export async function savePostEarn(input: PostEarnConfig): Promise<SaveResult> {
     amountCents = Math.max(0, Math.round(input.flatUsd * 100));
     if (amountCents <= 0) return { ok: false, error: "Set a credit amount per post." };
   } else if (input.model === "tier") {
+    amountCents = baseCents; // guaranteed base
     tiers = input.bands
       .filter((b) => b.usd > 0)
       .map((b) => ({
@@ -210,6 +217,7 @@ export async function savePostEarn(input: PostEarnConfig): Promise<SaveResult> {
       .sort((a, b) => a.min_reach - b.min_reach);
     if (!tiers.length) return { ok: false, error: "Add at least one reach band with an amount." };
   } else {
+    amountCents = baseCents; // guaranteed base
     const f = input.formatUsd ?? emptyFormats();
     const built: Record<string, number> = {};
     for (const k of ["reel", "post", "story"] as const) {

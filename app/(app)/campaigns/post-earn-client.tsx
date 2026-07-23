@@ -26,6 +26,7 @@ export function PostEarnClient({ initial }: { initial: PostEarnConfig }) {
   const [platform, setPlatform] = useState(initial.platform);
   const [model, setModel] = useState<"flat" | "tier" | "format">(initial.model);
   const [flat, setFlat] = useState(initial.flatUsd ? String(initial.flatUsd) : "");
+  const [base, setBase] = useState(initial.baseUsd ? String(initial.baseUsd) : "");
   const [bands, setBands] = useState<ReachBand[]>(
     initial.bands.length ? initial.bands : [{ minReach: 0, maxReach: 5000, usd: 10 }, { minReach: 5000, maxReach: 0, usd: 25 }],
   );
@@ -61,6 +62,7 @@ export function PostEarnClient({ initial }: { initial: PostEarnConfig }) {
       const r = await savePostEarn({
         active, platform, model,
         flatUsd: Number(flat) || 0,
+        baseUsd: Number(base) || 0,
         bands,
         formatUsd: {
           reel: Number(formatUsd.reel) || 0,
@@ -116,6 +118,17 @@ export function PostEarnClient({ initial }: { initial: PostEarnConfig }) {
           <div className="max-w-[180px] space-y-1.5">
             <Label className="text-muted-foreground text-xs">Credit per post ($)</Label>
             <Input inputMode="decimal" value={flat} onChange={(e) => setFlat(money(e.target.value))} className="tabular-nums" />
+          </div>
+        )}
+
+        {model !== "flat" && (
+          <div className="max-w-[240px] space-y-1.5">
+            <Label className="text-muted-foreground text-xs">Guaranteed base per post ($) — optional</Label>
+            <Input inputMode="decimal" value={base} onChange={(e) => setBase(money(e.target.value))} placeholder="0" className="w-[120px] tabular-nums" />
+            <p className="text-muted-foreground text-xs">
+              Paid on every approved post, on top of the {model === "format" ? "format" : "reach"} bonus below.
+              Leave at 0 to pay {model === "format" ? "by format" : "by reach"} only.
+            </p>
           </div>
         )}
 

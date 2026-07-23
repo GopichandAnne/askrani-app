@@ -21,6 +21,7 @@ const POST_DEFAULTS: PostEarnConfig = {
   platform: "instagram",
   model: "flat",
   flatUsd: 5,
+  baseUsd: 0,
   bands: [],
   formatUsd: { reel: 8, post: 5, story: 3 },
   shareMedia: [],

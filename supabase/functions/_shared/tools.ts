@@ -1094,12 +1094,17 @@ async function executeSubmitPost(
   }
   const rule = active.rule;
   const fa = rule.format_amounts ?? {};
+  // For tier/format, amount_cents is a guaranteed base that stacks on the bonus.
+  const base = (rule.amount_model === "tier" || rule.amount_model === "format")
+    ? Math.max(0, Math.round(Number(rule.amount_cents ?? 0)))
+    : 0;
+  const baseNote = base > 0 ? ` (includes a $${(base / 100).toFixed(2)} base per post)` : "";
   const formatOffer = POST_FORMATS
     .filter((f) => Number(fa[f] ?? 0) > 0)
-    .map((f) => `${f} $${(Number(fa[f]) / 100).toFixed(2)}`)
+    .map((f) => `${f} $${((base + Number(fa[f])) / 100).toFixed(2)}`)
     .join(", ");
   const offer = rule.amount_model === "tier"
-    ? "store credit based on the post's reach (more views earns more)"
+    ? `store credit based on the post's reach (more views earns more)${baseNote}`
     : rule.amount_model === "format"
     ? (formatOffer ? `store credit by format (${formatOffer})` : "store credit")
     : `$${(Math.round(Number(rule.amount_cents ?? 0)) / 100).toFixed(2)} store credit`;
