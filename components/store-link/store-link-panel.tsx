@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/select";
 import { Check, Clock, Copy, Download, ImagePlus, Loader2, MessageCircle, QrCode, RefreshCw, Save, Sparkles, Trash2 } from "lucide-react";
 import { ListingQrs } from "@/components/store-link/listing-qrs";
+import { TableQrs } from "@/components/store-link/table-qrs";
 
 const TIMEOUTS: [number, string][] = [
   [15, "15 minutes"],
@@ -478,6 +479,10 @@ export function StoreLinkPanel({
       </div>
 
       {businessType === "realtor" && <ListingQrs storeId={storeId} storeSlug={storeSlug} />}
+
+      {businessType !== "realtor" && token && (
+        <TableQrs storeSlug={storeSlug} storeName={storeName} token={token} />
+      )}
 
       <div className="flex items-center justify-between gap-3 border-t pt-4">
         <p className="text-muted-foreground text-xs">
