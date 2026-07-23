@@ -13,7 +13,7 @@ import { resolveMember } from "./members.ts";
 import { getOrCreateReferralLink, trackedUrl } from "./referral.ts";
 import { composeAndStoreCard } from "./card.ts";
 import { issueRedemptionPass, rewardBalanceCents } from "./rewards.ts";
-import { activePostRule, createPostSubmission, POST_FORMATS } from "./social.ts";
+import { activePostCampaign, createPostSubmission, describeRuleOffer, pickRuleForPlatform, platformFromUrl } from "./social.ts";
 import {
   browseProducts,
   type CatalogFilter,
@@ -1088,52 +1088,43 @@ async function executeSubmitPost(
   sessionId: string,
   args: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
-  const active = await activePostRule(db, store.id);
-  if (!active) {
+  const camp = await activePostCampaign(db, store.id);
+  if (!camp || !camp.rules.length) {
     return { ok: false, reason: "no_active_offer", note: "No post-for-credit offer is running. Don't promise a reward." };
   }
-  const rule = active.rule;
-  const fa = rule.format_amounts ?? {};
-  // For tier/format, amount_cents is a guaranteed base that stacks on the bonus.
-  const base = (rule.amount_model === "tier" || rule.amount_model === "format")
-    ? Math.max(0, Math.round(Number(rule.amount_cents ?? 0)))
-    : 0;
-  const baseNote = base > 0 ? ` (includes a $${(base / 100).toFixed(2)} base per post)` : "";
-  const formatOffer = POST_FORMATS
-    .filter((f) => Number(fa[f] ?? 0) > 0)
-    .map((f) => `${f} $${((base + Number(fa[f])) / 100).toFixed(2)}`)
-    .join(", ");
-  const offer = rule.amount_model === "tier"
-    ? `store credit based on the post's reach (more views earns more)${baseNote}`
-    : rule.amount_model === "format"
-    ? (formatOffer ? `store credit by format (${formatOffer})` : "store credit")
-    : `$${(Math.round(Number(rule.amount_cents ?? 0)) / 100).toFixed(2)} store credit`;
+  const offers = camp.rules.map(describeRuleOffer);          // one payout line per platform
+  const platforms = camp.rules.map((r) => r.platform).filter(Boolean);
 
   const url = String(args.url ?? "").trim();
   if (!url) {
     // Hand over any ready-made media the owner uploaded for people to post.
     let mediaSent = 0;
-    for (const m of active.shareMedia.slice(0, PHOTO_SEND_LIMIT)) {
+    for (const m of camp.shareMedia.slice(0, PHOTO_SEND_LIMIT)) {
       if (/^https:\/\/\S+$/.test(m.url) && await recordAndSend(db, store, sessionId, m.url, m.label ?? "")) mediaSent++;
     }
     return {
       ok: true,
       has_offer: true,
-      earns: offer,
-      platform: rule.platform ?? "any",
+      offers,
+      platforms,
       media_sent: mediaSent,
-      note: `There's a post-for-credit offer: post about the store${rule.platform ? ` on ${rule.platform}` : ""}${rule.format ? ` (a ${rule.format})` : ""}, include the required #ad or #gifted tag, and earn ${offer}.${mediaSent > 0 ? " I just sent them ready-to-post images — tell them they can share those." : ""} Tell them the offer, then ask for the post link once they've posted and confirmed the tag. Call this again with the url and disclosure_confirmed=true to submit.`,
+      note: `Post-for-credit offers by platform — ${offers.join(" · ")}. The post must include the required #ad or #gifted tag.${mediaSent > 0 ? " I just sent them ready-to-post images they can share." : ""} Tell them the offer for whichever platform they'll use, then ask for the post link and call this again with url + disclosure_confirmed=true. Different platforms/formats can pay differently.`,
     };
   }
 
+  // Resolve the platform (their hint, else from the link) to quote the right offer.
+  const platform = (args.platform ? String(args.platform) : platformFromUrl(url) ?? "").toLowerCase() || null;
+  const rule = pickRuleForPlatform(camp.rules, platform);
+  const earns = rule ? describeRuleOffer(rule) : null;
+
   const res = await createPostSubmission(db, store, sessionId, {
     postUrl: url,
-    platform: args.platform ? String(args.platform) : rule.platform,
+    platform: args.platform ? String(args.platform) : null, // createPostSubmission infers from the URL if null
     format: args.format ? String(args.format).toLowerCase() : null,
     disclosureConfirmed: args.disclosure_confirmed === true,
   });
   if (!res.ok) return { ok: false, reason: res.reason, note: res.note };
-  return { ok: true, submitted: true, earns: offer, note: res.note };
+  return { ok: true, submitted: true, earns, note: res.note };
 }
 
 /** Build the toolset bound to a store + session context. Cart/order tools are

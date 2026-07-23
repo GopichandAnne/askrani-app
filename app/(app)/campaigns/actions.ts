@@ -5,6 +5,7 @@ import type { Json } from "@/lib/database.types";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getActiveStore } from "@/lib/store/active-store";
+import { POST_PLATFORMS, PLATFORM_FORMATS } from "./post-earn-shared";
 
 // Owner config for the give-and-get (share & earn) campaign — owner-managed. The
 // reward tables are service-role-only (RLS), so writes go through the admin client.
@@ -123,24 +124,26 @@ export async function saveGiveGet(input: GiveGetConfig): Promise<SaveResult> {
   return { ok: true };
 }
 
-// ── Post & Earn (post-for-credit) config ─────────────────────────────────────
+// ── Post & Earn (post-for-credit) config — one rule per platform ─────────────
 export type ReachBand = { minReach: number; maxReach: number; usd: number };
-export type FormatAmounts = { reel: number; post: number; story: number };
 export type ShareMediaItem = { url: string; label?: string | null };
-export type PostEarnConfig = {
-  active: boolean;
-  platform: string; // instagram | youtube | facebook | any
+export type PlatformRule = {
+  platform: string;                  // instagram | youtube | facebook | tiktok
+  enabled: boolean;
   model: "flat" | "tier" | "format";
   flatUsd: number;
-  baseUsd: number;              // guaranteed base per post that stacks under a reach/format bonus
+  baseUsd: number;                   // guaranteed base per post (stacks under reach/format bonus)
   bands: ReachBand[];
-  formatUsd: FormatAmounts;      // per-format credit (reel/post/story), in dollars
-  shareMedia: ShareMediaItem[];  // owner-uploaded images Rani hands out to post
-  budgetUsd: number | null;
+  formatUsd: Record<string, number>; // platform-correct format keys -> dollars
+};
+export type PostEarnConfig = {
+  active: boolean;
+  platforms: PlatformRule[];         // every known platform; enabled ones are offered
+  shareMedia: ShareMediaItem[];      // owner-uploaded images Rani hands out to post
+  budgetUsd: number | null;          // shared budget across platforms
 };
 
 const BIG_REACH = 100_000_000;
-const emptyFormats = (): FormatAmounts => ({ reel: 0, post: 0, story: 0 });
 
 function cleanMedia(items: ShareMediaItem[]): ShareMediaItem[] {
   return (items ?? [])
@@ -149,42 +152,122 @@ function cleanMedia(items: ShareMediaItem[]): ShareMediaItem[] {
     .map((m) => ({ url: m.url, label: m.label?.trim() || null }));
 }
 
+function emptyPlatformRule(platform: string): PlatformRule {
+  return {
+    platform,
+    enabled: false,
+    model: "flat",
+    flatUsd: 5,
+    baseUsd: 0,
+    bands: [],
+    formatUsd: Object.fromEntries((PLATFORM_FORMATS[platform] ?? []).map((k) => [k, 0])),
+  };
+}
+
+type PostRuleRow = {
+  platform: string | null;
+  amount_model: "flat" | "tier" | "format";
+  amount_cents: number | null;
+  tiers: { min_reach?: number; max_reach?: number; amount_cents: number }[] | null;
+  format_amounts: Record<string, number> | null;
+  reward_campaigns: { status: string; budget_cap_cents: number | null; share_media: ShareMediaItem[] | null };
+};
+
 export async function loadPostEarn(): Promise<PostEarnConfig | null> {
   const gate = await requireOwner();
   if (!gate.ok) return null;
   const admin = createAdminClient();
-  const { data: rule } = await admin
+  const { data: rules } = await admin
     .from("reward_rules")
     .select("platform, amount_model, amount_cents, tiers, format_amounts, reward_campaigns!inner(status, store_id, budget_cap_cents, share_media)")
     .eq("trigger", "ugc_post")
-    .eq("reward_campaigns.store_id", gate.storeId)
-    .limit(1)
-    .maybeSingle();
-  if (!rule) return null;
-  const r = rule as unknown as {
-    platform: string | null;
-    amount_model: "flat" | "tier" | "format";
-    amount_cents: number | null;
-    tiers: { min_reach?: number; max_reach?: number; amount_cents: number }[] | null;
-    format_amounts: Record<string, number> | null;
-    reward_campaigns: { status: string; budget_cap_cents: number | null; share_media: ShareMediaItem[] | null };
-  };
-  const fa = r.format_amounts ?? {};
+    .eq("reward_campaigns.store_id", gate.storeId);
+  const rows = (rules ?? []) as unknown as PostRuleRow[];
+  if (!rows.length) return null;
+  const camp = rows[0].reward_campaigns;
+  const byPlatform = new Map(rows.filter((r) => r.platform).map((r) => [r.platform!.toLowerCase(), r]));
+
+  const platforms: PlatformRule[] = POST_PLATFORMS.map((p) => {
+    const r = byPlatform.get(p);
+    if (!r) return emptyPlatformRule(p);
+    const fa = r.format_amounts ?? {};
+    const keys = PLATFORM_FORMATS[p] ?? [];
+    return {
+      platform: p,
+      enabled: true,
+      model: r.amount_model === "tier" ? "tier" : r.amount_model === "format" ? "format" : "flat",
+      flatUsd: (r.amount_cents ?? 0) / 100,
+      baseUsd: r.amount_model === "flat" ? 0 : (r.amount_cents ?? 0) / 100,
+      bands: (r.tiers ?? []).map((t) => ({
+        minReach: t.min_reach ?? 0,
+        maxReach: t.max_reach && t.max_reach < BIG_REACH ? t.max_reach : 0,
+        usd: t.amount_cents / 100,
+      })),
+      formatUsd: Object.fromEntries(keys.map((k) => [k, (fa[k] ?? 0) / 100])),
+    };
+  });
+
   return {
-    active: r.reward_campaigns.status === "active",
-    platform: r.platform ?? "any",
-    model: r.amount_model === "tier" ? "tier" : r.amount_model === "format" ? "format" : "flat",
-    flatUsd: (r.amount_cents ?? 0) / 100,
-    // For tier/format, amount_cents is the guaranteed base; for flat it IS the amount.
-    baseUsd: r.amount_model === "flat" ? 0 : (r.amount_cents ?? 0) / 100,
-    bands: (r.tiers ?? []).map((t) => ({
-      minReach: t.min_reach ?? 0,
-      maxReach: t.max_reach && t.max_reach < BIG_REACH ? t.max_reach : 0,
-      usd: t.amount_cents / 100,
-    })),
-    formatUsd: { reel: (fa.reel ?? 0) / 100, post: (fa.post ?? 0) / 100, story: (fa.story ?? 0) / 100 },
-    shareMedia: cleanMedia((r.reward_campaigns.share_media ?? []) as ShareMediaItem[]),
-    budgetUsd: r.reward_campaigns.budget_cap_cents != null ? r.reward_campaigns.budget_cap_cents / 100 : null,
+    active: camp.status === "active",
+    platforms,
+    shareMedia: cleanMedia((camp.share_media ?? []) as ShareMediaItem[]),
+    budgetUsd: camp.budget_cap_cents != null ? camp.budget_cap_cents / 100 : null,
+  };
+}
+
+type RuleFields = {
+  trigger: "ugc_post";
+  platform: string;
+  amount_model: "flat" | "tier" | "format";
+  min_order_cents: number;
+  amount_cents: number | null;
+  tiers: Json;
+  format_amounts: Json;
+};
+
+/** Validate one platform's config and build its reward_rules row, or an error. */
+function buildRuleFields(pr: PlatformRule): { fields: RuleFields } | { error: string } {
+  const baseCents = Math.max(0, Math.round((pr.baseUsd ?? 0) * 100));
+  let amountCents: number | null = null;
+  let tiers: { min_reach: number; max_reach: number; amount_cents: number }[] | null = null;
+  let formatAmounts: Record<string, number> | null = null;
+  const name = pr.platform[0].toUpperCase() + pr.platform.slice(1);
+
+  if (pr.model === "flat") {
+    amountCents = Math.max(0, Math.round(pr.flatUsd * 100));
+    if (amountCents <= 0) return { error: `Set a credit amount for ${name}.` };
+  } else if (pr.model === "tier") {
+    amountCents = baseCents;
+    tiers = (pr.bands ?? [])
+      .filter((b) => b.usd > 0)
+      .map((b) => ({
+        min_reach: Math.max(0, Math.round(b.minReach)),
+        max_reach: b.maxReach > 0 ? Math.round(b.maxReach) : BIG_REACH,
+        amount_cents: Math.round(b.usd * 100),
+      }))
+      .sort((a, b) => a.min_reach - b.min_reach);
+    if (!tiers.length) return { error: `Add at least one reach band for ${name}.` };
+  } else {
+    amountCents = baseCents;
+    const keys = PLATFORM_FORMATS[pr.platform] ?? [];
+    const built: Record<string, number> = {};
+    for (const k of keys) {
+      const cents = Math.max(0, Math.round((pr.formatUsd?.[k] ?? 0) * 100));
+      if (cents > 0) built[k] = cents;
+    }
+    if (!Object.keys(built).length) return { error: `Set a credit amount for at least one ${name} format.` };
+    formatAmounts = built;
+  }
+  return {
+    fields: {
+      trigger: "ugc_post" as const,
+      platform: pr.platform,
+      amount_model: pr.model,
+      min_order_cents: 0,
+      amount_cents: amountCents,
+      tiers: tiers as unknown as Json,
+      format_amounts: formatAmounts as unknown as Json,
+    },
   };
 }
 
@@ -194,68 +277,34 @@ export async function savePostEarn(input: PostEarnConfig): Promise<SaveResult> {
 
   const budgetCents = input.budgetUsd != null && Number.isFinite(input.budgetUsd)
     ? Math.max(0, Math.round(input.budgetUsd * 100)) : null;
-  const platform = input.platform === "any" ? null : input.platform;
-
-  // A guaranteed base per post (paid on approval) that stacks under the reach/
-  // format bonus. Only meaningful for tier/format; flat's amount IS its base.
-  const baseCents = Math.max(0, Math.round((input.baseUsd ?? 0) * 100));
-  let amountCents: number | null = null;
-  let tiers: { min_reach: number; max_reach: number; amount_cents: number }[] | null = null;
-  let formatAmounts: Record<string, number> | null = null;
-  if (input.model === "flat") {
-    amountCents = Math.max(0, Math.round(input.flatUsd * 100));
-    if (amountCents <= 0) return { ok: false, error: "Set a credit amount per post." };
-  } else if (input.model === "tier") {
-    amountCents = baseCents; // guaranteed base
-    tiers = input.bands
-      .filter((b) => b.usd > 0)
-      .map((b) => ({
-        min_reach: Math.max(0, Math.round(b.minReach)),
-        max_reach: b.maxReach > 0 ? Math.round(b.maxReach) : BIG_REACH,
-        amount_cents: Math.round(b.usd * 100),
-      }))
-      .sort((a, b) => a.min_reach - b.min_reach);
-    if (!tiers.length) return { ok: false, error: "Add at least one reach band with an amount." };
-  } else {
-    amountCents = baseCents; // guaranteed base
-    const f = input.formatUsd ?? emptyFormats();
-    const built: Record<string, number> = {};
-    for (const k of ["reel", "post", "story"] as const) {
-      const cents = Math.max(0, Math.round((f[k] ?? 0) * 100));
-      if (cents > 0) built[k] = cents;
-    }
-    if (!Object.keys(built).length) return { ok: false, error: "Set a credit amount for at least one format (reel, post, or story)." };
-    formatAmounts = built;
-  }
   const media = cleanMedia(input.shareMedia);
-  const ruleFields = {
-    trigger: "ugc_post" as const,
-    platform,
-    amount_model: input.model,
-    min_order_cents: 0,
-    amount_cents: amountCents,
-    tiers: tiers as unknown as Json,
-    format_amounts: formatAmounts as unknown as Json,
-  };
-
-  const admin = createAdminClient();
   const status = input.active ? "active" : "paused";
 
-  const { data: existing } = await admin
+  // Validate + build the rule row for every enabled platform up front.
+  const enabled = (input.platforms ?? []).filter((p) => p.enabled);
+  if (!enabled.length) return { ok: false, error: "Enable at least one platform." };
+  const built: { platform: string; fields: RuleFields }[] = [];
+  for (const pr of enabled) {
+    const r = buildRuleFields(pr);
+    if ("error" in r) return { ok: false, error: r.error };
+    built.push({ platform: pr.platform.toLowerCase(), fields: r.fields });
+  }
+
+  const admin = createAdminClient();
+
+  // Find (or create) the store's single Post & Earn campaign.
+  const { data: anyRule } = await admin
     .from("reward_rules")
-    .select("id, campaign_id, reward_campaigns!inner(store_id)")
+    .select("campaign_id, reward_campaigns!inner(store_id)")
     .eq("trigger", "ugc_post")
     .eq("reward_campaigns.store_id", gate.storeId)
     .limit(1)
     .maybeSingle();
-
-  if (existing) {
-    const e = existing as unknown as { id: string; campaign_id: string };
+  let campaignId = (anyRule as unknown as { campaign_id: string } | null)?.campaign_id ?? null;
+  if (campaignId) {
     await admin.from("reward_campaigns").update({
       status, budget_cap_cents: budgetCents, share_media: media as unknown as Json,
-    }).eq("id", e.campaign_id);
-    const { error } = await admin.from("reward_rules").update(ruleFields).eq("id", e.id);
-    if (error) return { ok: false, error: "Couldn't save the offer." };
+    }).eq("id", campaignId);
   } else {
     const { data: camp, error: cErr } = await admin.from("reward_campaigns").insert({
       store_id: gate.storeId, name: "Post & Earn", preset: "launch_buzz", status,
@@ -263,9 +312,36 @@ export async function savePostEarn(input: PostEarnConfig): Promise<SaveResult> {
       share_media: media as unknown as Json,
     }).select("id").single();
     if (cErr || !camp) return { ok: false, error: "Couldn't create the campaign." };
-    const { error: rErr } = await admin.from("reward_rules").insert({ campaign_id: camp.id, ...ruleFields });
-    if (rErr) return { ok: false, error: "Couldn't save the offer." };
+    campaignId = camp.id;
   }
+  if (!campaignId) return { ok: false, error: "Couldn't resolve the campaign." };
+
+  // Existing per-platform rules for this campaign.
+  const { data: existingRules } = await admin
+    .from("reward_rules").select("id, platform").eq("campaign_id", campaignId).eq("trigger", "ugc_post");
+  const existingByPlatform = new Map(
+    (existingRules ?? []).map((r) => [String(r.platform ?? "").toLowerCase(), r.id as string]),
+  );
+  const enabledPlatforms = new Set(built.map((b) => b.platform));
+
+  // Upsert each enabled platform's rule.
+  for (const b of built) {
+    const id = existingByPlatform.get(b.platform);
+    const { error } = id
+      ? await admin.from("reward_rules").update(b.fields).eq("id", id)
+      : await admin.from("reward_rules").insert({ campaign_id: campaignId, ...b.fields });
+    if (error) return { ok: false, error: `Couldn't save the ${b.platform} offer.` };
+  }
+
+  // Remove rules for known platforms the owner turned off (leaves any legacy
+  // catch-all rule untouched).
+  const toDelete = (existingRules ?? [])
+    .filter((r) => {
+      const p = String(r.platform ?? "").toLowerCase();
+      return (POST_PLATFORMS as readonly string[]).includes(p) && !enabledPlatforms.has(p);
+    })
+    .map((r) => r.id as string);
+  if (toDelete.length) await admin.from("reward_rules").delete().in("id", toDelete);
 
   revalidatePath("/campaigns");
   return { ok: true };

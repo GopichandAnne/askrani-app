@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { CampaignsClient } from "./campaigns-client";
 import { PostEarnClient } from "./post-earn-client";
 import { loadGiveGet, loadPostEarn, type GiveGetConfig, type PostEarnConfig } from "./actions";
+import { POST_PLATFORMS, PLATFORM_FORMATS } from "./post-earn-shared";
 
 export const metadata: Metadata = { title: "Campaigns · Ask Rani" };
 
@@ -18,12 +19,15 @@ const DEFAULTS: GiveGetConfig = {
 
 const POST_DEFAULTS: PostEarnConfig = {
   active: false,
-  platform: "instagram",
-  model: "flat",
-  flatUsd: 5,
-  baseUsd: 0,
-  bands: [],
-  formatUsd: { reel: 8, post: 5, story: 3 },
+  platforms: POST_PLATFORMS.map((p) => ({
+    platform: p,
+    enabled: p === "instagram", // Instagram on by default; others opt-in
+    model: "flat",
+    flatUsd: 5,
+    baseUsd: 0,
+    bands: [],
+    formatUsd: Object.fromEntries((PLATFORM_FORMATS[p] ?? []).map((k) => [k, 0])),
+  })),
   shareMedia: [],
   budgetUsd: 200,
 };
