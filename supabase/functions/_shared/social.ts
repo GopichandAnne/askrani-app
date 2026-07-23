@@ -34,17 +34,18 @@ export function platformFromUrl(url: string): string | null {
   return null;
 }
 
-export type PostCampaign = { campaignId: string; rules: PostRule[]; shareMedia: ShareMedia[] };
+export type PostCampaign = { campaignId: string; rules: PostRule[]; shareMedia: ShareMedia[]; promoContext: string | null };
 
 /** The store's active Post & Earn campaign: ALL its ugc_post rules (one per
- *  platform) plus shareable media. Null when no offer is running. */
+ *  platform), shareable media, and the owner's "what to promote" context. Null
+ *  when no offer is running. */
 export async function activePostCampaign(
   db: SupabaseClient,
   storeId: string,
 ): Promise<PostCampaign | null> {
   const { data } = await db
     .from("reward_rules")
-    .select(`${RULE_COLS}, campaign_id, reward_campaigns!inner(status, store_id, share_media)`)
+    .select(`${RULE_COLS}, campaign_id, reward_campaigns!inner(status, store_id, share_media, promo_context)`)
     .eq("trigger", "ugc_post")
     .eq("reward_campaigns.store_id", storeId)
     .eq("reward_campaigns.status", "active");
@@ -57,7 +58,8 @@ export async function activePostCampaign(
       return typeof u === "string" && /^https:\/\/\S+$/.test(u);
     })
     : [];
-  return { campaignId: rows[0].campaign_id, rules: rows.map((r) => r as PostRule), shareMedia: media };
+  const promoContext = (rows[0].reward_campaigns?.promo_context ?? null) as string | null;
+  return { campaignId: rows[0].campaign_id, rules: rows.map((r) => r as PostRule), shareMedia: media, promoContext };
 }
 
 /** Pick the rule for a platform: exact match first, then a catch-all rule

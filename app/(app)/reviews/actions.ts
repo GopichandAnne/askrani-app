@@ -19,6 +19,7 @@ export type PendingSubmission = {
   postUrl: string;
   pricing: "flat" | "tier" | "format"; // tier -> reviewer enters reach; format -> reviewer picks format
   formats: FormatOption[];             // priced formats (pricing === 'format')
+  promoContext: string | null;         // what the owner asked people to post about
   createdAt: string;
 };
 type Result = { ok: true; amountUsd?: number } | { ok: false; error: string };
@@ -41,15 +42,22 @@ export async function loadSubmissions(): Promise<PendingSubmission[]> {
   const admin = createAdminClient();
   const { data } = await admin
     .from("social_submissions")
-    .select("id, platform, format, post_url, created_at, member_id, rule_id")
+    .select("id, platform, format, post_url, created_at, member_id, rule_id, campaign_id")
     .eq("store_id", gate.storeId)
     .eq("status", "submitted")
     .order("created_at", { ascending: true });
   const subs = (data ?? []) as unknown as {
     id: string; platform: string | null; format: string | null; post_url: string;
-    created_at: string; member_id: string; rule_id: string | null;
+    created_at: string; member_id: string; rule_id: string | null; campaign_id: string | null;
   }[];
   if (!subs.length) return [];
+
+  const campaignIds = [...new Set(subs.map((s) => s.campaign_id).filter(Boolean))] as string[];
+  const promoById = new Map<string, string | null>();
+  if (campaignIds.length) {
+    const { data: camps } = await admin.from("reward_campaigns").select("id, promo_context").in("id", campaignIds);
+    for (const c of camps ?? []) promoById.set(c.id as string, (c.promo_context as string | null) ?? null);
+  }
 
   const memberIds = [...new Set(subs.map((s) => s.member_id))];
   const { data: members } = await admin.from("store_members").select("id, display_name").in("id", memberIds);
@@ -80,6 +88,7 @@ export async function loadSubmissions(): Promise<PendingSubmission[]> {
       postUrl: s.post_url,
       pricing: pricing as PendingSubmission["pricing"],
       formats: rule?.formats ?? [],
+      promoContext: s.campaign_id ? promoById.get(s.campaign_id) ?? null : null,
       createdAt: s.created_at,
     };
   });

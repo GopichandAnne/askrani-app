@@ -895,6 +895,7 @@ export type Database = {
           name: string
           per_poster_cap_cents: number | null
           preset: string | null
+          promo_context: string | null
           share_media: Json
           starts_at: string | null
           status: Database["public"]["Enums"]["reward_campaign_status"]
@@ -915,6 +916,7 @@ export type Database = {
           name: string
           per_poster_cap_cents?: number | null
           preset?: string | null
+          promo_context?: string | null
           share_media?: Json
           starts_at?: string | null
           status?: Database["public"]["Enums"]["reward_campaign_status"]
@@ -935,6 +937,7 @@ export type Database = {
           name?: string
           per_poster_cap_cents?: number | null
           preset?: string | null
+          promo_context?: string | null
           share_media?: Json
           starts_at?: string | null
           status?: Database["public"]["Enums"]["reward_campaign_status"]
@@ -1751,6 +1754,7 @@ export type Database = {
           pricing_folder_id: string | null
           product_source: string | null
           prompt_file_id: string | null
+          redemption_rules: Json
           session_minutes: number
           slug: string
           store_display_name: string | null
@@ -1782,6 +1786,7 @@ export type Database = {
           pricing_folder_id?: string | null
           product_source?: string | null
           prompt_file_id?: string | null
+          redemption_rules?: Json
           session_minutes?: number
           slug: string
           store_display_name?: string | null
@@ -1813,6 +1818,7 @@ export type Database = {
           pricing_folder_id?: string | null
           product_source?: string | null
           prompt_file_id?: string | null
+          redemption_rules?: Json
           session_minutes?: number
           slug?: string
           store_display_name?: string | null

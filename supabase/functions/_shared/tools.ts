@@ -1102,13 +1102,15 @@ async function executeSubmitPost(
     for (const m of camp.shareMedia.slice(0, PHOTO_SEND_LIMIT)) {
       if (/^https:\/\/\S+$/.test(m.url) && await recordAndSend(db, store, sessionId, m.url, m.label ?? "")) mediaSent++;
     }
+    const promo = (camp.promoContext ?? "").trim();
     return {
       ok: true,
       has_offer: true,
       offers,
       platforms,
+      promote: promo || undefined,
       media_sent: mediaSent,
-      note: `Post-for-credit offers by platform — ${offers.join(" · ")}. The post must include the required #ad or #gifted tag.${mediaSent > 0 ? " I just sent them ready-to-post images they can share." : ""} Tell them the offer for whichever platform they'll use, then ask for the post link and call this again with url + disclosure_confirmed=true. Different platforms/formats can pay differently.`,
+      note: `Post-for-credit offers by platform — ${offers.join(" · ")}.${promo ? ` The store wants posts about: ${promo} — tell them this is what to feature.` : ""} The post must include the required #ad or #gifted tag.${mediaSent > 0 ? " I just sent them ready-to-post images they can share." : ""} Tell them the offer for whichever platform they'll use, then ask for the post link and call this again with url + disclosure_confirmed=true. Different platforms/formats can pay differently.`,
     };
   }
 

@@ -12,26 +12,43 @@ import {
   confirmPass,
   lookupByCode,
   lookupByPhone,
+  saveRedemptionRules,
   type PassMatch,
   type PhoneMatch,
+  type RedemptionRules,
 } from "./actions";
 
 const usd = (n: number) => `$${n.toFixed(2)}`;
+const money = (s: string) => s.replace(/[^\d.]/g, "");
 
-export function RedemptionsClient() {
+export function RedemptionsClient({ rules, isOwner }: { rules: RedemptionRules; isOwner: boolean }) {
+  const hasGuardrails = rules.minBillUsd > 0 || rules.maxRedeemUsd > 0 || rules.exclusionNote.trim().length > 0;
   return (
-    <Tabs defaultValue="code" className="max-w-xl">
-      <TabsList className="mb-4">
-        <TabsTrigger value="code">Enter code</TabsTrigger>
-        <TabsTrigger value="phone">By phone</TabsTrigger>
-      </TabsList>
-      <TabsContent value="code"><CodePanel /></TabsContent>
-      <TabsContent value="phone"><PhonePanel /></TabsContent>
-    </Tabs>
+    <div className="max-w-xl space-y-5">
+      {hasGuardrails && (
+        <div className="bg-secondary/60 text-secondary-foreground rounded-lg border p-3 text-sm">
+          <p className="mb-1 font-medium">Redemption rules</p>
+          <ul className="text-muted-foreground space-y-0.5 text-xs">
+            {rules.minBillUsd > 0 && <li>• Minimum purchase: {usd(rules.minBillUsd)}</li>}
+            {rules.maxRedeemUsd > 0 && <li>• Max credit per visit: {usd(rules.maxRedeemUsd)}</li>}
+            {rules.exclusionNote.trim() && <li>• {rules.exclusionNote}</li>}
+          </ul>
+        </div>
+      )}
+      <Tabs defaultValue="code">
+        <TabsList className="mb-4">
+          <TabsTrigger value="code">Enter code</TabsTrigger>
+          <TabsTrigger value="phone">By phone</TabsTrigger>
+        </TabsList>
+        <TabsContent value="code"><CodePanel minBillUsd={rules.minBillUsd} /></TabsContent>
+        <TabsContent value="phone"><PhonePanel /></TabsContent>
+      </Tabs>
+      {isOwner && <RulesConfig initial={rules} />}
+    </div>
   );
 }
 
-function CodePanel() {
+function CodePanel({ minBillUsd }: { minBillUsd: number }) {
   const [code, setCode] = useState("");
   const [match, setMatch] = useState<PassMatch | null>(null);
   const [bill, setBill] = useState("");
@@ -85,15 +102,24 @@ function CodePanel() {
             <p className="text-sm text-muted-foreground">Balance on account: {usd(match.balanceUsd)}</p>
             <div className="space-y-2">
               <Label htmlFor="bill" className="text-xs text-muted-foreground">
-                Bill smaller than the credit? Enter it to redeem only that (optional)
+                {minBillUsd > 0
+                  ? `Bill total (minimum ${usd(minBillUsd)} to redeem)`
+                  : "Bill smaller than the credit? Enter it to redeem only that (optional)"}
               </Label>
               <Input
                 id="bill" inputMode="decimal" placeholder={match.amountUsd.toFixed(2)} value={bill}
                 onChange={(e) => setBill(e.target.value.replace(/[^\d.]/g, ""))}
                 className="w-32 tabular-nums"
               />
+              {minBillUsd > 0 && bill.trim() && Number(bill) < minBillUsd && (
+                <p className="text-destructive text-xs">Below the {usd(minBillUsd)} minimum.</p>
+              )}
             </div>
-            <Button onClick={confirm} disabled={pending} className="w-full">
+            <Button
+              onClick={confirm}
+              disabled={pending || (minBillUsd > 0 && (!bill.trim() || Number(bill) < minBillUsd))}
+              className="w-full"
+            >
               Confirm &amp; apply {usd(bill.trim() ? Math.min(Number(bill) || 0, match.amountUsd) : match.amountUsd)} discount
             </Button>
             <p className="text-xs text-muted-foreground">Apply this as a discount on your register. Rani never charges the customer.</p>
@@ -168,6 +194,57 @@ function PhonePanel() {
             </div>
           </div>
         ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+function RulesConfig({ initial }: { initial: RedemptionRules }) {
+  const [minBill, setMinBill] = useState(initial.minBillUsd ? String(initial.minBillUsd) : "");
+  const [maxRedeem, setMaxRedeem] = useState(initial.maxRedeemUsd ? String(initial.maxRedeemUsd) : "");
+  const [note, setNote] = useState(initial.exclusionNote);
+  const [pending, start] = useTransition();
+
+  const save = () =>
+    start(async () => {
+      const r = await saveRedemptionRules({
+        minBillUsd: Number(minBill) || 0,
+        maxRedeemUsd: Number(maxRedeem) || 0,
+        exclusionNote: note,
+      });
+      if (r.ok) toast.success("Redemption rules saved.");
+      else toast.error(r.error);
+    });
+
+  return (
+    <Card>
+      <CardHeader><CardTitle className="text-base">Redemption rules (owner)</CardTitle></CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-muted-foreground text-sm">
+          Guardrails for cost control. Leave a field blank for no limit.
+        </p>
+        <div className="flex flex-wrap gap-4">
+          <div className="space-y-1.5">
+            <Label className="text-muted-foreground text-xs">Minimum purchase ($)</Label>
+            <Input inputMode="decimal" value={minBill} onChange={(e) => setMinBill(money(e.target.value))} placeholder="none" className="w-32 tabular-nums" />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-muted-foreground text-xs">Max credit per visit ($)</Label>
+            <Input inputMode="decimal" value={maxRedeem} onChange={(e) => setMaxRedeem(money(e.target.value))} placeholder="no cap" className="w-32 tabular-nums" />
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-muted-foreground text-xs">Exclusion note (shown to staff)</Label>
+          <Input
+            value={note}
+            onChange={(e) => setNote(e.target.value.slice(0, 200))}
+            placeholder="e.g. Credit not valid on alcohol, tobacco or gift cards"
+          />
+          <p className="text-muted-foreground text-xs">
+            We can&apos;t block items automatically without your register data — this reminds staff to enter only the eligible subtotal.
+          </p>
+        </div>
+        <Button onClick={save} disabled={pending}>{pending ? "Saving…" : "Save rules"}</Button>
       </CardContent>
     </Card>
   );

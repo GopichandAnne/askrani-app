@@ -90,6 +90,13 @@ export async function confirmPass(passId: string, billUsd?: number): Promise<Con
   if (!gate.ok) return gate;
   const admin = createAdminClient();
   const billCents = billUsd != null && Number.isFinite(billUsd) ? Math.round(billUsd * 100) : null;
+
+  // If the store sets a minimum purchase, the bill is required to check it.
+  const { data: st } = await admin.from("stores").select("redemption_rules").eq("id", gate.storeId).maybeSingle();
+  const minCents = Number((st?.redemption_rules as { min_bill_cents?: number } | null)?.min_bill_cents ?? 0);
+  if (minCents > 0 && billCents == null) {
+    return { ok: false, error: `Enter the bill total — redemption needs a minimum $${(minCents / 100).toFixed(2)} purchase.` };
+  }
   // supabase's type-gen marks all SQL function args non-nullable, but these are
   // nullable in SQL (staff/order-ref optional; a null bill = redeem the full pass).
   const { data, error } = await admin.rpc("confirm_redemption", {
@@ -178,6 +185,48 @@ function friendlyErr(code?: string): string {
     case "pass_confirmed": return "That code was already used.";
     case "pass_expired": return "That code has expired — ask them to tap “use my credit” again.";
     case "no_balance": return "No credit left to redeem.";
+    case "below_minimum": return "That bill is below the minimum purchase for redeeming credit.";
     default: return "Couldn't confirm this redemption.";
   }
+}
+
+// ── Owner: redemption guardrails (store-wide) ────────────────────────────────
+export type RedemptionRules = { minBillUsd: number; maxRedeemUsd: number; exclusionNote: string };
+
+/** Read the store's redemption guardrails, plus whether the caller may edit them. */
+export async function getRedemptionRules(): Promise<{ rules: RedemptionRules; isOwner: boolean }> {
+  const empty: RedemptionRules = { minBillUsd: 0, maxRedeemUsd: 0, exclusionNote: "" };
+  const ctx = await getActiveStore();
+  if (!ctx?.active) return { rules: empty, isOwner: false };
+  const supabase = await createClient();
+  const { data: isOwner } = await supabase.rpc("user_is_owner", { p_store_id: ctx.active.id });
+  const admin = createAdminClient();
+  const { data } = await admin.from("stores").select("redemption_rules").eq("id", ctx.active.id).maybeSingle();
+  const r = (data?.redemption_rules ?? {}) as { min_bill_cents?: number; max_redeem_cents?: number; exclusion_note?: string };
+  return {
+    rules: {
+      minBillUsd: (r.min_bill_cents ?? 0) / 100,
+      maxRedeemUsd: (r.max_redeem_cents ?? 0) / 100,
+      exclusionNote: r.exclusion_note ?? "",
+    },
+    isOwner: !!isOwner || !!ctx.isPlatformAdmin,
+  };
+}
+
+export async function saveRedemptionRules(input: RedemptionRules): Promise<{ ok: true } | { ok: false; error: string }> {
+  const ctx = await getActiveStore();
+  if (!ctx?.active) return { ok: false, error: "No active store." };
+  const supabase = await createClient();
+  const { data: isOwner } = await supabase.rpc("user_is_owner", { p_store_id: ctx.active.id });
+  if (!isOwner && !ctx.isPlatformAdmin) return { ok: false, error: "Only owners can change redemption rules." };
+  const admin = createAdminClient();
+  const rules = {
+    min_bill_cents: Math.max(0, Math.round((input.minBillUsd || 0) * 100)),
+    max_redeem_cents: Math.max(0, Math.round((input.maxRedeemUsd || 0) * 100)),
+    exclusion_note: (input.exclusionNote || "").trim().slice(0, 200),
+  };
+  const { error } = await admin.from("stores").update({ redemption_rules: rules }).eq("id", ctx.active.id);
+  if (error) return { ok: false, error: "Couldn't save the rules." };
+  revalidatePath("/redemptions");
+  return { ok: true };
 }

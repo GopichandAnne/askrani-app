@@ -139,6 +139,7 @@ export type PlatformRule = {
 export type PostEarnConfig = {
   active: boolean;
   platforms: PlatformRule[];         // every known platform; enabled ones are offered
+  promoContext: string;              // "what to promote" — Rani tells customers, reviewers check relevance
   shareMedia: ShareMediaItem[];      // owner-uploaded images Rani hands out to post
   budgetUsd: number | null;          // shared budget across platforms
 };
@@ -170,7 +171,7 @@ type PostRuleRow = {
   amount_cents: number | null;
   tiers: { min_reach?: number; max_reach?: number; amount_cents: number }[] | null;
   format_amounts: Record<string, number> | null;
-  reward_campaigns: { status: string; budget_cap_cents: number | null; share_media: ShareMediaItem[] | null };
+  reward_campaigns: { status: string; budget_cap_cents: number | null; share_media: ShareMediaItem[] | null; promo_context: string | null };
 };
 
 export async function loadPostEarn(): Promise<PostEarnConfig | null> {
@@ -179,7 +180,7 @@ export async function loadPostEarn(): Promise<PostEarnConfig | null> {
   const admin = createAdminClient();
   const { data: rules } = await admin
     .from("reward_rules")
-    .select("platform, amount_model, amount_cents, tiers, format_amounts, reward_campaigns!inner(status, store_id, budget_cap_cents, share_media)")
+    .select("platform, amount_model, amount_cents, tiers, format_amounts, reward_campaigns!inner(status, store_id, budget_cap_cents, share_media, promo_context)")
     .eq("trigger", "ugc_post")
     .eq("reward_campaigns.store_id", gate.storeId);
   const rows = (rules ?? []) as unknown as PostRuleRow[];
@@ -210,6 +211,7 @@ export async function loadPostEarn(): Promise<PostEarnConfig | null> {
   return {
     active: camp.status === "active",
     platforms,
+    promoContext: camp.promo_context ?? "",
     shareMedia: cleanMedia((camp.share_media ?? []) as ShareMediaItem[]),
     budgetUsd: camp.budget_cap_cents != null ? camp.budget_cap_cents / 100 : null,
   };
@@ -278,6 +280,7 @@ export async function savePostEarn(input: PostEarnConfig): Promise<SaveResult> {
   const budgetCents = input.budgetUsd != null && Number.isFinite(input.budgetUsd)
     ? Math.max(0, Math.round(input.budgetUsd * 100)) : null;
   const media = cleanMedia(input.shareMedia);
+  const promoContext = (input.promoContext ?? "").trim().slice(0, 500) || null;
   const status = input.active ? "active" : "paused";
 
   // Validate + build the rule row for every enabled platform up front.
@@ -303,13 +306,13 @@ export async function savePostEarn(input: PostEarnConfig): Promise<SaveResult> {
   let campaignId = (anyRule as unknown as { campaign_id: string } | null)?.campaign_id ?? null;
   if (campaignId) {
     await admin.from("reward_campaigns").update({
-      status, budget_cap_cents: budgetCents, share_media: media as unknown as Json,
+      status, budget_cap_cents: budgetCents, share_media: media as unknown as Json, promo_context: promoContext,
     }).eq("id", campaignId);
   } else {
     const { data: camp, error: cErr } = await admin.from("reward_campaigns").insert({
       store_id: gate.storeId, name: "Post & Earn", preset: "launch_buzz", status,
       channel_flags: { post_for_credit: true }, budget_cap_cents: budgetCents,
-      share_media: media as unknown as Json,
+      share_media: media as unknown as Json, promo_context: promoContext,
     }).select("id").single();
     if (cErr || !camp) return { ok: false, error: "Couldn't create the campaign." };
     campaignId = camp.id;
@@ -345,6 +348,53 @@ export async function savePostEarn(input: PostEarnConfig): Promise<SaveResult> {
 
   revalidatePath("/campaigns");
   return { ok: true };
+}
+
+// ── Results summary (co-marketing ROI) ───────────────────────────────────────
+export type CampaignResults = {
+  earnedUsd: number;        // total store credit accrued (all time)
+  outstandingUsd: number;   // liability: held + released-unexpired credit that could be spent
+  redeemedUsd: number;      // credit actually redeemed to date
+  referralOrders: number;   // friends' orders driven by Share & Earn
+  postsApproved: number;
+  postsPending: number;
+};
+
+/** Aggregate the store's co-marketing results — what the loops earned customers,
+ *  what's outstanding (a liability), what's been redeemed, and activity counts. */
+export async function loadResults(): Promise<CampaignResults | null> {
+  const gate = await requireOwner();
+  if (!gate.ok) return null;
+  const admin = createAdminClient();
+  const nowIso = new Date().toISOString();
+
+  const [ledgerRes, redRes, evRes, approvedRes, pendingRes] = await Promise.all([
+    admin.from("reward_ledger").select("amount_cents, status, expires_at").eq("store_id", gate.storeId).in("status", ["held", "released"]),
+    admin.from("reward_redemptions").select("amount_cents, redemption_passes!inner(store_id)").eq("redemption_passes.store_id", gate.storeId),
+    admin.from("reward_events").select("computed_amount_cents, source_type, reward_campaigns!inner(store_id)").eq("reward_campaigns.store_id", gate.storeId),
+    admin.from("social_submissions").select("id", { count: "exact", head: true }).eq("store_id", gate.storeId).eq("status", "approved"),
+    admin.from("social_submissions").select("id", { count: "exact", head: true }).eq("store_id", gate.storeId).eq("status", "submitted"),
+  ]);
+
+  let outstanding = 0;
+  for (const l of (ledgerRes.data ?? []) as { amount_cents: number; status: string; expires_at: string | null }[]) {
+    if (l.status === "held" || (l.status === "released" && (!l.expires_at || l.expires_at > nowIso))) outstanding += Number(l.amount_cents || 0);
+  }
+  const redeemed = ((redRes.data ?? []) as { amount_cents: number }[]).reduce((s, r) => s + Number(r.amount_cents || 0), 0);
+  let earned = 0, referralOrders = 0;
+  for (const e of (evRes.data ?? []) as { computed_amount_cents: number; source_type: string }[]) {
+    earned += Number(e.computed_amount_cents || 0);
+    if (e.source_type === "referral_order") referralOrders++;
+  }
+
+  return {
+    earnedUsd: earned / 100,
+    outstandingUsd: outstanding / 100,
+    redeemedUsd: redeemed / 100,
+    referralOrders,
+    postsApproved: approvedRes.count ?? 0,
+    postsPending: pendingRes.count ?? 0,
+  };
 }
 
 /** Upload a shareable-media image to the public branding bucket; returns its URL.

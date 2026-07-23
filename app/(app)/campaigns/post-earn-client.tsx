@@ -61,6 +61,7 @@ const fromDraft = (d: Draft): PlatformRule => ({
 export function PostEarnClient({ initial }: { initial: PostEarnConfig }) {
   const [active, setActive] = useState(initial.active);
   const [drafts, setDrafts] = useState<Draft[]>(initial.platforms.map(toDraft));
+  const [promo, setPromo] = useState(initial.promoContext);
   const [media, setMedia] = useState<ShareMediaItem[]>(initial.shareMedia);
   const [budget, setBudget] = useState(initial.budgetUsd != null ? String(initial.budgetUsd) : "");
   const [uploading, setUploading] = useState(false);
@@ -89,6 +90,7 @@ export function PostEarnClient({ initial }: { initial: PostEarnConfig }) {
       const r = await savePostEarn({
         active,
         platforms: drafts.map(fromDraft),
+        promoContext: promo,
         shareMedia: media,
         budgetUsd: budget.trim() ? Number(budget) : null,
       });
@@ -118,6 +120,19 @@ export function PostEarnClient({ initial }: { initial: PostEarnConfig }) {
           Set up each platform separately — a YouTube video can pay differently from an Instagram story.
           Verification is manual; you confirm each post before it pays.
         </p>
+
+        <div className="space-y-1.5">
+          <Label className="text-muted-foreground text-xs" htmlFor="promo">What should they post about? (optional)</Label>
+          <textarea
+            id="promo"
+            value={promo}
+            onChange={(e) => setPromo(e.target.value.slice(0, 500))}
+            rows={2}
+            placeholder="e.g. Our weekend biryani special, or the new mango season arrivals"
+            className="border-input bg-background focus-visible:ring-ring w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1"
+          />
+          <p className="text-muted-foreground text-xs">Rani tells customers what to feature, and it shows in Post reviews so you can check the post is on-topic.</p>
+        </div>
 
         <div className="space-y-3">
           <Label className="text-muted-foreground text-xs">Platforms {enabledCount > 0 ? `(${enabledCount} on)` : ""}</Label>

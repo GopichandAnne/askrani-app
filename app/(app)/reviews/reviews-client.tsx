@@ -66,6 +66,12 @@ export function ReviewsClient({ initial }: { initial: PendingSubmission[] }) {
                 </a>
               </div>
 
+              {s.promoContext && (
+                <p className="text-muted-foreground text-xs">
+                  Should be about: <span className="text-foreground">{s.promoContext}</span>
+                </p>
+              )}
+
               {needsFormat && (
                 <div className="space-y-1.5">
                   <label className="text-muted-foreground text-xs">Which format did they post?</label>
