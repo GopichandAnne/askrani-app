@@ -279,6 +279,20 @@ Deno.serve(async (req) => {
         .filter((o) => o.items.length > 0);
       return json({ orders: recent });
     }
+    // Store-wide "Popular" — the most-ordered in-stock items (last 90 days).
+    case "popular": {
+      const showPrices = await maySeePrices(db, store, { sessionId });
+      const { data, error } = await db.rpc("popular_products", {
+        p_store_id: store.id,
+        p_show_prices: showPrices,
+        p_limit: 24,
+      });
+      if (error) {
+        console.error(`[web-cart] popular: ${error.message}`);
+        return json({ items: [] });
+      }
+      return json({ items: Array.isArray(data) ? data : [] });
+    }
     default:
       return json({ error: `unknown action: ${action}` }, 400);
   }
