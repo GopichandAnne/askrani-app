@@ -32,5 +32,6 @@ export type ProductPatch = Partial<
     | "image_url"
     | "allergens"
     | "dietary"
+    | "modifiers"
   >
 >;

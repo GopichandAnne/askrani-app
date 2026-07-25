@@ -42,6 +42,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Camera, ImageIcon, PackageOpen, Search, Tags, Trash2 } from "lucide-react";
 import { ALLERGENS, DIETARY, labelFor } from "@/lib/dietary";
+import { ModifiersDialog } from "./modifiers-dialog";
 import { cn } from "@/lib/utils";
 
 export function InventoryTable({
@@ -235,6 +236,7 @@ export function InventoryTable({
                 <TableHead className="w-28">SKU</TableHead>
                 <TableHead className="w-32">Price</TableHead>
                 <TableHead className="w-28 text-center">Tags</TableHead>
+                <TableHead className="w-24 text-center">Options</TableHead>
                 <TableHead className="w-24 text-center">In stock</TableHead>
                 <TableHead className="w-24 text-center">Verified</TableHead>
                 <TableHead className="w-12" />
@@ -350,6 +352,9 @@ function ProductRow({
       </TableCell>
       <TableCell className="text-center">
         <RowTagsDialog product={product} isOwner={isOwner} onSave={onSave} />
+      </TableCell>
+      <TableCell className="text-center">
+        <ModifiersDialog product={product} isOwner={isOwner} onSave={onSave} />
       </TableCell>
       <TableCell className="text-center">
         <Switch

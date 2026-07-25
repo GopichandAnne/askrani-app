@@ -7,6 +7,7 @@ import { getActiveStore } from "@/lib/store/active-store";
 import { callBotAdmin } from "@/lib/knowledge/bot-admin";
 import type { Product, ProductInput, ProductPatch } from "@/lib/inventory/types";
 import { cleanAllergens, cleanDietary } from "@/lib/dietary";
+import { cleanModifiers } from "@/lib/modifiers";
 
 export type ProductResult =
   | { ok: true; product: Product }
@@ -14,7 +15,7 @@ export type ProductResult =
 export type SimpleResult = { ok: true } | { ok: false; error: string };
 
 const PRODUCT_COLUMNS =
-  "id, store_id, sku, name, brand, size, unit, price, currency, in_stock, verified, category, image_url, allergens, dietary, created_by, created_at, updated_at";
+  "id, store_id, sku, name, brand, size, unit, price, currency, in_stock, verified, category, image_url, allergens, dietary, modifiers, created_by, created_at, updated_at";
 
 function cleanStr(v: string | null | undefined): string | null {
   if (v == null) return null;
@@ -52,6 +53,7 @@ export async function updateProduct(
   if ("verified" in patch) next.verified = !!patch.verified;
   if ("allergens" in patch) next.allergens = cleanAllergens(patch.allergens);
   if ("dietary" in patch) next.dietary = cleanDietary(patch.dietary);
+  if ("modifiers" in patch) next.modifiers = cleanModifiers(patch.modifiers);
 
   // Price is a catalog/money change -> owners only (in_stock/verified are not).
   // Enforced server-side here AND by the DB trigger (0010) for the raw-API path.
