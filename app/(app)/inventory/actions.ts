@@ -159,6 +159,89 @@ export async function uploadProductImage(
   return { ok: true, url: data.publicUrl };
 }
 
+/**
+ * Import a product image from a link the owner already has (their Instagram post,
+ * Google Photos, their own site…). We fetch it once, re-host a durable copy in our
+ * bucket — so a CDN link that expires can't break the menu — and enhance it if the
+ * server image lib is available (else the original bytes are stored). Owners only.
+ */
+export async function importImageFromUrl(
+  rawUrl: string,
+): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+  const ctx = await getActiveStore();
+  if (!ctx?.active) return { ok: false, error: "No active store." };
+  const supabase = await createClient();
+  const { data: ownerFlag } = await supabase.rpc("user_is_owner", { p_store_id: ctx.active.id });
+  if (!ownerFlag) return { ok: false, error: "Only owners can change product images." };
+
+  let u: URL;
+  try {
+    u = new URL(rawUrl.trim());
+  } catch {
+    return { ok: false, error: "That doesn't look like a valid link." };
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") {
+    return { ok: false, error: "Use an http(s) image link." };
+  }
+  // Basic SSRF guard — an owner-supplied link should never reach our own network.
+  const host = u.hostname.toLowerCase();
+  if (
+    host === "localhost" ||
+    host.endsWith(".local") ||
+    /^(127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|0\.)/.test(host)
+  ) {
+    return { ok: false, error: "That link can't be reached." };
+  }
+
+  let resp: Response;
+  try {
+    resp = await fetch(u.href, {
+      headers: { "User-Agent": "AskRani/1.0 (+image-import)" },
+      redirect: "follow",
+      signal: AbortSignal.timeout(12000),
+    });
+  } catch {
+    return { ok: false, error: "Couldn't fetch that link — check it opens in a browser." };
+  }
+  if (!resp.ok) return { ok: false, error: `That link returned ${resp.status}.` };
+  const ct = (resp.headers.get("content-type") ?? "").toLowerCase().split(";")[0];
+  if (!ct.startsWith("image/")) {
+    return { ok: false, error: "That link isn't a direct image — copy the image address, not the page URL." };
+  }
+  const buf = new Uint8Array(await resp.arrayBuffer());
+  if (buf.byteLength === 0) return { ok: false, error: "That image came back empty." };
+  if (buf.byteLength > 15 * 1024 * 1024) return { ok: false, error: "That image is too large (15 MB max)." };
+
+  // Enhance + square-normalize with sharp when available; fall back to the original.
+  let outBytes: Uint8Array = buf;
+  let outType = ct;
+  try {
+    const sharp = (await import("sharp")).default;
+    const out = await sharp(buf)
+      .rotate() // honour EXIF orientation
+      .resize(1000, 1000, { fit: "cover", position: "attention" })
+      .normalize()
+      .modulate({ saturation: 1.12 })
+      .jpeg({ quality: 88 })
+      .toBuffer();
+    outBytes = new Uint8Array(out);
+    outType = "image/jpeg";
+  } catch {
+    // no image lib / unprocessable → store the original bytes, still durable
+  }
+
+  const ext = outType === "image/jpeg" ? "jpg" : ct.split("/")[1]?.replace(/[^a-z0-9]/g, "") || "jpg";
+  const path = `products/${ctx.active.slug}/${crypto.randomUUID()}.${ext}`;
+  const admin = createAdminClient();
+  const { error } = await admin.storage.from("branding").upload(path, outBytes, {
+    contentType: outType,
+    upsert: false,
+  });
+  if (error) return { ok: false, error: error.message };
+  const { data } = admin.storage.from("branding").getPublicUrl(path);
+  return { ok: true, url: data.publicUrl };
+}
+
 // ── Intelligent catalogue import (URL / file / text → extract → preview → add) ──
 export type ExtractedProduct = {
   name: string;

@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { toast } from "sonner";
-import { uploadProductImage } from "@/app/(app)/inventory/actions";
+import { importImageFromUrl, uploadProductImage } from "@/app/(app)/inventory/actions";
 import { enhanceImage } from "@/lib/inventory/enhance-image";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,6 +49,25 @@ export function ImagePicker({
     if (ok) {
       setLastOriginal(enhance ? file : null);
       setWasEnhanced(enhance);
+    }
+  }
+
+  // Paste a link the owner already has (IG post, Google Photos, their site): we
+  // fetch it, re-host a durable copy (so a CDN link that expires can't break the
+  // menu), enhance it, and set it. No fragile hotlinking.
+  async function fetchUrl() {
+    const link = url.trim();
+    if (!link) return;
+    setUploading(true);
+    const res = await importImageFromUrl(link);
+    setUploading(false);
+    if (res.ok) {
+      onChange(res.url);
+      setUrl("");
+      setLastOriginal(null);
+      setWasEnhanced(false);
+    } else {
+      toast.error("Couldn't import that photo", { description: res.error });
     }
   }
 
@@ -116,22 +135,20 @@ export function ImagePicker({
             <Input
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              placeholder="or paste an image URL"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && url.trim()) fetchUrl();
+              }}
+              placeholder="or paste a photo link (Instagram, Google, your site…)"
               className="h-8 text-xs"
             />
             <Button
               type="button"
               size="sm"
               variant="ghost"
-              disabled={!url.trim()}
-              onClick={() => {
-                onChange(url.trim());
-                setUrl("");
-                setLastOriginal(null);
-                setWasEnhanced(false);
-              }}
+              disabled={!url.trim() || uploading}
+              onClick={fetchUrl}
             >
-              Set
+              {uploading ? <Loader2 className="size-4 animate-spin" /> : "Fetch"}
             </Button>
           </div>
         </div>
