@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -39,7 +40,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { ImageIcon, PackageOpen, Search, Tags, Trash2 } from "lucide-react";
+import { Camera, ImageIcon, PackageOpen, Search, Tags, Trash2 } from "lucide-react";
 import { ALLERGENS, DIETARY, labelFor } from "@/lib/dietary";
 import { cn } from "@/lib/utils";
 
@@ -56,6 +57,13 @@ export function InventoryTable({
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [studioOpen, setStudioOpen] = useState(false);
+  const [studioQueue, setStudioQueue] = useState<string[]>([]);
+  const photolessCount = products.filter((p) => !p.image_url).length;
+  function openStudio() {
+    setStudioQueue(products.filter((p) => !p.image_url).map((p) => p.id));
+    setStudioOpen(true);
+  }
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -143,11 +151,25 @@ export function InventoryTable({
         </div>
         {isOwner && (
           <div className="flex items-center gap-2">
+            {photolessCount > 0 && (
+              <Button size="sm" variant="outline" onClick={openStudio}>
+                <Camera className="size-4" /> Add photos ({photolessCount})
+              </Button>
+            )}
             <ImportCatalogueDialog />
             <AddProductDialog onAdded={(p) => setProducts((prev) => [p, ...prev])} />
           </div>
         )}
       </header>
+      {isOwner && (
+        <PhotoStudioDialog
+          open={studioOpen}
+          onOpenChange={setStudioOpen}
+          queueIds={studioQueue}
+          products={products}
+          onSave={save}
+        />
+      )}
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative max-w-sm flex-1">
@@ -547,6 +569,62 @@ function RowTagsDialog({
           >
             Save tags
           </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Guided photo capture: step through the products that have no image yet, snap +
+ *  auto-enhance each on a phone. The queue is snapshotted when opened so the list
+ *  doesn't shift as photos are added. */
+function PhotoStudioDialog({
+  open,
+  onOpenChange,
+  queueIds,
+  products,
+  onSave,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  queueIds: string[];
+  products: Product[];
+  onSave: (id: string, patch: ProductPatch) => void;
+}) {
+  const [idx, setIdx] = useState(0);
+  useEffect(() => {
+    if (open) setIdx(0);
+  }, [open]);
+  if (queueIds.length === 0) return null;
+  const clampedIdx = Math.min(idx, queueIds.length - 1);
+  const product = products.find((p) => p.id === queueIds[clampedIdx]);
+  const last = clampedIdx === queueIds.length - 1;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Add dish photos</DialogTitle>
+          <DialogDescription>
+            {clampedIdx + 1} of {queueIds.length} · {product?.name ?? "—"}
+          </DialogDescription>
+        </DialogHeader>
+        {product ? (
+          <ImagePicker value={product.image_url} onChange={(u) => onSave(product.id, { image_url: u })} />
+        ) : (
+          <p className="text-muted-foreground text-sm">This product is no longer here.</p>
+        )}
+        <DialogFooter className="gap-2 sm:justify-between">
+          <Button size="sm" variant="ghost" disabled={clampedIdx === 0} onClick={() => setIdx((i) => Math.max(0, i - 1))}>
+            Back
+          </Button>
+          {last ? (
+            <Button size="sm" onClick={() => onOpenChange(false)}>Done</Button>
+          ) : (
+            <Button size="sm" onClick={() => setIdx((i) => i + 1)}>
+              {product?.image_url ? "Next" : "Skip"}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
