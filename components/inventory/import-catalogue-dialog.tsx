@@ -337,6 +337,18 @@ export function ImportCatalogueDialog() {
                       checked={r.include}
                       onChange={(e) => edit(i, { include: e.target.checked })}
                     />
+                    {r.image_url && (
+                      // Harvested from the source — shown so the owner can spot a wrong/blank photo.
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={r.image_url}
+                        alt=""
+                        className="size-9 shrink-0 rounded border object-cover"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).style.display = "none";
+                        }}
+                      />
+                    )}
                     <Input
                       value={r.name}
                       onChange={(e) => edit(i, { name: e.target.value })}

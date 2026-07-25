@@ -138,9 +138,25 @@ Deno.serve(async (req) => {
             if (ct.includes("pdf") || ct.includes("image")) {
               media = { mime: ct.split(";")[0], data: encodeBase64(new Uint8Array(await r.arrayBuffer())) };
             } else {
+              // Harvest the dish photos the store already has on its own menu page:
+              // keep each <img>'s URL inline (as an [IMAGE: …] marker) so the LLM can
+              // attach it to the item next to it, instead of stripping every tag to
+              // text and losing the photos. Purely additive — no marker → empty, same
+              // as before. Relative srcs are resolved against the page; obvious logos/
+              // icons/tracking pixels are dropped.
               text = (await r.text())
                 .replace(/<script[\s\S]*?<\/script>/gi, " ")
                 .replace(/<style[\s\S]*?<\/style>/gi, " ")
+                .replace(/<img\b[^>]*>/gi, (tag) => {
+                  const m = tag.match(/(?:data-src|data-original|data-lazy-src|src)\s*=\s*["']([^"']+)["']/i);
+                  if (!m) return " ";
+                  let u = m[1].trim();
+                  if (!u || u.startsWith("data:")) return " ";
+                  try { u = new URL(u, url).href; } catch { return " "; }
+                  if (!/^https?:\/\//i.test(u)) return " ";
+                  if (/logo|sprite|icon|favicon|banner|pixel|spacer|placeholder|1x1|\.svg(\?|$)/i.test(u)) return " ";
+                  return ` [IMAGE: ${u}] `;
+                })
                 .replace(/<[^>]+>/g, " ")
                 .replace(/\s+/g, " ")
                 .trim();
@@ -157,7 +173,9 @@ Deno.serve(async (req) => {
           "Rules: include only real purchasable items; infer a sensible category per item; copy the price " +
           'EXACTLY as it appears as a string (e.g. "$6.50", "14.00", "8"), empty string if no price is shown ' +
           "— do NOT round or convert; description is a short line (empty if none); sku empty unless clearly " +
-          "present; image_url only if an item image URL appears in the content, else empty. " +
+          "present; image_url: the content may contain [IMAGE: <url>] markers — set image_url to the " +
+          "marker URL that clearly belongs to THAT item (the nearest one to its name/price), else empty. " +
+          "Never reuse one image for several items and never attach a logo/banner/decorative image. " +
           `allergens: an array of allergens the item LIKELY CONTAINS, chosen ONLY from [${ALLERGEN_IDS.join(", ")}]. ` +
           "Infer from the name/description/ingredients (paneer/cheese/cream/butter/yogurt→milk; " +
           "bread/naan/roti/wheat/batter/soy sauce→gluten; prawn/shrimp/crab→crustaceans; cashew/almond/" +
