@@ -40,6 +40,7 @@ function summarize(lines: CartLine[]) {
       unit_price: l.unit_price,
       line_total: l.line_total,
       request: l.request,
+      modifiers: l.modifiers ?? [],
     })),
     count: lines.reduce((s, l) => s + l.quantity, 0),
     subtotal: cartSubtotal(lines),
@@ -146,10 +147,18 @@ Deno.serve(async (req) => {
         const sku = String(body.sku ?? "").trim();
         const qty = Number(body.quantity ?? 1);
         if (!sku) return json({ error: "sku required" }, 400);
-        const res = await addToCart(db, store, cartSession, sku, qty);
+        // Optional modifier selection: [{group_id, option_id}, …]. Priced server-side.
+        const rawMods = Array.isArray(body.modifiers) ? body.modifiers : null;
+        const mods = rawMods
+          ? rawMods
+            .map((m) => ({ group_id: String((m as { group_id?: unknown }).group_id ?? ""), option_id: String((m as { option_id?: unknown }).option_id ?? "") }))
+            .filter((m) => m.group_id && m.option_id)
+          : null;
+        const res = await addToCart(db, store, cartSession, sku, qty, null, mods);
         return json({
           ok: res.status === "added" || res.status === "removed",
           status: res.status,
+          error: res.error,
           cart: summarize(res.lines),
         });
       }

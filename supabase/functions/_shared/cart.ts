@@ -11,18 +11,22 @@
 
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Store } from "./types.ts";
+import { parseGroups, type ResolvedModifier, type SelectedRef, validateAndPrice } from "./modifiers.ts";
 
 export interface CartLine {
-  sku: string; // real catalog sku, or "req_<id>" for a request item
+  sku: string; // catalog sku, "sku#sig" for a customized line, or "req_<id>" for a request
   request: boolean; // true = non-catalog item the store sources/prices
   name: string; // product name, or the customer's description
   brand: string | null;
   size: string | null;
   unit: string | null;
   quantity: number;
-  unit_price: number | null; // null = unpriced
+  unit_price: number | null; // null = unpriced; INCLUDES modifier deltas
   line_total: number | null;
   notes: string | null; // customer preference: "ripe ones", "small pack"
+  base_sku?: string; // real catalog sku when this is a customized line
+  modifiers?: ResolvedModifier[]; // resolved selection (label + delta), for display/order
+  mod_sel?: SelectedRef[]; // raw selection ids, for authoritative re-pricing at confirm
 }
 
 export function round2(n: number): number {
@@ -54,7 +58,7 @@ export function buildLine(
   };
 }
 
-export type AddStatus = "added" | "removed" | "not_found" | "out_of_stock";
+export type AddStatus = "added" | "removed" | "not_found" | "out_of_stock" | "invalid_modifiers";
 
 async function readLines(db: SupabaseClient, sessionId: string): Promise<CartLine[]> {
   const { data } = await db.from("carts").select("items").eq("session_id", sessionId).maybeSingle();
@@ -77,11 +81,13 @@ export async function addToCart(
   sku: string,
   quantity: number,
   notes: string | null = null,
-): Promise<{ status: AddStatus; name?: string; lines: CartLine[] }> {
+  mods: SelectedRef[] | null = null,
+): Promise<{ status: AddStatus; name?: string; error?: string; lines: CartLine[] }> {
   const qty = Math.max(0, Math.floor(Number(quantity) || 0));
   const lines = await readLines(db, sessionId);
 
   if (qty === 0) {
+    // Removal keys by the line's own sku (composite for a customized line).
     const next = lines.filter((l) => l.sku !== sku);
     await writeLines(db, store, sessionId, next);
     return { status: "removed", lines: next };
@@ -89,16 +95,50 @@ export async function addToCart(
 
   const { data: p } = await db
     .from("products")
-    .select("sku, name, brand, size, unit, price, in_stock")
+    .select("sku, name, brand, size, unit, price, in_stock, modifiers")
     .eq("store_id", store.id)
     .eq("sku", sku)
     .maybeSingle();
   if (!p) return { status: "not_found", lines };
   if (!p.in_stock) return { status: "out_of_stock", name: p.name, lines };
 
-  const idx = lines.findIndex((l) => l.sku === sku);
+  // Modifiers are optional: with none selected this is byte-identical to before —
+  // sku stays the real sku, no delta, no extra fields.
+  let lineSku = sku;
+  let baseSku: string | undefined;
+  let resolved: ResolvedModifier[] | undefined;
+  let selRefs: SelectedRef[] | undefined;
+  let delta = 0;
+  if (mods && mods.length) {
+    const v = validateAndPrice(parseGroups(p.modifiers), mods);
+    if (!v.ok) return { status: "invalid_modifiers", name: p.name, error: v.error, lines };
+    if (v.signature) {
+      lineSku = `${sku}#${v.signature}`;
+      baseSku = sku;
+      resolved = v.resolved;
+      selRefs = mods;
+      delta = v.delta;
+    }
+  }
+
+  const idx = lines.findIndex((l) => l.sku === lineSku);
   const keepNotes = notes ?? (idx >= 0 ? lines[idx].notes : null);
-  const line = buildLine(p as Parameters<typeof buildLine>[0], qty, keepNotes);
+  const unit = p.price == null ? null : round2(Number(p.price) + delta);
+  const line: CartLine = {
+    sku: lineSku,
+    request: false,
+    name: p.name,
+    brand: p.brand,
+    size: p.size,
+    unit: p.unit,
+    quantity: qty,
+    unit_price: unit,
+    line_total: unit == null ? null : round2(unit * qty),
+    notes: keepNotes,
+    ...(baseSku ? { base_sku: baseSku } : {}),
+    ...(resolved ? { modifiers: resolved } : {}),
+    ...(selRefs ? { mod_sel: selRefs } : {}),
+  };
   if (idx >= 0) lines[idx] = line;
   else lines.push(line);
   await writeLines(db, store, sessionId, lines);

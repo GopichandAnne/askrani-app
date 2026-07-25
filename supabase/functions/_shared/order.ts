@@ -10,6 +10,7 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Store } from "./types.ts";
 import { buildLine, type CartLine, clearCart, round2, viewCart } from "./cart.ts";
+import { parseGroups, validateAndPrice } from "./modifiers.ts";
 import { notifyResponders } from "./responders.ts";
 import { attributeReferralOrder } from "./referral.ts";
 
@@ -90,11 +91,14 @@ export async function loadCharges(db: SupabaseClient, storeId: string): Promise<
  *  CatalogItem; a request item OR an unpriced catalog line -> RequestItem (which
  *  staff price in the Orders module). Notes carry through. */
 function toOrderItem(l: CartLine): Record<string, unknown> {
+  // Customization carries through as the resolved modifiers; the panel matches the
+  // catalog on the REAL sku (base_sku), not the composite line key.
+  const modBits = (l.modifiers?.length ? { modifiers: l.modifiers } : {});
   if (!l.request && l.unit_price != null && l.line_total != null) {
     return {
-      sku: l.sku, catalog_matched: true, name: l.name, brand: l.brand,
+      sku: l.base_sku ?? l.sku, catalog_matched: true, name: l.name, brand: l.brand,
       size: l.size, unit: l.unit, quantity: l.quantity, notes: l.notes,
-      unit_price: l.unit_price, line_total: l.line_total,
+      unit_price: l.unit_price, line_total: l.line_total, ...modBits,
     };
   }
   const desc = [l.name, [l.size, l.unit].filter(Boolean).join(" ")].filter(Boolean).join(" ");
@@ -190,27 +194,63 @@ export async function placeOrder(
   const catalogLines = lines.filter((l) => !l.request);
   const requestLines = lines.filter((l) => l.request);
 
+  // Customized lines carry a composite sku ("sku#sig"); look them up by the REAL
+  // (base) sku, and re-price their modifiers from the live definition.
+  const baseSkuOf = (l: CartLine) => l.base_sku ?? l.sku;
   const { data: live } = await db
     .from("products")
-    .select("sku, name, brand, size, unit, price, in_stock")
+    .select("sku, name, brand, size, unit, price, in_stock, modifiers")
     .eq("store_id", store.id)
-    .in("sku", catalogLines.map((l) => l.sku));
+    .in("sku", catalogLines.map(baseSkuOf));
   const bySku = new Map((live ?? []).map((p) => [p.sku, p]));
 
   const outOfStock: string[] = [];
   const priceChanges: { name: string; was: number; now: number }[] = [];
   const revalidated: CartLine[] = [];
   for (const line of catalogLines) {
-    const p = bySku.get(line.sku);
+    const p = bySku.get(baseSkuOf(line));
     if (!p || !p.in_stock) {
       outOfStock.push(line.name); // stock is checked for every catalog item
       continue;
     }
-    // Surface a price change only for an item the customer was quoted a price for.
-    if (line.unit_price != null && p.price != null && round2(p.price) !== round2(line.unit_price)) {
-      priceChanges.push({ name: line.name, was: line.unit_price, now: p.price });
+    // Re-price the customization from the LIVE definition (never the cart snapshot).
+    // A selection that's no longer valid (owner changed the menu) blocks the order.
+    let delta = 0;
+    let resolved = line.modifiers;
+    if (line.mod_sel?.length) {
+      const v = validateAndPrice(parseGroups(p.modifiers), line.mod_sel);
+      if (!v.ok) {
+        priceChanges.push({ name: line.name, was: line.unit_price ?? 0, now: p.price ?? 0 });
+        continue;
+      }
+      delta = v.delta;
+      resolved = v.resolved;
     }
-    revalidated.push(buildLine(p as Parameters<typeof buildLine>[0], line.quantity, line.notes));
+    const liveUnit = p.price == null ? null : round2(Number(p.price) + delta);
+    // Surface a price change only for an item the customer was quoted a price for.
+    if (line.unit_price != null && liveUnit != null && liveUnit !== round2(line.unit_price)) {
+      priceChanges.push({ name: line.name, was: line.unit_price, now: liveUnit });
+    }
+    if (line.base_sku || (line.modifiers?.length ?? 0) > 0) {
+      // Rebuild the customized line with the live price + resolved modifiers.
+      revalidated.push({
+        sku: line.sku,
+        base_sku: line.base_sku ?? p.sku,
+        request: false,
+        name: p.name,
+        brand: p.brand,
+        size: p.size,
+        unit: p.unit,
+        quantity: line.quantity,
+        unit_price: liveUnit,
+        line_total: liveUnit == null ? null : round2(liveUnit * line.quantity),
+        notes: line.notes,
+        modifiers: resolved,
+        mod_sel: line.mod_sel,
+      });
+    } else {
+      revalidated.push(buildLine(p as Parameters<typeof buildLine>[0], line.quantity, line.notes));
+    }
   }
   if (outOfStock.length > 0) return { placed: false, reason: "out_of_stock", items: outOfStock };
   if (priceChanges.length > 0) return { placed: false, reason: "price_changed", changes: priceChanges };

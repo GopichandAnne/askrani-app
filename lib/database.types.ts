@@ -611,6 +611,7 @@ export type Database = {
           id: string
           image_url: string | null
           in_stock: boolean
+          modifiers: Json
           name: string
           price: number | null
           size: string | null
@@ -635,6 +636,7 @@ export type Database = {
           id?: string
           image_url?: string | null
           in_stock?: boolean
+          modifiers?: Json
           name: string
           price?: number | null
           size?: string | null
@@ -659,6 +661,7 @@ export type Database = {
           id?: string
           image_url?: string | null
           in_stock?: boolean
+          modifiers?: Json
           name?: string
           price?: number | null
           size?: string | null
