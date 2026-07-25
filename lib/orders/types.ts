@@ -7,6 +7,9 @@ export type FulfillmentType = Database["public"]["Enums"]["fulfillment_type"];
 export type OrderRow = Database["public"]["Tables"]["orders"]["Row"];
 
 /** Catalog-matched line item (real shape from Cart.gs / editOrder). */
+/** A chosen customization on an order line (from the diner picker / chat). */
+export type OrderModifier = { group: string; option: string; delta?: number | null };
+
 export type CatalogItem = {
   sku: string;
   catalog_matched: true;
@@ -18,6 +21,7 @@ export type CatalogItem = {
   notes?: string | null;
   unit_price: number;
   line_total: number;
+  modifiers?: OrderModifier[];
 };
 
 /** Off-catalog "request" line item — owner sets the price (unit_price/line_total

@@ -47,6 +47,11 @@ export function OrderRow({
               {order.table_label ?? "Dine-in"}
             </span>
           )}
+          {order.payment_status === "paid" && (
+            <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
+              Paid
+            </span>
+          )}
         </div>
         <StatusChip status={order.status} />
       </div>

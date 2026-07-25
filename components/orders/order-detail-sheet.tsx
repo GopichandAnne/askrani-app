@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
-import type { Order, OrderItem } from "@/lib/orders/types";
+import type { CatalogItem, Order, OrderItem } from "@/lib/orders/types";
 import { isRequestItem } from "@/lib/orders/types";
 import {
   canApprove,
@@ -197,6 +197,11 @@ export function OrderDetailSheet({
                 {order.table_label}
               </span>
             )}
+            {order.payment_status === "paid" && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
+                <Check className="size-3" /> Paid
+              </span>
+            )}
             {order.timestamp && (
               <>
                 <span aria-hidden>·</span>
@@ -251,6 +256,16 @@ export function OrderDetailSheet({
                           </span>
                         )}
                       </p>
+                      {!request && (item as CatalogItem).modifiers && (item as CatalogItem).modifiers!.length > 0 && (
+                        <p className="text-teal-deep dark:text-teal-light text-xs">
+                          {(item as CatalogItem).modifiers!.map((m) => m.option).join(", ")}
+                        </p>
+                      )}
+                      {item.notes?.trim() && (
+                        <p className="text-muted-foreground text-xs italic">
+                          &ldquo;{item.notes.trim()}&rdquo;
+                        </p>
+                      )}
                     </div>
                     <div className="shrink-0 text-right">
                       {editing && (isOwner || request) ? (

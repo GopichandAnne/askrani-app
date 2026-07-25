@@ -463,6 +463,9 @@ export type Database = {
           notes: string | null
           order_id: string
           order_mode: Database["public"]["Enums"]["order_mode"]
+          paid_at: string | null
+          payment_ref: string | null
+          payment_status: string
           session_id: string | null
           source_channel: string | null
           status: Database["public"]["Enums"]["order_status"]
@@ -486,6 +489,9 @@ export type Database = {
           notes?: string | null
           order_id: string
           order_mode?: Database["public"]["Enums"]["order_mode"]
+          paid_at?: string | null
+          payment_ref?: string | null
+          payment_status?: string
           session_id?: string | null
           source_channel?: string | null
           status?: Database["public"]["Enums"]["order_status"]
@@ -509,6 +515,9 @@ export type Database = {
           notes?: string | null
           order_id?: string
           order_mode?: Database["public"]["Enums"]["order_mode"]
+          paid_at?: string | null
+          payment_ref?: string | null
+          payment_status?: string
           session_id?: string | null
           source_channel?: string | null
           status?: Database["public"]["Enums"]["order_status"]
