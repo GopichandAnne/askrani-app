@@ -6,6 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { getActiveStore } from "@/lib/store/active-store";
 import { callBotAdmin } from "@/lib/knowledge/bot-admin";
 import type { Product, ProductInput, ProductPatch } from "@/lib/inventory/types";
+import { cleanAllergens, cleanDietary } from "@/lib/dietary";
 
 export type ProductResult =
   | { ok: true; product: Product }
@@ -13,7 +14,7 @@ export type ProductResult =
 export type SimpleResult = { ok: true } | { ok: false; error: string };
 
 const PRODUCT_COLUMNS =
-  "id, store_id, sku, name, brand, size, unit, price, currency, in_stock, verified, category, image_url, created_by, created_at, updated_at";
+  "id, store_id, sku, name, brand, size, unit, price, currency, in_stock, verified, category, image_url, allergens, dietary, created_by, created_at, updated_at";
 
 function cleanStr(v: string | null | undefined): string | null {
   if (v == null) return null;
@@ -49,6 +50,8 @@ export async function updateProduct(
   if ("price" in patch) next.price = cleanPrice(patch.price);
   if ("in_stock" in patch) next.in_stock = !!patch.in_stock;
   if ("verified" in patch) next.verified = !!patch.verified;
+  if ("allergens" in patch) next.allergens = cleanAllergens(patch.allergens);
+  if ("dietary" in patch) next.dietary = cleanDietary(patch.dietary);
 
   // Price is a catalog/money change -> owners only (in_stock/verified are not).
   // Enforced server-side here AND by the DB trigger (0010) for the raw-API path.
@@ -114,6 +117,8 @@ export async function addProduct(input: ProductInput): Promise<ProductResult> {
       price: cleanPrice(input.price),
       category: cleanStr(input.category),
       image_url: cleanStr(input.image_url),
+      allergens: cleanAllergens(input.allergens),
+      dietary: cleanDietary(input.dietary),
       created_by: user?.id ?? null,
     })
     .select(PRODUCT_COLUMNS)

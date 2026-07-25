@@ -12,6 +12,8 @@ export type ProductInput = {
   price?: number | null;
   category?: string | null;
   image_url?: string | null;
+  allergens?: string[] | null;
+  dietary?: string[] | null;
 };
 
 /** Inline-editable fields (price + flags + identity bits). */
@@ -28,5 +30,7 @@ export type ProductPatch = Partial<
     | "verified"
     | "category"
     | "image_url"
+    | "allergens"
+    | "dietary"
   >
 >;

@@ -597,12 +597,14 @@ export type Database = {
       }
       products: {
         Row: {
+          allergens: string[]
           brand: string | null
           category: string | null
           created_at: string
           created_by: string | null
           currency: string
           description: string | null
+          dietary: string[]
           embedded_at: string | null
           embedding: string | null
           embedding_stale: boolean
@@ -619,12 +621,14 @@ export type Database = {
           verified: boolean
         }
         Insert: {
+          allergens?: string[]
           brand?: string | null
           category?: string | null
           created_at?: string
           created_by?: string | null
           currency?: string
           description?: string | null
+          dietary?: string[]
           embedded_at?: string | null
           embedding?: string | null
           embedding_stale?: boolean
@@ -641,12 +645,14 @@ export type Database = {
           verified?: boolean
         }
         Update: {
+          allergens?: string[]
           brand?: string | null
           category?: string | null
           created_at?: string
           created_by?: string | null
           currency?: string
           description?: string | null
+          dietary?: string[]
           embedded_at?: string | null
           embedding?: string | null
           embedding_stale?: boolean

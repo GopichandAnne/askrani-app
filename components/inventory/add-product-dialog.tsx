@@ -18,6 +18,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ImagePicker } from "./product-image";
 import { Loader2, Plus } from "lucide-react";
+import { ALLERGENS, DIETARY } from "@/lib/dietary";
+import { cn } from "@/lib/utils";
 
 const EMPTY = { name: "", sku: "", brand: "", size: "", unit: "", price: "", image_url: "" };
 
@@ -28,11 +30,15 @@ export function AddProductDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ ...EMPTY });
+  const [dietary, setDietary] = useState<string[]>([]);
+  const [allergens, setAllergens] = useState<string[]>([]);
   const [pending, startTransition] = useTransition();
 
   function set<K extends keyof typeof form>(k: K, v: string) {
     setForm((f) => ({ ...f, [k]: v }));
   }
+  const toggle = (list: string[], setList: (v: string[]) => void, id: string) =>
+    setList(list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -46,11 +52,15 @@ export function AddProductDialog({
         unit: form.unit,
         price: form.price === "" ? null : Number(form.price),
         image_url: form.image_url || null,
+        dietary,
+        allergens,
       });
       if (res.ok) {
         onAdded(res.product);
         toast.success("Product added");
         setForm({ ...EMPTY });
+        setDietary([]);
+        setAllergens([]);
         setOpen(false);
       } else {
         toast.error("Couldn't add product", { description: res.error });
@@ -119,6 +129,54 @@ export function AddProductDialog({
             <Label>Image</Label>
             <ImagePicker value={form.image_url || null} onChange={(u) => set("image_url", u ?? "")} />
           </div>
+
+          <div className="space-y-1.5">
+            <Label>Dietary</Label>
+            <div className="flex flex-wrap gap-1.5">
+              {DIETARY.map((d) => (
+                <button
+                  key={d.id}
+                  type="button"
+                  aria-pressed={dietary.includes(d.id)}
+                  onClick={() => toggle(dietary, setDietary, d.id)}
+                  className={cn(
+                    "rounded-full border px-2.5 py-1 text-xs transition-colors",
+                    dietary.includes(d.id)
+                      ? "border-teal bg-teal-mist text-teal-deep"
+                      : "text-muted-foreground hover:border-teal/40",
+                  )}
+                >
+                  {d.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Contains allergens</Label>
+            <div className="flex flex-wrap gap-1.5">
+              {ALLERGENS.map((a) => (
+                <button
+                  key={a.id}
+                  type="button"
+                  aria-pressed={allergens.includes(a.id)}
+                  onClick={() => toggle(allergens, setAllergens, a.id)}
+                  className={cn(
+                    "rounded-full border px-2.5 py-1 text-xs transition-colors",
+                    allergens.includes(a.id)
+                      ? "border-amber-500 bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
+                      : "text-muted-foreground hover:border-amber-400/50",
+                  )}
+                >
+                  {a.label}
+                </button>
+              ))}
+            </div>
+            <p className="text-muted-foreground text-xs">
+              Diners can filter these out. Required for allergen transparency (EU/US/EAA).
+            </p>
+          </div>
+
           <DialogFooter>
             <Button type="submit" disabled={pending}>
               {pending && <Loader2 className="size-4 animate-spin" />}

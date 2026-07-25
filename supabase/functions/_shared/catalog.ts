@@ -10,6 +10,7 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Store } from "./types.ts";
 import { embedQuery, toVectorLiteral } from "./embeddings.ts";
 import { resolveMember } from "./members.ts";
+import { cleanAllergens, cleanDietary } from "./dietary.ts";
 
 /** The shared view state. The web grid, the bot and a browse link all speak this. */
 export type CatalogFilter = {
@@ -20,6 +21,8 @@ export type CatalogFilter = {
   price_max?: number | null;
   in_stock?: boolean | null;
   skus?: string[] | null;
+  dietary?: string[] | null;          // item must have ALL of these
+  exclude_allergens?: string[] | null; // item must contain NONE of these
   limit?: number;
   offset?: number;
 };
@@ -27,6 +30,8 @@ export type CatalogFilter = {
 export type CatalogFacets = {
   categories: { value: string; count: number }[];
   brands: { value: string; count: number }[];
+  dietary: { value: string; count: number }[];
+  allergens: { value: string; count: number }[];
   price: { min: number; max: number } | null;
   in_stock: number;
 };
@@ -118,6 +123,8 @@ export async function browseProducts(
     p_limit: Math.min(Math.max(filter.limit ?? 40, 1), 60),
     p_offset: Math.max(filter.offset ?? 0, 0),
     p_show_prices: showPrices,
+    p_dietary: filter.dietary?.length ? filter.dietary : null,
+    p_exclude_allergens: filter.exclude_allergens?.length ? filter.exclude_allergens : null,
   });
   if (error) throw new Error(`browse_products: ${error.message}`);
   return data as CatalogPage;
@@ -150,6 +157,9 @@ export function coerceFilter(raw: Record<string, unknown> | undefined | null): C
     price_max: num(r.price_max),
     in_stock: typeof r.in_stock === "boolean" ? r.in_stock : null,
     skus: arr(r.skus),
+    // Constrain to the canonical vocabularies so a client can't inject arbitrary tags.
+    dietary: cleanDietary(r.dietary) || null,
+    exclude_allergens: cleanAllergens(r.exclude_allergens) || null,
     limit: num(r.limit) ?? 40,
     offset: num(r.offset) ?? 0,
   };
