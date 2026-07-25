@@ -245,6 +245,40 @@ Deno.serve(async (req) => {
       if (!url) return json({ error: "couldn't start checkout" }, 502);
       return json({ payment_url: url });
     }
+    // "Your usual" — this device's own past orders at this store (session_id is the
+    // localStorage web_ id, so it's the guest's own history; no login, no cross-user
+    // data). Returns re-orderable catalog lines incl. the exact modifier selection.
+    case "history": {
+      const { data: orders } = await db
+        .from("orders")
+        .select("order_id, timestamp, items_json, status")
+        .eq("store_slug", store.slug)
+        .eq("session_id", cartSession)
+        .order("created_at", { ascending: false })
+        .limit(6);
+      // deno-lint-ignore no-explicit-any
+      const recent = (orders ?? [])
+        .filter((o) => o.status !== "cancelled" && o.status !== "rejected")
+        // deno-lint-ignore no-explicit-any
+        .map((o: any) => ({
+          order_id: o.order_id,
+          timestamp: o.timestamp,
+          items: (Array.isArray(o.items_json) ? o.items_json : [])
+            // deno-lint-ignore no-explicit-any
+            .filter((it: any) => it && it.catalog_matched && it.sku)
+            // deno-lint-ignore no-explicit-any
+            .map((it: any) => ({
+              sku: String(it.sku),
+              name: String(it.name ?? ""),
+              quantity: Number(it.quantity ?? 1),
+              mod_sel: Array.isArray(it.mod_sel) ? it.mod_sel : null,
+              // deno-lint-ignore no-explicit-any
+              modifiers: Array.isArray(it.modifiers) ? it.modifiers.map((m: any) => String(m.option ?? "")) : [],
+            })),
+        }))
+        .filter((o) => o.items.length > 0);
+      return json({ orders: recent });
+    }
     default:
       return json({ error: `unknown action: ${action}` }, 400);
   }

@@ -92,8 +92,11 @@ export async function loadCharges(db: SupabaseClient, storeId: string): Promise<
  *  staff price in the Orders module). Notes carry through. */
 function toOrderItem(l: CartLine): Record<string, unknown> {
   // Customization carries through as the resolved modifiers; the panel matches the
-  // catalog on the REAL sku (base_sku), not the composite line key.
-  const modBits = (l.modifiers?.length ? { modifiers: l.modifiers } : {});
+  // catalog on the REAL sku (base_sku), not the composite line key. mod_sel (the
+  // chosen option ids) rides along too so a reorder can replay the exact selection.
+  const modBits = l.modifiers?.length
+    ? { modifiers: l.modifiers, ...(l.mod_sel ? { mod_sel: l.mod_sel } : {}) }
+    : {};
   if (!l.request && l.unit_price != null && l.line_total != null) {
     return {
       sku: l.base_sku ?? l.sku, catalog_matched: true, name: l.name, brand: l.brand,
