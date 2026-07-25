@@ -129,7 +129,19 @@ export function PrebuiltConnectors({ onChange }: { onChange: () => void }) {
                 <p className="text-teal-deep flex items-center gap-1.5 text-xs">
                   <Check className="size-3.5" /> Card payments live — orders are auto-marked paid.
                 </p>
-              ) : (
+              ) : null}
+              {stripeWebhook && (
+                <div className="bg-muted/40 space-y-1 rounded-md border p-2.5">
+                  <p className="text-xs font-medium">Cut your fees — turn on low-fee methods</p>
+                  <p className="text-muted-foreground text-xs">
+                    In your Stripe Dashboard → <b>Settings → Payment methods</b>, enable <b>Pay by Bank</b>
+                    {" "}(1.5%), <b>ACH</b> (0.8%, $5 cap) and <b>Cash App Pay</b>. They appear at your diner
+                    checkout automatically — no setup here. On a $200 order that&apos;s ~$3.30 (Pay by Bank) or
+                    ~$1.60 (ACH) vs ~$6–7 on card / a typical POS.
+                  </p>
+                </div>
+              )}
+              {!stripeWebhook && (
                 <p className="text-amber-700 dark:text-amber-300 flex items-start gap-1.5 text-xs">
                   <AlertTriangle className="size-3.5 shrink-0" />
                   Add your webhook signing secret so paid orders are confirmed automatically. Until then,

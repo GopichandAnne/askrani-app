@@ -36,6 +36,11 @@ export async function createCheckoutSession(
 ): Promise<string | null> {
   const p = new URLSearchParams();
   p.set("mode", "payment");
+  // We deliberately DON'T set payment_method_types: Stripe Checkout then uses
+  // "dynamic payment methods" and shows whatever the store enabled in its Dashboard.
+  // So low-fee rails — Pay by Bank (1.5%+30c), ACH (0.8%, $5 cap), Cash App Pay —
+  // plus Apple/Google Pay appear automatically once the owner turns them on; no code
+  // change per method. (See the Integrations → Payments guidance.)
   p.set("success_url", opts.successUrl);
   p.set("cancel_url", opts.cancelUrl);
   p.set("client_reference_id", opts.ref);
