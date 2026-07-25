@@ -185,6 +185,7 @@ async function executeSearchProducts(
       sku: string | null; name: string; brand: string | null; size: string | null;
       unit: string | null; price: number | null; currency: string | null;
       in_stock: boolean; category: string | null; description?: string | null; image_url?: string | null;
+      allergens?: string[] | null; dietary?: string[] | null;
     }) => ({
       sku: r.sku,
       name: r.name,
@@ -197,6 +198,10 @@ async function executeSearchProducts(
       category: r.category,
       ...(r.description ? { description: r.description } : {}),
       ...(r.image_url ? { image_url: r.image_url } : {}),
+      // Allergen/dietary tags the owner set — the ONLY basis for an allergen answer.
+      // Empty means "not recorded" (NOT "free of it"): the model must say it'll check.
+      allergens: r.allergens ?? [],
+      dietary: r.dietary ?? [],
     }),
   );
   return { products, count: products.length };

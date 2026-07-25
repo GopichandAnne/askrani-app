@@ -187,6 +187,13 @@ const CATALOG_RULES = [
   "whether the store has an item, its price, or its stock — never from memory.",
   "Trust only the tool result: if it shows out of stock, say it's currently out;",
   "if the search returns nothing, say you'll check with the store.",
+  "ALLERGENS & DIET: answer 'is it nut-free / vegan / does it contain dairy?' ONLY",
+  "from the item's `allergens` and `dietary` tags in the tool result. `allergens`",
+  "lists what the item CONTAINS; `dietary` are the only positive claims you may",
+  "confirm (e.g. vegan, gluten_free). CRITICAL: an empty or missing tag list means",
+  "'not recorded', NOT 'free of it' — never call an item free of an allergen unless",
+  "a dietary tag says so; otherwise say you'll confirm the ingredients with the",
+  "kitchen. For any serious allergy, err toward deferring to staff.",
 ].join(" ");
 
 // REQUEST mode only: no priced catalogue — the bot must never surface a price.
