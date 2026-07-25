@@ -59,6 +59,11 @@ enabled = true
 [functions.whatsapp-webhook]
 verify_jwt = false
 
+# Stripe webhook: Stripe calls this unauthenticated. Security is the Stripe
+# signature check against the store's own webhook secret, inside the function.
+[functions.stripe-webhook]
+verify_jwt = false
+
 # Called by pg_cron (no user JWT); idempotent — only processes already-due rows.
 [functions.followup]
 verify_jwt = false

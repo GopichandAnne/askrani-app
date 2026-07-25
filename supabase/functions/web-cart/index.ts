@@ -12,6 +12,7 @@ import { serviceClient } from "../_shared/supabase.ts";
 import { getStoreBySlug } from "../_shared/config.ts";
 import { addToCart, cartSubtotal, type CartLine, clearCart, removeFromCart, viewCart } from "../_shared/cart.ts";
 import { placeOrder } from "../_shared/order.ts";
+import { createCheckoutSession, storeStripeKey } from "../_shared/stripe.ts";
 import {
   browseProducts,
   catalogLabel,
@@ -119,10 +120,20 @@ Deno.serve(async (req) => {
         const showPrices = await maySeePrices(db, store, { sessionId });
         const filter = coerceFilter(body.filter as Record<string, unknown>);
         const page = await browseProducts(db, store, filter, showPrices);
+        // Has the store connected its OWN Stripe? (not the platform env fallback) —
+        // drives whether the diner offers "Pay now" vs pay-at-counter only.
+        const { data: pc } = await db
+          .from("store_provider_credentials")
+          .select("credentials, connected")
+          .eq("store_id", store.id)
+          .eq("provider", "stripe")
+          .maybeSingle();
+        const payments_enabled = !!(pc && pc.connected !== false && (pc.credentials as { secret_key?: string } | null)?.secret_key);
         return json({
           store: store.slug,
           label: await catalogLabel(db, store.id),
           filter,
+          payments_enabled,
           ...page,
         });
       } catch (e) {
@@ -195,6 +206,44 @@ Deno.serve(async (req) => {
       // placed:false is a real, expected outcome (empty cart, out_of_stock,
       // price_changed) the client renders — return 200 so the browser reads the body.
       return json(res, 200);
+    }
+    // Start a Stripe checkout for an already-placed order. Money goes to the STORE's
+    // own Stripe; a signed webhook flips the order to paid. If the store hasn't
+    // connected Stripe, the diner falls back to pay-at-counter.
+    case "pay": {
+      const orderId = String(body.order_id ?? "").trim();
+      if (!orderId) return json({ error: "order_id required" }, 400);
+      const { data: ord } = await db
+        .from("orders")
+        .select("order_id, total, currency, session_id, payment_status")
+        .eq("order_id", orderId)
+        .eq("store_slug", store.slug)
+        .maybeSingle();
+      if (!ord) return json({ error: "order not found" }, 404);
+      if (ord.session_id !== cartSession && ord.session_id !== sessionId) {
+        return json({ error: "not your order" }, 403);
+      }
+      if (ord.payment_status === "paid") return json({ already_paid: true });
+      const key = await storeStripeKey(db, store.id);
+      if (!key) return json({ no_stripe: true }); // owner hasn't connected Stripe
+      const amount = Number(ord.total ?? 0);
+      if (!(amount > 0)) return json({ error: "order has no total to pay" }, 400);
+
+      const tableLabel = String(body.table ?? "").trim();
+      const q = `t=${encodeURIComponent(token)}${tableLabel ? `&table=${encodeURIComponent(tableLabel)}` : ""}`;
+      const base = `https://askrani.ai/s/${store.slug}`;
+      const storeName = (store as { display_name?: string }).display_name || store.slug;
+      const url = await createCheckoutSession(key, {
+        amount,
+        currency: ord.currency || "USD",
+        ref: orderId,
+        name: `${storeName} · Order ${orderId}`,
+        metadata: { order_id: orderId, store: store.slug },
+        successUrl: `${base}?${q}&paid=${encodeURIComponent(orderId)}`,
+        cancelUrl: `${base}?${q}`,
+      });
+      if (!url) return json({ error: "couldn't start checkout" }, 502);
+      return json({ payment_url: url });
     }
     default:
       return json({ error: `unknown action: ${action}` }, 400);
