@@ -167,6 +167,8 @@ export type ExtractedProduct = {
   description?: string | null;
   sku?: string | null;
   image_url?: string | null;
+  allergens?: string[];
+  dietary?: string[];
 };
 
 async function requireOwnerSlug(): Promise<

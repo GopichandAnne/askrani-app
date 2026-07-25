@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { type ApiImportSource, extractCatalogue, importProducts, type ExtractedProduct } from "@/app/(app)/inventory/actions";
+import { labelFor } from "@/lib/dietary";
 import {
   Dialog,
   DialogContent,
@@ -320,38 +321,60 @@ export function ImportCatalogueDialog() {
               </DialogTitle>
               <DialogDescription>Uncheck any you don&apos;t want, and fix names/prices before importing.</DialogDescription>
             </DialogHeader>
+            {rows.some((r) => (r.allergens?.length ?? 0) > 0 || (r.dietary?.length ?? 0) > 0) && (
+              <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                Allergen &amp; dietary tags were auto-suggested from item names — <b>verify each one</b>. They&apos;re a
+                starting point, not a guarantee; you can fine-tune tags per product after importing.
+              </p>
+            )}
             <div className="space-y-1.5">
               {rows.map((r, i) => (
-                <div key={i} className="flex items-center gap-2 rounded-md border p-2">
-                  <input
-                    type="checkbox"
-                    className="accent-teal size-4"
-                    checked={r.include}
-                    onChange={(e) => edit(i, { include: e.target.checked })}
-                  />
-                  <Input
-                    value={r.name}
-                    onChange={(e) => edit(i, { name: e.target.value })}
-                    className="h-8 flex-1"
-                    placeholder="Name"
-                  />
-                  <Input
-                    value={r.category ?? ""}
-                    onChange={(e) => edit(i, { category: e.target.value })}
-                    className="h-8 w-32"
-                    placeholder="Category"
-                  />
-                  <Input
-                    value={r.price == null ? "" : String(r.price)}
-                    onChange={(e) => edit(i, { price: e.target.value === "" ? null : Number(e.target.value) })}
-                    className="h-8 w-20"
-                    inputMode="decimal"
-                    placeholder="Price"
-                  />
-                  {r.source && (
-                    <span className="text-muted-foreground w-24 shrink-0 truncate text-[11px]" title={r.source}>
-                      {r.source}
-                    </span>
+                <div key={i} className="flex flex-col gap-1.5 rounded-md border p-2">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      className="accent-teal size-4"
+                      checked={r.include}
+                      onChange={(e) => edit(i, { include: e.target.checked })}
+                    />
+                    <Input
+                      value={r.name}
+                      onChange={(e) => edit(i, { name: e.target.value })}
+                      className="h-8 flex-1"
+                      placeholder="Name"
+                    />
+                    <Input
+                      value={r.category ?? ""}
+                      onChange={(e) => edit(i, { category: e.target.value })}
+                      className="h-8 w-32"
+                      placeholder="Category"
+                    />
+                    <Input
+                      value={r.price == null ? "" : String(r.price)}
+                      onChange={(e) => edit(i, { price: e.target.value === "" ? null : Number(e.target.value) })}
+                      className="h-8 w-20"
+                      inputMode="decimal"
+                      placeholder="Price"
+                    />
+                    {r.source && (
+                      <span className="text-muted-foreground w-24 shrink-0 truncate text-[11px]" title={r.source}>
+                        {r.source}
+                      </span>
+                    )}
+                  </div>
+                  {((r.dietary?.length ?? 0) > 0 || (r.allergens?.length ?? 0) > 0) && (
+                    <div className="flex flex-wrap items-center gap-1 pl-6">
+                      {r.dietary?.map((d) => (
+                        <span key={`d-${d}`} className="bg-teal-mist text-teal-deep rounded-full px-2 py-0.5 text-[11px]">
+                          {labelFor(d)}
+                        </span>
+                      ))}
+                      {(r.allergens?.length ?? 0) > 0 && (
+                        <span className="text-amber-700 dark:text-amber-300 text-[11px]">
+                          Contains {r.allergens!.map((a) => labelFor(a).toLowerCase()).join(", ")}
+                        </span>
+                      )}
+                    </div>
                   )}
                 </div>
               ))}

@@ -29,6 +29,7 @@ import { approvePostSubmission, rejectPostSubmission } from "../_shared/social.t
 import { encodeBase64 } from "jsr:@std/encoding@1/base64";
 import { addToCart } from "../_shared/cart.ts";
 import { placeOrder } from "../_shared/order.ts";
+import { ALLERGEN_IDS, cleanAllergens, cleanDietary, DIETARY_IDS } from "../_shared/dietary.ts";
 import { classifyTurn } from "../_shared/analytics.ts";
 import { findResponder, relayStaffAnswer } from "../_shared/responders.ts";
 import { generateTurnReply } from "../_shared/conversation.ts";
@@ -152,12 +153,20 @@ Deno.serve(async (req) => {
         const SYS =
           "You extract a store's product catalogue from the provided content. Respond with ONLY JSON " +
           'of this shape: {"products":[{"name":string,"category":string,"price":string,' +
-          '"description":string,"sku":string,"image_url":string}]}. Rules: include only real ' +
-          "purchasable items; infer a sensible category per item; copy the price EXACTLY as it appears " +
-          'as a string (e.g. "$6.50", "14.00", "8"), empty string if no price is shown — do NOT round ' +
-          "or convert; description is a short line (empty if none); sku empty unless clearly present; " +
-          "image_url only if an item image URL appears in the content, else empty. Never invent items " +
-          "or prices.";
+          '"description":string,"sku":string,"image_url":string,"allergens":string[],"dietary":string[]}]}. ' +
+          "Rules: include only real purchasable items; infer a sensible category per item; copy the price " +
+          'EXACTLY as it appears as a string (e.g. "$6.50", "14.00", "8"), empty string if no price is shown ' +
+          "— do NOT round or convert; description is a short line (empty if none); sku empty unless clearly " +
+          "present; image_url only if an item image URL appears in the content, else empty. " +
+          `allergens: an array of allergens the item LIKELY CONTAINS, chosen ONLY from [${ALLERGEN_IDS.join(", ")}]. ` +
+          "Infer from the name/description/ingredients (paneer/cheese/cream/butter/yogurt→milk; " +
+          "bread/naan/roti/wheat/batter/soy sauce→gluten; prawn/shrimp/crab→crustaceans; cashew/almond/" +
+          "walnut→tree_nuts; peanut→peanuts; egg→eggs; fish→fish; soy/tofu→soy; sesame/tahini→sesame). " +
+          "When unsure whether an allergen is present, PREFER TO INCLUDE it — flagging is safer than missing. " +
+          `dietary: an array chosen ONLY from [${DIETARY_IDS.join(", ")}]. Add "vegetarian"/"vegan" when the ` +
+          "dish is clearly free of meat/all animal products respectively. Add gluten_free/dairy_free/nut_free/" +
+          "halal/kosher ONLY when the content EXPLICITLY states it — NEVER guess a 'free-from' claim, as a " +
+          "wrong one is dangerous. Use [] for either when nothing applies. Never invent items or prices.";
         const result = media
           ? await generateStructuredFromMedia(SYS, media.mime, media.data)
           : await generateStructured(SYS, text.slice(0, 40000));
@@ -176,6 +185,9 @@ Deno.serve(async (req) => {
             sku: p?.sku ?? "",
             image_url: p?.image_url ?? "",
             price: m ? Number(m[0]) : null,
+            // Auto-tagged, clamped to the canonical vocab — the owner verifies in review.
+            allergens: cleanAllergens(p?.allergens),
+            dietary: cleanDietary(p?.dietary),
           };
         });
         return json({ store: store.slug, products });
@@ -233,6 +245,8 @@ Deno.serve(async (req) => {
             description: p?.description ? String(p.description) : null,
             image_url: p?.image_url ? String(p.image_url) : null,
             price: price == null || price === "" ? null : Number(price),
+            allergens: cleanAllergens(p?.allergens),
+            dietary: cleanDietary(p?.dietary),
             in_stock: true,
             embedding_stale: true,
           });
