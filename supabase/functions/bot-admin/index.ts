@@ -579,8 +579,16 @@ Deno.serve(async (req) => {
         if (!/^(sk|rk)_/.test(key)) {
           return json({ error: "That doesn't look like a Stripe secret key (it starts with sk_ or rk_)." }, 400);
         }
+        // Optional webhook signing secret — required for the diner "Pay now" flow to
+        // auto-mark orders paid (stripe-webhook verifies against it). whsec_…
+        const webhookSecret = String(body.webhook_secret ?? "").trim();
+        if (webhookSecret && !/^whsec_/.test(webhookSecret)) {
+          return json({ error: "The webhook signing secret should start with whsec_." }, 400);
+        }
+        const credentials: Record<string, string> = { secret_key: key };
+        if (webhookSecret) credentials.webhook_secret = webhookSecret;
         const { error: credErr } = await db.from("store_provider_credentials").upsert(
-          { store_id: store.id, provider: "stripe", credentials: { secret_key: key }, connected: true, updated_at: new Date().toISOString() },
+          { store_id: store.id, provider: "stripe", credentials, connected: true, updated_at: new Date().toISOString() },
           { onConflict: "store_id,provider" },
         );
         if (credErr) return json({ error: credErr.message }, 500);
@@ -627,9 +635,19 @@ Deno.serve(async (req) => {
       case "provider_status": {
         const { data } = await db
           .from("store_provider_credentials")
-          .select("provider, connected, updated_at")
+          .select("provider, connected, updated_at, credentials")
           .eq("store_id", store.id);
-        return json({ providers: data ?? [] });
+        // Never return the credentials themselves — only a derived "has webhook secret"
+        // flag for Stripe, so the panel can nudge the owner to finish setup.
+        const providers = (data ?? []).map((p) => ({
+          provider: p.provider,
+          connected: p.connected,
+          updated_at: p.updated_at,
+          webhook: p.provider === "stripe"
+            ? !!((p.credentials as { webhook_secret?: string } | null)?.webhook_secret)
+            : undefined,
+        }));
+        return json({ providers });
       }
       case "disconnect_provider": {
         const provider = String(body.provider ?? "");
