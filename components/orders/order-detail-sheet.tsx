@@ -112,7 +112,7 @@ export function OrderDetailSheet({
       computeCharged(
         editing ? draft : (order?.items_json ?? []),
         charges,
-        (order?.fulfillment ?? null) as "pickup" | "delivery" | null,
+        (order?.fulfillment ?? null) as "pickup" | "delivery" | "dine_in" | null,
       ),
     [editing, draft, order?.items_json, order?.fulfillment, charges],
   );
@@ -139,7 +139,7 @@ export function OrderDetailSheet({
   }
 
   function saveEdit() {
-    const totals = computeCharged(draft, charges, (order?.fulfillment ?? null) as "pickup" | "delivery" | null);
+    const totals = computeCharged(draft, charges, (order?.fulfillment ?? null) as "pickup" | "delivery" | "dine_in" | null);
     startTransition(async () => {
       const res = await editOrder(order!.order_id, draft);
       if (res.ok) {
@@ -187,8 +187,15 @@ export function OrderDetailSheet({
             {order.fulfillment && (
               <>
                 <span aria-hidden>·</span>
-                <span className="capitalize">{order.fulfillment}</span>
+                <span className="capitalize">
+                  {order.fulfillment === "dine_in" ? "Dine-in" : order.fulfillment}
+                </span>
               </>
+            )}
+            {order.fulfillment === "dine_in" && order.table_label && (
+              <span className="bg-teal-mist text-teal-deep rounded-full px-2 py-0.5 text-xs font-medium">
+                {order.table_label}
+              </span>
             )}
             {order.timestamp && (
               <>

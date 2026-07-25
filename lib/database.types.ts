@@ -468,6 +468,7 @@ export type Database = {
           status: Database["public"]["Enums"]["order_status"]
           store_slug: string
           subtotal: number | null
+          table_label: string | null
           tax: number | null
           timestamp: string | null
           total: number | null
@@ -490,6 +491,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["order_status"]
           store_slug: string
           subtotal?: number | null
+          table_label?: string | null
           tax?: number | null
           timestamp?: string | null
           total?: number | null
@@ -512,6 +514,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["order_status"]
           store_slug?: string
           subtotal?: number | null
+          table_label?: string | null
           tax?: number | null
           timestamp?: string | null
           total?: number | null
@@ -2228,7 +2231,7 @@ export type Database = {
         | "first_order"
         | "repeat_order"
       device_type: "whatsapp" | "web"
-      fulfillment_type: "pickup" | "delivery"
+      fulfillment_type: "pickup" | "delivery" | "dine_in"
       message_direction: "inbound" | "outbound" | "system"
       message_kind: "message" | "event"
       order_mode: "standard" | "request"
@@ -2419,7 +2422,7 @@ export const Constants = {
         "repeat_order",
       ],
       device_type: ["whatsapp", "web"],
-      fulfillment_type: ["pickup", "delivery"],
+      fulfillment_type: ["pickup", "delivery", "dine_in"],
       message_direction: ["inbound", "outbound", "system"],
       message_kind: ["message", "event"],
       order_mode: ["standard", "request"],

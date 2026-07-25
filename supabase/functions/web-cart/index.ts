@@ -11,6 +11,7 @@
 import { serviceClient } from "../_shared/supabase.ts";
 import { getStoreBySlug } from "../_shared/config.ts";
 import { addToCart, cartSubtotal, type CartLine, clearCart, removeFromCart, viewCart } from "../_shared/cart.ts";
+import { placeOrder } from "../_shared/order.ts";
 import {
   browseProducts,
   catalogLabel,
@@ -161,6 +162,30 @@ Deno.serve(async (req) => {
         return json({ ok: true, cart: summarize([]) });
       }
       return json({ cart: summarize(await viewCart(db, cartSession)) });
+    }
+    // Deterministic checkout for the diner surface — finalizes the shared cart
+    // into a pending_approval order the panel picks up, WITHOUT routing the money
+    // step through the model. Carries the guest's typed name and (for dine-in) the
+    // table label so the kitchen knows who and where. Same price/stock re-check as
+    // every other order (done inside placeOrder).
+    case "place": {
+      if (!(await maySeePrices(db, store, { sessionId }))) {
+        return json({
+          error: "To order here I'll need to know you — continue on WhatsApp.",
+          needs_member: true,
+        }, 403);
+      }
+      const name = String(body.name ?? "").trim();
+      const rawFul = String(body.fulfillment ?? "").trim();
+      const fulfillment = rawFul === "delivery" ? "delivery" : rawFul === "dine_in" ? "dine_in" : "pickup";
+      const tableLabel = String(body.table_label ?? "").trim();
+      const res = await placeOrder(db, store, cartSession, fulfillment, "Confirmed at the table via Ask Rani", {
+        customerName: name || null,
+        tableLabel: fulfillment === "dine_in" ? tableLabel || null : null,
+      });
+      // placed:false is a real, expected outcome (empty cart, out_of_stock,
+      // price_changed) the client renders — return 200 so the browser reads the body.
+      return json(res, 200);
     }
     default:
       return json({ error: `unknown action: ${action}` }, 400);

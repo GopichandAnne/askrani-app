@@ -42,6 +42,11 @@ export function OrderRow({
             {order.order_id}
           </span>
           <OrderModeBadge mode={order.order_mode} />
+          {order.fulfillment === "dine_in" && (
+            <span className="bg-teal-mist text-teal-deep shrink-0 rounded-full px-2 py-0.5 text-xs font-medium">
+              {order.table_label ?? "Dine-in"}
+            </span>
+          )}
         </div>
         <StatusChip status={order.status} />
       </div>

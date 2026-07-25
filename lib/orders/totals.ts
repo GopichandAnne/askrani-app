@@ -66,7 +66,7 @@ export type ChargedTotals = {
 export function computeCharged(
   items: OrderItem[],
   charges: Charge[],
-  fulfillment: "pickup" | "delivery" | null | undefined,
+  fulfillment: "pickup" | "delivery" | "dine_in" | null | undefined,
 ): ChargedTotals {
   let subtotal = 0;
   let hasUnpriced = false;

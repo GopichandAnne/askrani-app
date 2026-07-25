@@ -56,7 +56,7 @@ export interface ChargedTotals {
 export function computeCharged(
   lines: CartLine[],
   charges: Charge[],
-  fulfillment: "pickup" | "delivery",
+  fulfillment: "pickup" | "delivery" | "dine_in",
 ): ChargedTotals {
   let subtotal = 0;
   let hasUnpriced = false;
@@ -141,6 +141,8 @@ async function emitOrderCreated(
   orderId: string,
   totals: OrderTotals,
   itemCount: number,
+  via: string,
+  tableLabel: string | null,
 ): Promise<void> {
   const threadId = `thr_${customerPhone}_${store.slug}`;
   // The webhook already created the thread on inbound; upsert defensively.
@@ -158,7 +160,7 @@ async function emitOrderCreated(
     kind: "event",
     event_type: "order_created",
     related_order_id: orderId,
-    text: `Order ${orderId} placed via WhatsApp — ${itemCount} item(s), total $${totals.total.toFixed(2)}`,
+    text: `Order ${orderId} placed via ${via}${tableLabel ? ` · ${tableLabel}` : ""} — ${itemCount} item(s), total $${totals.total.toFixed(2)}`,
     event_payload_json: { order_id: orderId, ...totals },
   });
   if (error) console.error(`[order] event ${orderId}: ${error.message}`);
@@ -174,8 +176,9 @@ export async function placeOrder(
   db: SupabaseClient,
   store: Store,
   sessionId: string,
-  fulfillment: "pickup" | "delivery",
+  fulfillment: "pickup" | "delivery" | "dine_in",
   confirmationText: string,
+  opts: { customerName?: string | null; tableLabel?: string | null } = {},
 ): Promise<Record<string, unknown>> {
   if (!confirmationText.trim()) return { placed: false, reason: "no_confirmation" };
 
@@ -240,11 +243,16 @@ export async function placeOrder(
     .eq("thread_id", `thr_${customerPhone}_${store.slug}`)
     .maybeSingle();
 
+  // A diner types their name at the table (there's no WhatsApp thread to read it
+  // from), so an explicitly-passed name wins over the thread lookup.
+  const customerName = opts.customerName?.trim() || thread?.customer_name || null;
+  const tableLabel = opts.tableLabel?.trim() || null;
+
   const { error } = await db.from("orders").insert({
     order_id: orderId,
     store_slug: store.slug,
     customer_phone: customerPhone,
-    customer_name: thread?.customer_name ?? null,
+    customer_name: customerName,
     session_id: sessionId,
     timestamp: new Date().toISOString(),
     items_json: itemsJson,
@@ -254,6 +262,7 @@ export async function placeOrder(
     charges_json: charged.charges,
     currency: "USD",
     fulfillment,
+    table_label: tableLabel,
     status: "pending_approval",
     // Was hardcoded "whatsapp", so every web order lied about where it came from.
     source_channel: sessionId.startsWith("web_") ? "web" : "whatsapp",
@@ -261,7 +270,8 @@ export async function placeOrder(
   });
   if (error) return { placed: false, reason: "db_error", detail: error.message };
 
-  await emitOrderCreated(db, store, customerPhone, orderId, totals, revalidated.length);
+  const via = fulfillment === "dine_in" ? "table service" : sessionId.startsWith("web_") ? "the web menu" : "WhatsApp";
+  await emitOrderCreated(db, store, customerPhone, orderId, totals, revalidated.length, via, tableLabel);
   await clearCart(db, store, sessionId); // one-way: cart -> order
 
   // Give-and-get: if this buyer arrived via a referral, credit the initiator on
@@ -279,9 +289,11 @@ export async function placeOrder(
 
   // DM responders who opted into order alerts.
   const totalLabel = totals.hasUnpriced ? `$${totals.total} + items to price` : `$${totals.total}`;
+  const where = fulfillment === "dine_in" ? (tableLabel ? `dine-in · ${tableLabel}` : "dine-in") : fulfillment;
+  const channel = sessionId.startsWith("web_") ? "web" : "WhatsApp";
   await notifyResponders(
     db, store, "order",
-    `New WhatsApp order ${orderId} (${fulfillment}) from ${thread?.customer_name ?? customerPhone}: ${revalidated.length} item(s), ${totalLabel}. Review in the panel.`,
+    `New ${channel} order ${orderId} (${where}) from ${customerName ?? customerPhone}: ${revalidated.length} item(s), ${totalLabel}. Review in the panel.`,
   );
 
   return {
