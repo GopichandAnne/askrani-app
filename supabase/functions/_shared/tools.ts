@@ -51,15 +51,21 @@ import {
 } from "./requests.ts";
 
 // ── Gemini functionDeclaration shapes ───────────────────────────────────────
+// A JSON-Schema-ish node; `items`/`properties` may nest (e.g. an array of objects).
+interface SchemaNode {
+  type: string;
+  description?: string;
+  items?: SchemaNode;
+  properties?: Record<string, SchemaNode>;
+  required?: string[];
+  enum?: string[];
+}
 export interface FunctionDeclaration {
   name: string;
   description: string;
   parameters: {
     type: "object";
-    properties: Record<
-      string,
-      { type: string; description?: string; items?: { type: string }; enum?: string[] }
-    >;
+    properties: Record<string, SchemaNode>;
     required: string[];
   };
 }
@@ -185,7 +191,7 @@ async function executeSearchProducts(
       sku: string | null; name: string; brand: string | null; size: string | null;
       unit: string | null; price: number | null; currency: string | null;
       in_stock: boolean; category: string | null; description?: string | null; image_url?: string | null;
-      allergens?: string[] | null; dietary?: string[] | null;
+      allergens?: string[] | null; dietary?: string[] | null; modifiers?: unknown;
     }) => ({
       sku: r.sku,
       name: r.name,
@@ -202,6 +208,8 @@ async function executeSearchProducts(
       // Empty means "not recorded" (NOT "free of it"): the model must say it'll check.
       allergens: r.allergens ?? [],
       dietary: r.dietary ?? [],
+      // Option groups (size, add-ons…). Present them + pass chosen ids to add_to_cart.
+      ...(Array.isArray(r.modifiers) && r.modifiers.length ? { modifiers: r.modifiers } : {}),
     }),
   );
   return { products, count: products.length };
@@ -261,13 +269,31 @@ const ADD_TO_CART_DECL: FunctionDeclaration = {
     "that sku. This SETS the quantity (not increments) — to change a quantity, " +
     "call again with the new total; quantity 0 removes it. Optionally pass a " +
     "`notes` preference the customer stated (e.g. 'small pack', 'ripe ones'). " +
-    "Refuses items out of stock or not found. Prices come from the live catalog.",
+    "OPTIONS: if the item from search_products has `modifiers` (option groups like " +
+    "Size or Add-ons), make sure the customer has chosen for every REQUIRED group " +
+    "(ask by option name if they haven't), then pass those choices in `modifiers` " +
+    "as {group_id, option_id} pairs using the ids from search_products. The price " +
+    "adjusts automatically — never state a modifier's price yourself; read the total " +
+    "back from the returned cart. Refuses out-of-stock/not-found or an incomplete " +
+    "required selection. Prices come from the live catalog.",
   parameters: {
     type: "object",
     properties: {
       sku: { type: "string", description: "Exact product sku from search_products." },
       quantity: { type: "number", description: "Desired quantity (0 removes the item)." },
       notes: { type: "string", description: "Optional customer preference for this item." },
+      modifiers: {
+        type: "array",
+        description: "Chosen options for an item that has `modifiers`: one {group_id, option_id} per selected option (every required group covered). Omit for plain items.",
+        items: {
+          type: "object",
+          properties: {
+            group_id: { type: "string", description: "modifier group id from search_products" },
+            option_id: { type: "string", description: "chosen option id within that group" },
+          },
+          required: ["group_id", "option_id"],
+        },
+      },
     },
     required: ["sku", "quantity"],
   },
@@ -1163,15 +1189,25 @@ export function buildToolset(
     escalate_to_owner: (args) => executeEscalate(db, store, sessionId, args),
     file_request: (args) => executeFileRequest(db, store, sessionId, requestTypes, args),
     add_to_cart: async (args) => {
+      const rawMods = Array.isArray(args.modifiers) ? args.modifiers : null;
+      const mods = rawMods
+        ? rawMods
+          .map((m) => {
+            const r = m as Record<string, unknown>;
+            return { group_id: String(r.group_id ?? ""), option_id: String(r.option_id ?? "") };
+          })
+          .filter((m) => m.group_id && m.option_id)
+        : null;
       const res = await addToCart(
         db, store, sessionId, String(args.sku ?? ""), Number(args.quantity ?? 1),
-        args.notes ? String(args.notes) : null,
+        args.notes ? String(args.notes) : null, mods,
       );
       const cart = formatCart(res.lines);
       switch (res.status) {
         case "added": return { added: true, item: res.name, cart };
         case "removed": return { removed: true, cart };
         case "out_of_stock": return { added: false, reason: "out of stock", item: res.name, cart };
+        case "invalid_modifiers": return { added: false, reason: res.error || "ask the customer to choose the required options first", cart };
         default: return { added: false, reason: "not found — search_products first", cart };
       }
     },

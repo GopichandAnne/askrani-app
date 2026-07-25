@@ -194,6 +194,12 @@ const CATALOG_RULES = [
   "'not recorded', NOT 'free of it' — never call an item free of an allergen unless",
   "a dietary tag says so; otherwise say you'll confirm the ingredients with the",
   "kitchen. For any serious allergy, err toward deferring to staff.",
+  "OPTIONS: when a search result has `modifiers` (option groups like Size or Add-ons),",
+  "the item is customizable. Before adding it, make sure the customer has chosen for",
+  "every group marked required — ask naturally using the option names ('Regular or",
+  "Large?'). Then call add_to_cart with `modifiers` as {group_id, option_id} pairs",
+  "using the ids from the result. Let the returned cart tell you the price — never",
+  "quote a modifier's surcharge yourself.",
 ].join(" ");
 
 // REQUEST mode only: no priced catalogue — the bot must never surface a price.
