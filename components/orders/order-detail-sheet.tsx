@@ -47,7 +47,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Check, Loader2, Pencil } from "lucide-react";
+import { Check, Loader2, Pencil, StickyNote } from "lucide-react";
 
 type TimelineRow = {
   message_id: string;
@@ -262,9 +262,10 @@ export function OrderDetailSheet({
                         </p>
                       )}
                       {item.notes?.trim() && (
-                        <p className="text-muted-foreground text-xs italic">
-                          &ldquo;{item.notes.trim()}&rdquo;
-                        </p>
+                        <span className="mt-1 flex w-fit items-start gap-1.5 rounded-md bg-amber-100 px-2 py-1 text-xs font-medium text-amber-900 dark:bg-amber-950/60 dark:text-amber-100">
+                          <StickyNote className="mt-px size-3.5 shrink-0" aria-hidden="true" />
+                          <span className="whitespace-pre-wrap">{item.notes.trim()}</span>
+                        </span>
                       )}
                     </div>
                     <div className="shrink-0 text-right">

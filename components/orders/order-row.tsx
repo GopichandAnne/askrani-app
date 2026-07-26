@@ -6,6 +6,7 @@ import { OrderModeBadge } from "./order-mode-badge";
 import { formatRelative } from "@/lib/format";
 import { formatMoney } from "@/lib/orders/totals";
 import { cn } from "@/lib/utils";
+import { StickyNote } from "lucide-react";
 
 export function OrderRow({
   order,
@@ -20,6 +21,9 @@ export function OrderRow({
 }) {
   const total = order.total ?? order.subtotal;
   const itemCount = order.items_json.length;
+  const hasNotes = order.items_json.some(
+    (it) => (it as { notes?: string | null }).notes?.trim(),
+  );
   const customer =
     order.customer_name?.trim() || order.customer_phone || "Unknown customer";
 
@@ -50,6 +54,11 @@ export function OrderRow({
           {order.payment_status === "paid" && (
             <span className="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
               Paid
+            </span>
+          )}
+          {hasNotes && (
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950/50 dark:text-amber-200" title="Has a kitchen note">
+              <StickyNote className="size-3" aria-hidden="true" /> Note
             </span>
           )}
         </div>
