@@ -27,6 +27,8 @@ const EDITABLE: AgentKey[] = [
   "followup_minutes",
   "tax_rate",
   "history_turns",
+  "tts_voice",
+  "tts_enabled",
 ];
 
 /**
@@ -105,6 +107,38 @@ export async function saveAgentConfig(
 
   revalidatePath("/agent");
   return { ok: true };
+}
+
+// ── Premium diner voice (OpenAI TTS) ──────────────────────────────────────────
+export type VoiceSettings = { voice: string; enabled: boolean; slug: string; token: string | null };
+
+/** Current premium-voice settings for the active store, plus the slug + a primary
+ *  visitor token so the owner card can PREVIEW a voice through the tts function. */
+export async function getVoiceSettings(): Promise<VoiceSettings> {
+  const ctx = await getActiveStore();
+  if (!ctx?.active) return { voice: "aria", enabled: true, slug: "", token: null };
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("agent_config")
+    .select("key, value")
+    .eq("store_id", ctx.active.id)
+    .in("key", ["tts_voice", "tts_enabled"]);
+  const conf = Object.fromEntries((data ?? []).map((r) => [r.key, String(r.value ?? "")]));
+  const { data: tok } = await admin
+    .from("store_tokens")
+    .select("token")
+    .eq("store_id", ctx.active.id)
+    .eq("active", true)
+    .is("listing_ref", null)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  return {
+    voice: (conf.tts_voice || "aria").toLowerCase(),
+    enabled: (conf.tts_enabled ?? "true").toLowerCase() !== "false",
+    slug: ctx.active.slug,
+    token: tok?.token ?? null,
+  };
 }
 
 // ── Escalation responders ─────────────────────────────────────────────────────

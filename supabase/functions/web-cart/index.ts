@@ -20,7 +20,9 @@ import {
   maySeePrices,
   verifyBrowseIdentity,
 } from "../_shared/catalog.ts";
-import { bindMemberSession, cartSessionFor } from "../_shared/members.ts";
+import { bindMemberSession, cartSessionFor, resolveMember } from "../_shared/members.ts";
+import { rewardBalanceCents } from "../_shared/rewards.ts";
+import { getOrCreateReferralLink, trackedUrl } from "../_shared/referral.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -129,11 +131,23 @@ Deno.serve(async (req) => {
           .eq("provider", "stripe")
           .maybeSingle();
         const payments_enabled = !!(pc && pc.connected !== false && (pc.credentials as { secret_key?: string } | null)?.secret_key);
+        // Premium voice (OpenAI TTS): ON for all catalogue stores; owner opts out
+        // with tts_enabled=false and picks the female voice via tts_voice.
+        const { data: vcfg } = await db
+          .from("agent_config")
+          .select("key, value")
+          .eq("store_id", store.id)
+          .in("key", ["tts_enabled", "tts_voice"]);
+        const vconf = Object.fromEntries((vcfg ?? []).map((r) => [r.key, String(r.value ?? "")]));
+        const tts_premium = (vconf.tts_enabled ?? "true").toLowerCase() !== "false";
+        const tts_voice = (vconf.tts_voice || "aria").toLowerCase();
         return json({
           store: store.slug,
           label: await catalogLabel(db, store.id),
           filter,
           payments_enabled,
+          tts_premium,
+          tts_voice,
           ...page,
         });
       } catch (e) {
@@ -292,6 +306,53 @@ Deno.serve(async (req) => {
         return json({ items: [] });
       }
       return json({ items: Array.isArray(data) ? data : [] });
+    }
+    // Share & earn — surfaces the store's LIVE give-and-get offer in the diner
+    // surface (the engine is the same one the chat/WhatsApp bot uses). Describing
+    // the offer needs no identity (anonymous-safe); a bound member session also
+    // gets its credit balance + a real tracked referral link so a shared dish
+    // attributes back. No campaign running → offer null, but sharing still works
+    // as plain word-of-mouth on the diner side.
+    case "rewards": {
+      const { data: rule } = await db
+        .from("reward_rules")
+        .select(
+          "campaign_id, amount_cents, recipient_amount_cents, recipient_min_order_cents, reward_campaigns!inner(status, store_id)",
+        )
+        .eq("trigger", "referral_first_order")
+        .eq("reward_campaigns.store_id", store.id)
+        .eq("reward_campaigns.status", "active")
+        .limit(1)
+        .maybeSingle();
+      // deno-lint-ignore no-explicit-any
+      const r = rule as any;
+      const offer = r
+        ? {
+            friend_off_cents: Math.round(Number(r.recipient_amount_cents ?? 0)),
+            you_get_cents: Math.round(Number(r.amount_cents ?? 0)),
+            min_order_cents: Math.round(Number(r.recipient_min_order_cents ?? 0)),
+          }
+        : null;
+
+      // A verified/bound session resolves to a member → real balance + link.
+      const member = await resolveMember(db, store, sessionId);
+      let balance_cents = 0;
+      let link: string | null = null;
+      if (member) {
+        balance_cents = await rewardBalanceCents(db, store.id, member.id);
+        if (r) {
+          try {
+            const rl = await getOrCreateReferralLink(db, {
+              campaignId: r.campaign_id,
+              initiatorMemberId: member.id,
+            });
+            link = trackedUrl(rl.code);
+          } catch (e) {
+            console.error(`[web-cart] rewards link: ${e instanceof Error ? e.message : e}`);
+          }
+        }
+      }
+      return json({ offer, identified: !!member, balance_cents, link });
     }
     default:
       return json({ error: `unknown action: ${action}` }, 400);

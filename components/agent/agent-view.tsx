@@ -3,6 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { saveAgentConfig, type Charge, type Responder } from "@/app/(app)/agent/actions";
+import { VoiceCard } from "@/components/agent/voice-card";
 import { RespondersSection } from "./responders-section";
 import { ChargesSection } from "./charges-section";
 import { Button } from "@/components/ui/button";
@@ -118,6 +119,9 @@ export function AgentView({
           onCheckedChange={(c) => set("catalog_enabled", c ? "true" : "false")}
         />
       </div>
+
+      {/* Premium diner voice — self-contained (loads + saves on its own). */}
+      <VoiceCard />
 
       {/* Silence check-back */}
       <div className="bg-card flex items-start justify-between gap-4 rounded-lg border p-4">

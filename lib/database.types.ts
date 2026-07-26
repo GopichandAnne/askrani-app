@@ -2243,6 +2243,8 @@ export type Database = {
         | "kb_prices_ok"
         | "price_visibility"
         | "catalog_label"
+        | "tts_voice"
+        | "tts_enabled"
       attribution_type:
         | "link_click"
         | "chat_started"
@@ -2432,6 +2434,8 @@ export const Constants = {
         "kb_prices_ok",
         "price_visibility",
         "catalog_label",
+        "tts_voice",
+        "tts_enabled",
       ],
       attribution_type: [
         "link_click",
