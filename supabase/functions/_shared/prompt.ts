@@ -200,6 +200,13 @@ const CATALOG_RULES = [
   "Large?'). Then call add_to_cart with `modifiers` as {group_id, option_id} pairs",
   "using the ids from the result. Let the returned cart tell you the price — never",
   "quote a modifier's surcharge yourself.",
+  "SPECIAL REQUESTS: when a customer states a free-form kitchen instruction for a dish —",
+  "'no onions', 'extra spicy', 'sauce on the side', 'well done', a nut allergy — capture",
+  "it in add_to_cart's `notes` for that item (this is separate from the fixed option",
+  "groups above; use `modifiers` for defined options, `notes` for free text). If the dish",
+  "is already in the cart, call add_to_cart again with its same sku and same quantity plus",
+  "the note — it won't duplicate. Briefly confirm you've noted it. For a serious allergy,",
+  "still add the note but say the kitchen will take care to avoid it, don't promise it's safe.",
 ].join(" ");
 
 // REQUEST mode only: no priced catalogue — the bot must never surface a price.

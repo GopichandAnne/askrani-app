@@ -267,8 +267,12 @@ const ADD_TO_CART_DECL: FunctionDeclaration = {
     "Add a catalog item to the cart, or set its quantity. FIRST call " +
     "search_products to find the item and its exact `sku`, then call this with " +
     "that sku. This SETS the quantity (not increments) — to change a quantity, " +
-    "call again with the new total; quantity 0 removes it. Optionally pass a " +
-    "`notes` preference the customer stated (e.g. 'small pack', 'ripe ones'). " +
+    "call again with the new total; quantity 0 removes it. Pass any special " +
+    "request the customer stated for THIS dish in `notes` — allergies, 'no onions', " +
+    "'extra spicy', 'sauce on the side', 'well done', or a grocery preference like " +
+    "'ripe ones'. To add or change a note on an item ALREADY in the cart, call again " +
+    "with the same sku and the same quantity plus the note (this SETS quantity, so it " +
+    "won't duplicate). " +
     "OPTIONS: if the item from search_products has `modifiers` (option groups like " +
     "Size or Add-ons), make sure the customer has chosen for every REQUIRED group " +
     "(ask by option name if they haven't), then pass those choices in `modifiers` " +
@@ -281,7 +285,7 @@ const ADD_TO_CART_DECL: FunctionDeclaration = {
     properties: {
       sku: { type: "string", description: "Exact product sku from search_products." },
       quantity: { type: "number", description: "Desired quantity (0 removes the item)." },
-      notes: { type: "string", description: "Optional customer preference for this item." },
+      notes: { type: "string", description: "Optional special request / kitchen note for this item — allergies, 'no onions', 'extra spicy', 'on the side', 'well done' (or a grocery preference like 'ripe ones')." },
       modifiers: {
         type: "array",
         description: "Chosen options for an item that has `modifiers`: one {group_id, option_id} per selected option (every required group covered). Omit for plain items.",
