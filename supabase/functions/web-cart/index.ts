@@ -296,6 +296,7 @@ Deno.serve(async (req) => {
               name: String(it.name ?? ""),
               quantity: Number(it.quantity ?? 1),
               mod_sel: Array.isArray(it.mod_sel) ? it.mod_sel : null,
+              notes: typeof it.notes === "string" && it.notes.trim() ? it.notes : null,
               // deno-lint-ignore no-explicit-any
               modifiers: Array.isArray(it.modifiers) ? it.modifiers.map((m: any) => String(m.option ?? "")) : [],
             })),
