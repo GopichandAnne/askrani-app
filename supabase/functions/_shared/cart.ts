@@ -186,6 +186,25 @@ export async function removeFromCart(
   return { removed: next.length !== lines.length, lines: next };
 }
 
+/** Set (or clear) the free-text note on a cart line — the "no cilantro, nut
+ *  allergy, extra crispy" a server would jot for the kitchen. Capped; empty
+ *  clears it. The note rides into the order's items_json via toOrderItem. */
+export async function setLineNote(
+  db: SupabaseClient,
+  store: Store,
+  sessionId: string,
+  sku: string,
+  note: string | null,
+): Promise<{ ok: boolean; lines: CartLine[] }> {
+  const lines = await readLines(db, sessionId);
+  const idx = lines.findIndex((l) => l.sku === sku);
+  if (idx < 0) return { ok: false, lines };
+  const trimmed = (note ?? "").trim().slice(0, 200);
+  lines[idx] = { ...lines[idx], notes: trimmed || null };
+  await writeLines(db, store, sessionId, lines);
+  return { ok: true, lines };
+}
+
 export async function clearCart(db: SupabaseClient, store: Store, sessionId: string): Promise<void> {
   await writeLines(db, store, sessionId, []);
 }

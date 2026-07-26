@@ -10,7 +10,7 @@
 
 import { serviceClient } from "../_shared/supabase.ts";
 import { getStoreBySlug } from "../_shared/config.ts";
-import { addToCart, cartSubtotal, type CartLine, clearCart, removeFromCart, viewCart } from "../_shared/cart.ts";
+import { addToCart, cartSubtotal, type CartLine, clearCart, removeFromCart, setLineNote, viewCart } from "../_shared/cart.ts";
 import { placeOrder } from "../_shared/order.ts";
 import { createCheckoutSession, storeStripeKey } from "../_shared/stripe.ts";
 import {
@@ -43,6 +43,7 @@ function summarize(lines: CartLine[]) {
       unit_price: l.unit_price,
       line_total: l.line_total,
       request: l.request,
+      notes: l.notes,
       modifiers: l.modifiers ?? [],
     })),
     count: lines.reduce((s, l) => s + l.quantity, 0),
@@ -160,6 +161,7 @@ Deno.serve(async (req) => {
     // visitor just reads the prices back out of their own cart.
     case "add":
     case "remove":
+    case "note":
     case "view":
     case "clear": {
       if (!(await maySeePrices(db, store, { sessionId }))) {
@@ -179,13 +181,21 @@ Deno.serve(async (req) => {
             .map((m) => ({ group_id: String((m as { group_id?: unknown }).group_id ?? ""), option_id: String((m as { option_id?: unknown }).option_id ?? "") }))
             .filter((m) => m.group_id && m.option_id)
           : null;
-        const res = await addToCart(db, store, cartSession, sku, qty, null, mods);
+        // Optional per-dish note (allergies / "no onions" / prep) — like a server's ticket note.
+        const note = typeof body.note === "string" ? body.note : null;
+        const res = await addToCart(db, store, cartSession, sku, qty, note, mods);
         return json({
           ok: res.status === "added" || res.status === "removed",
           status: res.status,
           error: res.error,
           cart: summarize(res.lines),
         });
+      }
+      if (action === "note") {
+        const sku = String(body.sku ?? "").trim();
+        if (!sku) return json({ error: "sku required" }, 400);
+        const res = await setLineNote(db, store, cartSession, sku, typeof body.note === "string" ? body.note : null);
+        return json({ ok: res.ok, cart: summarize(res.lines) });
       }
       if (action === "remove") {
         const res = await removeFromCart(db, store, cartSession, String(body.sku ?? "").trim());
