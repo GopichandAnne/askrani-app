@@ -9,6 +9,7 @@ import {
   Package,
   Plug,
   QrCode,
+  Utensils,
   Megaphone,
   BadgeCheck,
   Ticket,
@@ -30,6 +31,8 @@ export type NavItem = {
   platformAdminOnly?: boolean;
   /** when set, the label is taken from the store's vertical vocabulary. */
   vocabKey?: "catalogNav";
+  /** when set, shown only for these stores.business_type values. */
+  businessTypes?: string[];
 };
 
 /** Information architecture for the panel (built in order across phases). */
@@ -40,6 +43,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Campaigns", href: "/campaigns", icon: Megaphone, available: true, ownerOnly: true },
   { label: "Conversations", href: "/conversations", icon: MessagesSquare, available: true },
   { label: "Catalog", href: "/inventory", icon: Package, available: true, vocabKey: "catalogNav" },
+  { label: "Diner", href: "/diner", icon: Utensils, available: true, ownerOnly: true, businessTypes: ["restaurant"] },
   { label: "Agent", href: "/agent", icon: Bot, available: true, ownerOnly: true },
   { label: "Knowledge", href: "/knowledge", icon: BookOpen, available: true, ownerOnly: false },
   { label: "Web Chat", href: "/link", icon: QrCode, available: true, ownerOnly: true },
