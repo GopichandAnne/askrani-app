@@ -519,10 +519,11 @@ function RowTagsDialog({
   const [open, setOpen] = useState(false);
   const [diet, setDiet] = useState<Set<string>>(new Set(product.dietary ?? []));
   const [allg, setAllg] = useState<Set<string>>(new Set(product.allergens ?? []));
+  const [heat, setHeat] = useState<string | null>(product.heat ?? null);
 
   const dietTags = product.dietary ?? [];
   const allgCount = product.allergens?.length ?? 0;
-  const empty = dietTags.length === 0 && allgCount === 0;
+  const empty = dietTags.length === 0 && allgCount === 0 && !product.heat;
   const summary = empty ? (
     <span className="text-muted-foreground inline-flex items-center gap-1 text-xs">
       <Tags className="size-3.5" />
@@ -536,6 +537,11 @@ function RowTagsDialog({
         </span>
       ))}
       {dietTags.length > 2 && <span className="text-muted-foreground text-[10px]">+{dietTags.length - 2}</span>}
+      {product.heat && (
+        <span className="rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] text-red-700 dark:bg-red-950 dark:text-red-300" title="heat level">
+          {product.heat === "hot" ? "🌶 Hot" : product.heat === "medium" ? "🌶 Medium" : "🌶 Mild"}
+        </span>
+      )}
       {allgCount > 0 && (
         <span className="text-amber-700 dark:text-amber-300 text-[10px]" title="contains allergens">
           ⚠{allgCount}
@@ -554,6 +560,7 @@ function RowTagsDialog({
         if (o) {
           setDiet(new Set(product.dietary ?? []));
           setAllg(new Set(product.allergens ?? []));
+          setHeat(product.heat ?? null);
         }
       }}
     >
@@ -575,12 +582,33 @@ function RowTagsDialog({
             <p className="text-sm font-medium">Contains allergens</p>
             <TagChips items={ALLERGENS} selected={allg} onToggle={(id) => setAllg((s) => toggleSet(s, id))} variant="allergen" />
           </div>
+          <div className="space-y-1.5">
+            <p className="text-sm font-medium">
+              Spice level <span className="text-muted-foreground font-normal">— lets diners filter by heat</span>
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {([["None", null], ["Mild", "mild"], ["Medium", "medium"], ["Hot", "hot"]] as const).map(([label, val]) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => setHeat(val)}
+                  className={`rounded-full border px-2.5 py-1 text-xs transition ${
+                    heat === val
+                      ? "border-red-400 bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-200"
+                      : "border-border text-muted-foreground hover:bg-muted"
+                  }`}
+                >
+                  {val ? `🌶 ${label}` : label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
         <DialogFooter>
           <Button
             size="sm"
             onClick={() => {
-              onSave(product.id, { dietary: [...diet], allergens: [...allg] });
+              onSave(product.id, { dietary: [...diet], allergens: [...allg], heat });
               setOpen(false);
             }}
           >

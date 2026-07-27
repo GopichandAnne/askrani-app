@@ -23,6 +23,7 @@ export type CatalogFilter = {
   skus?: string[] | null;
   dietary?: string[] | null;          // item must have ALL of these
   exclude_allergens?: string[] | null; // item must contain NONE of these
+  heat?: string[] | null;             // item's heat is ANY of these (mild|medium|hot)
   limit?: number;
   offset?: number;
 };
@@ -32,6 +33,7 @@ export type CatalogFacets = {
   brands: { value: string; count: number }[];
   dietary: { value: string; count: number }[];
   allergens: { value: string; count: number }[];
+  heat: { value: string; count: number }[];
   price: { min: number; max: number } | null;
   in_stock: number;
 };
@@ -125,6 +127,7 @@ export async function browseProducts(
     p_show_prices: showPrices,
     p_dietary: filter.dietary?.length ? filter.dietary : null,
     p_exclude_allergens: filter.exclude_allergens?.length ? filter.exclude_allergens : null,
+    p_heat: filter.heat?.length ? filter.heat : null,
   });
   if (error) throw new Error(`browse_products: ${error.message}`);
   return data as CatalogPage;
@@ -160,6 +163,10 @@ export function coerceFilter(raw: Record<string, unknown> | undefined | null): C
     // Constrain to the canonical vocabularies so a client can't inject arbitrary tags.
     dietary: cleanDietary(r.dietary) || null,
     exclude_allergens: cleanAllergens(r.exclude_allergens) || null,
+    heat: ((): string[] | null => {
+      const v = arr(r.heat)?.map((x) => x.toLowerCase()).filter((x) => x === "mild" || x === "medium" || x === "hot");
+      return v && v.length ? v : null;
+    })(),
     limit: num(r.limit) ?? 40,
     offset: num(r.offset) ?? 0,
   };

@@ -37,6 +37,41 @@ import { generateStructured, generateStructuredFromMedia } from "../_shared/gemi
 
 const REINDEX_DEFAULT_MAX = 200;
 
+/** Coerce an extracted heat value to the canonical set, else null. */
+function cleanHeat(v: unknown): string | null {
+  const h = typeof v === "string" ? v.trim().toLowerCase() : "";
+  return h === "mild" || h === "medium" || h === "hot" ? h : null;
+}
+
+/** Standard optional "Spice level" modifier group, seeded from the dish's own
+ *  heat so the diner can adjust it. No surcharge — heat is free to tune. */
+function spiceLevelGroup() {
+  return {
+    id: "spice-level",
+    name: "Spice level",
+    type: "single" as const,
+    required: false,
+    min: 0,
+    max: 1,
+    options: [
+      { id: "mild", name: "Mild", price_delta: 0 },
+      { id: "medium", name: "Medium", price_delta: 0 },
+      { id: "hot", name: "Hot", price_delta: 0 },
+    ],
+  };
+}
+
+/** True when a modifiers array already has a spice/heat option group. */
+// deno-lint-ignore no-explicit-any
+function hasSpiceGroup(mods: any): boolean {
+  if (!Array.isArray(mods)) return false;
+  // deno-lint-ignore no-explicit-any
+  return mods.some((g: any) => {
+    const label = `${g?.id ?? ""} ${g?.name ?? ""}`.toLowerCase();
+    return label.includes("spice") || label.includes("heat");
+  });
+}
+
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
 
@@ -169,7 +204,8 @@ Deno.serve(async (req) => {
         const SYS =
           "You extract a store's product catalogue from the provided content. Respond with ONLY JSON " +
           'of this shape: {"products":[{"name":string,"category":string,"price":string,' +
-          '"description":string,"sku":string,"image_url":string,"allergens":string[],"dietary":string[]}]}. ' +
+          '"description":string,"sku":string,"image_url":string,"allergens":string[],"dietary":string[],' +
+          '"heat":string,"spice_customizable":boolean}]}. ' +
           "Rules: include only real purchasable items; infer a sensible category per item; copy the price " +
           'EXACTLY as it appears as a string (e.g. "$6.50", "14.00", "8"), empty string if no price is shown ' +
           "— do NOT round or convert; description is a short line (empty if none); sku empty unless clearly " +
@@ -184,7 +220,13 @@ Deno.serve(async (req) => {
           `dietary: an array chosen ONLY from [${DIETARY_IDS.join(", ")}]. Add "vegetarian"/"vegan" when the ` +
           "dish is clearly free of meat/all animal products respectively. Add gluten_free/dairy_free/nut_free/" +
           "halal/kosher ONLY when the content EXPLICITLY states it — NEVER guess a 'free-from' claim, as a " +
-          "wrong one is dangerous. Use [] for either when nothing applies. Never invent items or prices.";
+          "wrong one is dangerous. Use [] for either when nothing applies. " +
+          'heat: the dish\'s own spice level as one of "mild","medium","hot", inferred from the name/description ' +
+          '(chili/spicy/fiery/"extra hot"→hot; "medium spice"→medium; an ordinary savory dish→mild). Use "" ' +
+          "when heat does NOT apply — desserts, sweets, drinks, lassi, plain rice/bread, and anything not savory. " +
+          "spice_customizable: true ONLY for savory mains, curries, and protein dishes where a kitchen could " +
+          "reasonably cook the heat to the diner's taste; false for desserts, sweets, drinks, and fixed-recipe " +
+          "items (a spice-level option will be offered to diners for the true ones). Never invent items or prices.";
         const result = media
           ? await generateStructuredFromMedia(SYS, media.mime, media.data)
           : await generateStructured(SYS, text.slice(0, 40000));
@@ -206,6 +248,10 @@ Deno.serve(async (req) => {
             // Auto-tagged, clamped to the canonical vocab — the owner verifies in review.
             allergens: cleanAllergens(p?.allergens),
             dietary: cleanDietary(p?.dietary),
+            heat: cleanHeat(p?.heat),
+            // Suggest a spice-level option only where adjusting heat makes sense
+            // (savory mains) — never desserts/drinks. Owner confirms in review.
+            spice_customizable: p?.spice_customizable === true && cleanHeat(p?.heat) !== null,
           };
         });
         return json({ store: store.slug, products });
@@ -255,6 +301,15 @@ Deno.serve(async (req) => {
           while (seen.has(s)) s = `${base}-${++n}`;
           seen.add(s);
           const price = p?.price;
+          const heat = cleanHeat(p?.heat);
+          // Intelligent modifier suggestion: only savory mains (spice_customizable,
+          // flagged at extract time) get an adjustable "Spice level" option — never
+          // desserts/drinks. Respect any modifiers the item already carries.
+          const existingMods = Array.isArray(p?.modifiers) ? p.modifiers : [];
+          const modifiers =
+            p?.spice_customizable === true && heat !== null && !hasSpiceGroup(existingMods)
+              ? [...existingMods, spiceLevelGroup()]
+              : existingMods;
           rows.push({
             store_id: store.id,
             name,
@@ -265,6 +320,8 @@ Deno.serve(async (req) => {
             price: price == null || price === "" ? null : Number(price),
             allergens: cleanAllergens(p?.allergens),
             dietary: cleanDietary(p?.dietary),
+            heat,
+            ...(modifiers.length ? { modifiers } : {}),
             in_stock: true,
             embedding_stale: true,
           });

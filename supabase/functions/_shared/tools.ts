@@ -191,7 +191,7 @@ async function executeSearchProducts(
       sku: string | null; name: string; brand: string | null; size: string | null;
       unit: string | null; price: number | null; currency: string | null;
       in_stock: boolean; category: string | null; description?: string | null; image_url?: string | null;
-      allergens?: string[] | null; dietary?: string[] | null; modifiers?: unknown;
+      allergens?: string[] | null; dietary?: string[] | null; modifiers?: unknown; heat?: string | null;
     }) => ({
       sku: r.sku,
       name: r.name,
@@ -208,6 +208,9 @@ async function executeSearchProducts(
       // Empty means "not recorded" (NOT "free of it"): the model must say it'll check.
       allergens: r.allergens ?? [],
       dietary: r.dietary ?? [],
+      // Heat level the owner recorded ('mild' | 'medium' | 'hot'). Only basis for a
+      // spiciness answer; absent means not recorded (say you'll check, don't guess).
+      ...(r.heat ? { heat: r.heat } : {}),
       // Option groups (size, add-ons…). Present them + pass chosen ids to add_to_cart.
       ...(Array.isArray(r.modifiers) && r.modifiers.length ? { modifiers: r.modifiers } : {}),
     }),

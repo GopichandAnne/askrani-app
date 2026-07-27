@@ -15,7 +15,7 @@ export type ProductResult =
 export type SimpleResult = { ok: true } | { ok: false; error: string };
 
 const PRODUCT_COLUMNS =
-  "id, store_id, sku, name, brand, size, unit, price, currency, in_stock, verified, featured, category, image_url, allergens, dietary, modifiers, created_by, created_at, updated_at";
+  "id, store_id, sku, name, brand, size, unit, price, currency, in_stock, verified, featured, category, image_url, allergens, dietary, heat, modifiers, created_by, created_at, updated_at";
 
 function cleanStr(v: string | null | undefined): string | null {
   if (v == null) return null;
@@ -54,6 +54,10 @@ export async function updateProduct(
   if ("featured" in patch) next.featured = !!patch.featured;
   if ("allergens" in patch) next.allergens = cleanAllergens(patch.allergens);
   if ("dietary" in patch) next.dietary = cleanDietary(patch.dietary);
+  if ("heat" in patch) {
+    const h = typeof patch.heat === "string" ? patch.heat.toLowerCase() : null;
+    next.heat = h === "mild" || h === "medium" || h === "hot" ? h : null;
+  }
   if ("modifiers" in patch) next.modifiers = cleanModifiers(patch.modifiers);
 
   // Price is a catalog/money change -> owners only (in_stock/verified are not).
