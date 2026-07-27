@@ -45,6 +45,7 @@ export default async function AgentPage() {
       topics={topics}
       charges={charges}
       storeName={store.name}
+      businessType={store.businessType}
     />
   );
 }
