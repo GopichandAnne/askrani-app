@@ -23,6 +23,7 @@ import {
 import { bindMemberSession, cartSessionFor, resolveMember } from "../_shared/members.ts";
 import { rewardBalanceCents } from "../_shared/rewards.ts";
 import { getOrCreateReferralLink, trackedUrl } from "../_shared/referral.ts";
+import { activePostCampaign, createPostSubmission, dinerPostOffer } from "../_shared/social.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -363,7 +364,26 @@ Deno.serve(async (req) => {
           }
         }
       }
-      return json({ offer, identified: !!member, balance_cents, link });
+      // Post & Earn (Instagram/TikTok/YouTube/Facebook) — the store's live
+      // per-platform, per-format offer + shareable media, shaped for the diner's
+      // channel-adaptive "Earn" cards. Anonymous-safe (describing needs no identity).
+      const camp = await activePostCampaign(db, store.id);
+      const post = camp ? dinerPostOffer(camp) : null;
+      return json({ offer, identified: !!member, balance_cents, link, post });
+    }
+    // Diner submits a post URL to claim post-for-credit. Needs identity (a bound
+    // member session) — anonymous returns needs_identity and the diner routes the
+    // guest to WhatsApp to claim. Goes into the same manual-review queue as chat.
+    case "submit_post": {
+      const postUrl = String(body.post_url ?? "").trim();
+      if (!postUrl) return json({ error: "post_url required" }, 400);
+      const res = await createPostSubmission(db, store, sessionId, {
+        postUrl,
+        platform: typeof body.platform === "string" ? body.platform : null,
+        format: typeof body.format === "string" ? body.format : null,
+        disclosureConfirmed: body.disclosure === true,
+      });
+      return json(res);
     }
     default:
       return json({ error: `unknown action: ${action}` }, 400);

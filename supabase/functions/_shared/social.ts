@@ -88,6 +88,50 @@ export function describeRuleOffer(rule: PostRule): string {
   return `${name}: credit by reach${base > 0 ? ` (+$${(base / 100).toFixed(2)} base)` : ""}`;
 }
 
+/** Diner-shaped view of the active Post & Earn offer: per-platform cards with
+ *  format→amount chips, the owner's "what to promote" ask, and shareable media.
+ *  Amounts in cents; the diner formats them. */
+export type DinerPostPlatform = {
+  platform: string;
+  model: string;
+  flat_cents: number | null;
+  base_cents: number | null;
+  max_cents: number;
+  formats: { format: string; cents: number }[];
+};
+export function dinerPostOffer(camp: PostCampaign): {
+  ask: string | null;
+  media: ShareMedia[];
+  platforms: DinerPostPlatform[];
+} {
+  return {
+    ask: camp.promoContext,
+    media: camp.shareMedia,
+    platforms: camp.rules.map((r) => {
+      const base = (r.amount_model === "tier" || r.amount_model === "format")
+        ? Math.max(0, Math.round(Number(r.amount_cents ?? 0)))
+        : 0;
+      let formats: { format: string; cents: number }[] = [];
+      if (r.amount_model === "format") {
+        const fa = r.format_amounts ?? {};
+        formats = formatsForPlatform(r.platform)
+          .filter((f) => Number(fa[f] ?? 0) > 0)
+          .map((f) => ({ format: f, cents: base + Math.round(Number(fa[f])) }));
+      }
+      const flat = r.amount_model === "flat" ? Math.round(Number(r.amount_cents ?? 0)) : null;
+      const max = Math.max(flat ?? 0, base, ...formats.map((f) => f.cents));
+      return {
+        platform: (r.platform ?? "any").toLowerCase(),
+        model: r.amount_model,
+        flat_cents: flat,
+        base_cents: base || null,
+        max_cents: max,
+        formats,
+      };
+    }),
+  };
+}
+
 export type SubmitResult =
   | { ok: true; submissionId: string; note: string }
   | { ok: false; reason: string; note: string };
