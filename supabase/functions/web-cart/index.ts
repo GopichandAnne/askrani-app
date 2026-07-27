@@ -350,6 +350,11 @@ Deno.serve(async (req) => {
       const member = await resolveMember(db, store, sessionId);
       let balance_cents = 0;
       let link: string | null = null;
+      // Progress/streak (real data — the "see how close" lever). pending = credit
+      // earned but not yet released (e.g. a referral before the friend orders);
+      // shares_month = this member's shares + posts this month (their momentum).
+      let pending_cents = 0;
+      let shares_month = 0;
       if (member) {
         balance_cents = await rewardBalanceCents(db, store.id, member.id);
         if (r) {
@@ -363,13 +368,28 @@ Deno.serve(async (req) => {
             console.error(`[web-cart] rewards link: ${e instanceof Error ? e.message : e}`);
           }
         }
+        try {
+          const monthStart = new Date();
+          monthStart.setUTCDate(1);
+          monthStart.setUTCHours(0, 0, 0, 0);
+          const iso = monthStart.toISOString();
+          const [held, links, posts] = await Promise.all([
+            db.from("reward_ledger").select("amount_cents").eq("store_id", store.id).eq("member_id", member.id).eq("status", "held"),
+            db.from("referral_links").select("id", { count: "exact", head: true }).eq("initiator_member_id", member.id).gte("created_at", iso),
+            db.from("social_submissions").select("id", { count: "exact", head: true }).eq("store_id", store.id).eq("member_id", member.id).gte("created_at", iso),
+          ]);
+          pending_cents = (held.data ?? []).reduce((s, x) => s + Math.round(Number(x.amount_cents ?? 0)), 0);
+          shares_month = (links.count ?? 0) + (posts.count ?? 0);
+        } catch (e) {
+          console.error(`[web-cart] rewards progress: ${e instanceof Error ? e.message : e}`);
+        }
       }
       // Post & Earn (Instagram/TikTok/YouTube/Facebook) — the store's live
       // per-platform, per-format offer + shareable media, shaped for the diner's
       // channel-adaptive "Earn" cards. Anonymous-safe (describing needs no identity).
       const camp = await activePostCampaign(db, store.id);
       const post = camp ? dinerPostOffer(camp) : null;
-      return json({ offer, identified: !!member, balance_cents, link, post });
+      return json({ offer, identified: !!member, balance_cents, link, post, progress: { pending_cents, shares_month } });
     }
     // Diner submits a post URL to claim post-for-credit. Needs identity (a bound
     // member session) — anonymous returns needs_identity and the diner routes the
