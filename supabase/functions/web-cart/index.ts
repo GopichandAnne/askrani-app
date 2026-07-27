@@ -36,6 +36,16 @@ function json(obj: unknown, status = 200): Response {
   return new Response(JSON.stringify(obj), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 }
 
+const PROD_COLS = "sku, name, brand, size, unit, price, currency, category, image_url, in_stock, allergens, dietary, modifiers";
+// deno-lint-ignore no-explicit-any
+function prodItem(p: any, showPrices: boolean) {
+  return {
+    sku: p.sku, name: p.name, brand: p.brand, size: p.size, unit: p.unit,
+    price: showPrices ? p.price : null, currency: p.currency, category: p.category,
+    image_url: p.image_url, in_stock: p.in_stock, allergens: p.allergens, dietary: p.dietary, modifiers: p.modifiers,
+  };
+}
+
 function summarize(lines: CartLine[]) {
   return {
     items: lines.map((l) => ({
@@ -405,6 +415,61 @@ Deno.serve(async (req) => {
         handle: typeof body.handle === "string" ? body.handle : null,
       });
       return json(res);
+    }
+    // Predictive "right now" pick: the guest's usual (history) + owner specials +
+    // real time-of-day popularity, ranked. Powers Rani's contextual greeting.
+    case "suggest": {
+      const daypart = ["morning", "afternoon", "evening", "late"].includes(String(body.daypart)) ? String(body.daypart) : "evening";
+      const offsetMin = Number.isFinite(Number(body.tz_offset_min)) ? Math.round(Number(body.tz_offset_min)) : 0;
+      const showPrices = await maySeePrices(db, store, { sessionId });
+
+      // History: this session's most-ordered in-stock item ("your usual").
+      let historyPick = null;
+      const { data: pastOrders } = await db
+        .from("orders").select("items_json, status").eq("store_slug", store.slug).eq("session_id", cartSession)
+        .order("created_at", { ascending: false }).limit(20);
+      const tally = new Map<string, number>();
+      for (const o of pastOrders ?? []) {
+        if (o.status === "cancelled" || o.status === "rejected") continue;
+        // deno-lint-ignore no-explicit-any
+        for (const it of (Array.isArray(o.items_json) ? o.items_json : []) as any[]) {
+          if (!it?.catalog_matched || !it.sku) continue;
+          tally.set(String(it.sku), (tally.get(String(it.sku)) ?? 0) + Number(it.quantity ?? 1));
+        }
+      }
+      const topSku = [...tally.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+      if (topSku) {
+        const { data: p } = await db.from("products").select(PROD_COLS).eq("store_id", store.id).eq("sku", topSku).eq("in_stock", true).maybeSingle();
+        if (p) historyPick = prodItem(p, showPrices);
+      }
+
+      const [featRes, dpRes, popRes] = await Promise.all([
+        db.from("products").select(PROD_COLS).eq("store_id", store.id).eq("featured", true).eq("in_stock", true).limit(3),
+        db.rpc("popular_products_daypart", { p_store_id: store.id, p_offset_min: offsetMin, p_daypart: daypart, p_show_prices: showPrices, p_limit: 3 }),
+        db.rpc("popular_products", { p_store_id: store.id, p_show_prices: showPrices, p_limit: 3 }),
+      ]);
+      const special = featRes.data && featRes.data.length ? prodItem(featRes.data[0], showPrices) : null;
+      const daypartPick = Array.isArray(dpRes.data) && dpRes.data.length ? dpRes.data[0] : null;
+      const popularPick = Array.isArray(popRes.data) && popRes.data.length ? popRes.data[0] : null;
+
+      let pick = null, reason = "";
+      if (historyPick) { pick = historyPick; reason = "usual"; }
+      else if (special) { pick = special; reason = "special"; }
+      else if (daypartPick) { pick = daypartPick; reason = "daypart"; }
+      else if (popularPick) { pick = popularPick; reason = "popular"; }
+
+      const dp = daypart === "morning" ? "Morning" : daypart === "afternoon" ? "Afternoon" : daypart === "late" ? "Late night" : "Evening";
+      // deno-lint-ignore no-explicit-any
+      const nm = pick ? (pick as any).name : "";
+      let greeting = `${dp} — let me look after you.`;
+      if (pick) {
+        greeting = reason === "usual" ? `${dp} — back for your usual ${nm}?`
+          : reason === "special" ? `${dp} — today's special is the ${nm}.`
+          : reason === "daypart" ? `${dp} — the ${nm} is a favourite around now.`
+          : `${dp} — most people go for the ${nm}.`;
+      }
+      // Also surface a distinct special when the primary pick was the usual.
+      return json({ pick, reason, greeting, special: special && reason !== "special" ? special : null });
     }
     default:
       return json({ error: `unknown action: ${action}` }, 400);

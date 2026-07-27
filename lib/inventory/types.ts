@@ -28,6 +28,7 @@ export type ProductPatch = Partial<
     | "price"
     | "in_stock"
     | "verified"
+    | "featured"
     | "category"
     | "image_url"
     | "allergens"

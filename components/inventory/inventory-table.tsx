@@ -40,7 +40,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Camera, ImageIcon, PackageOpen, Search, Tags, Trash2 } from "lucide-react";
+import { Camera, ImageIcon, PackageOpen, Search, Star, Tags, Trash2 } from "lucide-react";
 import { ALLERGENS, DIETARY, labelFor } from "@/lib/dietary";
 import { ModifiersDialog } from "./modifiers-dialog";
 import { cn } from "@/lib/utils";
@@ -237,6 +237,7 @@ export function InventoryTable({
                 <TableHead className="w-32">Price</TableHead>
                 <TableHead className="w-28 text-center">Tags</TableHead>
                 <TableHead className="w-24 text-center">Options</TableHead>
+                <TableHead className="w-16 text-center">Special</TableHead>
                 <TableHead className="w-24 text-center">In stock</TableHead>
                 <TableHead className="w-24 text-center">Verified</TableHead>
                 <TableHead className="w-12" />
@@ -355,6 +356,17 @@ function ProductRow({
       </TableCell>
       <TableCell className="text-center">
         <ModifiersDialog product={product} isOwner={isOwner} onSave={onSave} />
+      </TableCell>
+      <TableCell className="text-center">
+        <button
+          type="button"
+          onClick={() => onSave(product.id, { featured: !product.featured })}
+          aria-label={product.featured ? "Remove special" : "Mark as today's special"}
+          aria-pressed={product.featured}
+          className="text-muted-foreground hover:text-amber-500 transition-colors"
+        >
+          <Star className={product.featured ? "size-5 fill-amber-400 text-amber-500" : "size-5"} />
+        </button>
       </TableCell>
       <TableCell className="text-center">
         <Switch

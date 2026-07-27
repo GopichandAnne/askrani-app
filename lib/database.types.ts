@@ -617,6 +617,7 @@ export type Database = {
           embedded_at: string | null
           embedding: string | null
           embedding_stale: boolean
+          featured: boolean
           id: string
           image_url: string | null
           in_stock: boolean
@@ -642,6 +643,7 @@ export type Database = {
           embedded_at?: string | null
           embedding?: string | null
           embedding_stale?: boolean
+          featured?: boolean
           id?: string
           image_url?: string | null
           in_stock?: boolean
@@ -667,6 +669,7 @@ export type Database = {
           embedded_at?: string | null
           embedding?: string | null
           embedding_stale?: boolean
+          featured?: boolean
           id?: string
           image_url?: string | null
           in_stock?: boolean

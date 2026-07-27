@@ -15,7 +15,7 @@ export type ProductResult =
 export type SimpleResult = { ok: true } | { ok: false; error: string };
 
 const PRODUCT_COLUMNS =
-  "id, store_id, sku, name, brand, size, unit, price, currency, in_stock, verified, category, image_url, allergens, dietary, modifiers, created_by, created_at, updated_at";
+  "id, store_id, sku, name, brand, size, unit, price, currency, in_stock, verified, featured, category, image_url, allergens, dietary, modifiers, created_by, created_at, updated_at";
 
 function cleanStr(v: string | null | undefined): string | null {
   if (v == null) return null;
@@ -51,6 +51,7 @@ export async function updateProduct(
   if ("price" in patch) next.price = cleanPrice(patch.price);
   if ("in_stock" in patch) next.in_stock = !!patch.in_stock;
   if ("verified" in patch) next.verified = !!patch.verified;
+  if ("featured" in patch) next.featured = !!patch.featured;
   if ("allergens" in patch) next.allergens = cleanAllergens(patch.allergens);
   if ("dietary" in patch) next.dietary = cleanDietary(patch.dietary);
   if ("modifiers" in patch) next.modifiers = cleanModifiers(patch.modifiers);
