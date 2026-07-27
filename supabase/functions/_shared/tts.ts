@@ -8,15 +8,27 @@
 
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 
-// Owner-facing voice names → OpenAI voice + a hospitality tone instruction.
-// Female voices only (product decision). The owner-facing name decouples us from
-// OpenAI's internal labels.
+// Owner-facing voice names → OpenAI voice + a rich DELIVERY instruction.
+// gpt-4o-mini-tts sounds like "reading text" unless you direct HOW to speak — so
+// these steer affect, rhythm, emphasis and (crucially) what to avoid, to get
+// natural table-side conversation instead of an announcer. Female voices only.
+// Shared across every voice so they all read as a person talking, not narrating.
+const SHARED_STYLE =
+  "You are a real server talking to a guest at their table — this is spoken conversation, NOT reading a message aloud. " +
+  "Use relaxed, natural conversational rhythm: easy rises and falls in pitch, small pauses where a person would breathe, " +
+  "and a light smile in the voice. Lightly emphasise dish names and the appealing, tasty words the way someone does when " +
+  "they're genuinely recommending a favourite. Let it feel a touch spontaneous and human. " +
+  "Absolutely avoid: a flat, even, robotic cadence; an announcer or news-reader tone; the clipped delivery of a phone menu " +
+  "or voice assistant; and any sense of reading text word by word.";
 export const TTS_VOICES: Record<string, { openai: string; instructions: string }> = {
-  aria: { openai: "nova", instructions: "You are a warm, friendly restaurant host. Speak naturally and unhurried, welcoming the guest." },
-  sable: { openai: "shimmer", instructions: "Speak softly and gently, calm and kind, like a soothing host." },
-  coral: { openai: "coral", instructions: "Speak brightly and warmly, upbeat and cheerful but never rushed." },
-  sage: { openai: "sage", instructions: "Speak calmly and clearly, poised and reassuring." },
+  aria: { openai: "nova", instructions: `Affect: a warm, genuinely welcoming server who's glad to see this guest. Tone: friendly and unhurried, like chatting with a regular. ${SHARED_STYLE}` },
+  sable: { openai: "shimmer", instructions: `Affect: a soft-spoken, gentle, caring server with a soothing presence. Tone: calm, warm and intimate, softly rounded and easy. ${SHARED_STYLE}` },
+  coral: { openai: "coral", instructions: `Affect: a bright, upbeat, cheerful server who's genuinely excited about the food. Tone: lively, playful and warm — expressive rise and fall, but never rushed or salesy. ${SHARED_STYLE}` },
+  sage: { openai: "sage", instructions: `Affect: a calm, poised, quietly confident server who makes guests feel looked after. Tone: reassuring, grounded and smooth, with natural phrasing. ${SHARED_STYLE}` },
 };
+// Bump when the instructions above change — it's part of the cache key, so old
+// (differently-voiced) clips are invalidated and re-synthesized in the new style.
+const STYLE_VERSION = "v2";
 export const DEFAULT_VOICE = "aria";
 export function resolveVoice(name?: string | null): { key: string; openai: string; instructions: string } {
   const key = (name ?? "").toLowerCase();
@@ -58,9 +70,9 @@ export async function synthesizeSpeech(text: string, voiceName: string): Promise
 }
 
 async function cachePath(voiceName: string, text: string): Promise<string> {
-  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${voiceName}\n${text}`));
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${STYLE_VERSION}\n${voiceName}\n${text}`));
   const hex = [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
-  return `${voiceName}/${hex}.mp3`;
+  return `${STYLE_VERSION}/${voiceName}/${hex}.mp3`;
 }
 
 /** Cache-first speech: serve the stored clip if we've said this line in this
