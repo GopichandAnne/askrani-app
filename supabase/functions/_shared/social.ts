@@ -141,7 +141,7 @@ export async function createPostSubmission(
   db: SupabaseClient,
   store: Store,
   sessionId: string,
-  args: { postUrl: string; platform?: string | null; format?: string | null; disclosureConfirmed: boolean },
+  args: { postUrl: string; platform?: string | null; format?: string | null; disclosureConfirmed: boolean; handle?: string | null },
 ): Promise<SubmitResult> {
   let memberId = (await resolveMember(db, store, sessionId))?.id ?? null;
   if (!memberId && sessionId.startsWith("wa_")) {
@@ -175,6 +175,34 @@ export async function createPostSubmission(
 
   if (!args.disclosureConfirmed) {
     return { ok: false, reason: "needs_disclosure", note: "They must confirm the post includes the required disclosure tag (#ad or #gifted) before you submit it." };
+  }
+
+  // Anti-farming: bind ONE social handle per member per platform, and a handle to
+  // exactly one member. Blocks rotating throwaway accounts to farm credit.
+  const plat = platform ?? rule.platform ?? null;
+  const handle = (args.handle ?? "").trim().replace(/^@+/, "").toLowerCase();
+  if (handle && plat) {
+    const { data: mine } = await db.from("member_social_handles")
+      .select("handle").eq("store_id", store.id).eq("platform", plat).eq("member_id", memberId).maybeSingle();
+    if (mine && mine.handle !== handle) {
+      return { ok: false, reason: "handle_mismatch", note: `They already linked @${mine.handle} for ${plat}. Use that handle, or contact the store.` };
+    }
+    const { data: owner } = await db.from("member_social_handles")
+      .select("member_id").eq("store_id", store.id).eq("platform", plat).eq("handle", handle).maybeSingle();
+    if (owner && owner.member_id !== memberId) {
+      return { ok: false, reason: "handle_taken", note: `@${handle} is already linked to another account.` };
+    }
+    if (!mine) {
+      const { error: bindErr } = await db.from("member_social_handles")
+        .insert({ store_id: store.id, member_id: memberId, platform: plat, handle });
+      // 23505 = a concurrent bind grabbed it — re-check ownership.
+      // deno-lint-ignore no-explicit-any
+      if (bindErr && (bindErr as any).code === "23505") {
+        const { data: o2 } = await db.from("member_social_handles")
+          .select("member_id").eq("store_id", store.id).eq("platform", plat).eq("handle", handle).maybeSingle();
+        if (o2 && o2.member_id !== memberId) return { ok: false, reason: "handle_taken", note: `@${handle} is already linked to another account.` };
+      }
+    }
   }
 
   const { data, error } = await db

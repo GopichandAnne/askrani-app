@@ -402,6 +402,7 @@ Deno.serve(async (req) => {
         platform: typeof body.platform === "string" ? body.platform : null,
         format: typeof body.format === "string" ? body.format : null,
         disclosureConfirmed: body.disclosure === true,
+        handle: typeof body.handle === "string" ? body.handle : null,
       });
       return json(res);
     }

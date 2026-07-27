@@ -7,8 +7,9 @@
 import { serviceClient } from "../_shared/supabase.ts";
 import { getStoreBySlug } from "../_shared/config.ts";
 import { sendEmail } from "../_shared/email.ts";
-import { bindMemberSession, findMemberByIdentity, resolveMember } from "../_shared/members.ts";
+import { bindMemberSession, findMemberByIdentity, provisionMember, resolveMember } from "../_shared/members.ts";
 import { verifyBrowseIdentity } from "../_shared/catalog.ts";
+import { verifyAppleIdToken, verifyGoogleIdToken } from "../_shared/oauth.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -24,7 +25,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
 
-  let body: { action?: string; slug?: string; token?: string; session_id?: string; email?: string; code?: string };
+  let body: { action?: string; slug?: string; token?: string; session_id?: string; email?: string; code?: string; browse_key?: string; provider?: string; id_token?: string; nonce?: string };
   try {
     body = await req.json();
   } catch {
@@ -67,6 +68,31 @@ Deno.serve(async (req) => {
     }
     const member = await resolveMember(db, store, sessionId);
     return json({ member: member ? { role: member.role, name: member.name } : null });
+  }
+
+  // Apple/Google one-tap — its own feature (NOT gated by web_email_verification).
+  // The diner sends a signed ID token; we verify it against the provider's public
+  // keys (no secret needed) and bind the session to the member for the enclosed
+  // verified email, creating the member if new.
+  if (action === "oauth_signin") {
+    const provider = String(body.provider ?? "").toLowerCase();
+    const idToken = String(body.id_token ?? "").trim();
+    const nonce = body.nonce ?? null;
+    if (!idToken) return json({ verified: false, error: "missing token" }, 400);
+    const googleAud = (Deno.env.get("GOOGLE_CLIENT_ID") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+    const appleAud = (Deno.env.get("APPLE_CLIENT_ID") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+    let claim = null;
+    if (provider === "google" && googleAud.length) claim = await verifyGoogleIdToken(idToken, googleAud, nonce);
+    else if (provider === "apple" && appleAud.length) claim = await verifyAppleIdToken(idToken, appleAud, nonce);
+    else return json({ verified: false, error: "provider not configured" }, 400);
+    if (!claim || !claim.email || !claim.emailVerified) {
+      return json({ verified: false, error: "Couldn't verify that sign-in." }, 401);
+    }
+    const member = (await findMemberByIdentity(db, store.id, claim.email)) ??
+      (await provisionMember(db, store.id, { email: claim.email, name: claim.name ?? undefined }));
+    if (!member) return json({ verified: false, error: "Couldn't set up your account." }, 500);
+    await bindMemberSession(db, sessionId, store.id, member.id);
+    return json({ verified: true, member: { role: member.role, name: member.name } });
   }
 
   // Owner gate: the feature must be turned on.
