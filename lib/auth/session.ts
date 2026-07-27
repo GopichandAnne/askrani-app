@@ -9,6 +9,8 @@ export type StoreAccess = {
   slug: string;
   name: string;
   role: StoreRole;
+  /** Drives the vertical vocabulary layer (lib/vertical-vocab.ts). */
+  businessType: string | null;
 };
 
 export type SessionContext = {
@@ -42,7 +44,7 @@ export const getSessionContext = cache(
       supabase.rpc("is_platform_admin"),
       supabase
         .from("stores")
-        .select("id, slug, store_display_name")
+        .select("id, slug, store_display_name, business_type")
         .order("store_display_name", { ascending: true }),
       supabase.from("staff").select("store_id, role").eq("user_id", user.id),
     ]);
@@ -59,6 +61,7 @@ export const getSessionContext = cache(
       slug: s.slug,
       name: s.store_display_name ?? s.slug,
       role: roleByStore.get(s.id) ?? (isPlatformAdmin ? "owner" : "staff"),
+      businessType: s.business_type ?? null,
     }));
 
     return {

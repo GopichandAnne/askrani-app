@@ -4,8 +4,13 @@ import { getActiveStore } from "@/lib/store/active-store";
 import { createClient } from "@/lib/supabase/server";
 import type { Product } from "@/lib/inventory/types";
 import { InventoryTable } from "@/components/inventory/inventory-table";
+import { vocabFor } from "@/lib/vertical-vocab";
 
-export const metadata: Metadata = { title: "Catalog · Ask Rani" };
+export async function generateMetadata(): Promise<Metadata> {
+  const ctx = await getActiveStore();
+  const title = vocabFor(ctx?.active?.businessType).catalogTitle;
+  return { title: `${title} · Ask Rani` };
+}
 
 export default async function InventoryPage() {
   const ctx = await getActiveStore();
@@ -25,6 +30,7 @@ export default async function InventoryPage() {
       key={store.slug}
       initialProducts={(products ?? []) as Product[]}
       storeName={store.name}
+      vocab={vocabFor(store.businessType)}
     />
   );
 }

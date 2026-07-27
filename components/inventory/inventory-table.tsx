@@ -44,13 +44,18 @@ import { Camera, ImageIcon, PackageOpen, Search, Star, Tags, Trash2 } from "luci
 import { ALLERGENS, DIETARY, labelFor } from "@/lib/dietary";
 import { ModifiersDialog } from "./modifiers-dialog";
 import { cn } from "@/lib/utils";
+import type { Vocab } from "@/lib/vertical-vocab";
+
+const cap = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
 export function InventoryTable({
   initialProducts,
   storeName,
+  vocab,
 }: {
   initialProducts: Product[];
   storeName: string;
+  vocab: Vocab;
 }) {
   const { active, isPlatformAdmin } = useStore();
   const isOwner = isPlatformAdmin || active.role === "owner";
@@ -101,7 +106,7 @@ export function InventoryTable({
       return n;
     });
     const res = await removeProduct(id);
-    if (res.ok) toast.success("Product removed");
+    if (res.ok) toast.success(`${cap(vocab.itemSingular)} removed`);
     else {
       setProducts(before);
       toast.error("Couldn't remove", { description: res.error });
@@ -140,14 +145,14 @@ export function InventoryTable({
       const allergens = merge(p.allergens ?? [], addAll, rmAll);
       await save(id, { dietary, allergens });
     }
-    toast.success(`Updated tags on ${ids.length} product${ids.length === 1 ? "" : "s"}`);
+    toast.success(`Updated tags on ${ids.length} ${ids.length === 1 ? vocab.itemSingular : vocab.itemPlural}`);
   }
 
   return (
     <div className="mx-auto max-w-6xl space-y-5 p-6">
       <header className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="font-display text-2xl italic">Catalog</h1>
+          <h1 className="font-display text-2xl italic">{vocab.catalogTitle}</h1>
           <p className="text-muted-foreground text-sm">{storeName}</p>
         </div>
         {isOwner && (
@@ -157,8 +162,8 @@ export function InventoryTable({
                 <Camera className="size-4" /> Add photos ({photolessCount})
               </Button>
             )}
-            <ImportCatalogueDialog />
-            <AddProductDialog onAdded={(p) => setProducts((prev) => [p, ...prev])} />
+            <ImportCatalogueDialog label={vocab.importCta} vocab={vocab} />
+            <AddProductDialog label={vocab.addCta} onAdded={(p) => setProducts((prev) => [p, ...prev])} />
           </div>
         )}
       </header>
@@ -207,11 +212,11 @@ export function InventoryTable({
         <div className="bg-card flex flex-col items-center gap-2 rounded-lg border border-dashed py-16 text-center">
           <PackageOpen className="text-muted-foreground size-6" />
           <p className="text-sm font-medium">
-            {products.length === 0 ? "No products yet" : "No products match"}
+            {products.length === 0 ? `No ${vocab.itemPlural} yet` : `No ${vocab.itemPlural} match`}
           </p>
           <p className="text-muted-foreground text-sm">
             {products.length === 0
-              ? `Add ${storeName}'s first product.`
+              ? `Add ${storeName}'s first ${vocab.itemSingular}.`
               : "Try a different search."}
           </p>
         </div>

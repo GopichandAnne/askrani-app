@@ -25,8 +25,10 @@ const EMPTY = { name: "", sku: "", brand: "", size: "", unit: "", price: "", ima
 
 export function AddProductDialog({
   onAdded,
+  label = "Add product",
 }: {
   onAdded: (product: Product) => void;
+  label?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ ...EMPTY });
@@ -72,12 +74,12 @@ export function AddProductDialog({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button size="sm">
-          <Plus className="size-4" /> Add product
+          <Plus className="size-4" /> {label}
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Add product</DialogTitle>
+          <DialogTitle>{label}</DialogTitle>
           <DialogDescription>
             Add an item to this store&apos;s inventory.
           </DialogDescription>

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getActiveStore } from "@/lib/store/active-store";
 import { createClient } from "@/lib/supabase/server";
 import { CheckCircle2, Circle } from "lucide-react";
+import { vocabFor } from "@/lib/vertical-vocab";
 
 /** First-run "get your assistant ready" checklist. Owner-only; renders nothing
  *  once every step is done. Server component — computes live setup state. */
@@ -9,6 +10,7 @@ export async function SetupChecklist() {
   const ctx = await getActiveStore();
   if (!ctx?.active) return null;
   const store = ctx.active;
+  const vocab = vocabFor(store.businessType);
 
   const supabase = await createClient();
   const { data: isOwner } = await supabase.rpc("user_is_owner", { p_store_id: store.id });
@@ -31,8 +33,8 @@ export async function SetupChecklist() {
     },
     {
       done: (prod.count ?? 0) > 0 || (know.count ?? 0) > 0,
-      label: "Add your catalogue or knowledge",
-      desc: "Import a menu, add products, or add a few Q&As.",
+      label: vocab.checklistCatalogLabel,
+      desc: vocab.checklistCatalogDesc,
       href: "/inventory",
     },
     {

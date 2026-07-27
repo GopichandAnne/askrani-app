@@ -18,11 +18,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, Sparkles, Upload } from "lucide-react";
+import { vocabFor, type Vocab } from "@/lib/vertical-vocab";
 
 type Row = ExtractedProduct & { include: boolean; source?: string };
 type PickedFile = { name: string; mime: string; base64?: string; text?: string };
 
-export function ImportCatalogueDialog() {
+export function ImportCatalogueDialog({
+  label = "Import catalogue",
+  vocab = vocabFor(null),
+}: {
+  label?: string;
+  vocab?: Vocab;
+} = {}) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
@@ -157,7 +164,7 @@ export function ImportCatalogueDialog() {
     );
     setImporting(false);
     if (res.ok) {
-      toast.success(`Imported ${res.imported} product${res.imported === 1 ? "" : "s"}`);
+      toast.success(`Imported ${res.imported} ${res.imported === 1 ? vocab.itemSingular : vocab.itemPlural}`);
       setOpen(false);
       reset();
       router.refresh();
@@ -178,14 +185,14 @@ export function ImportCatalogueDialog() {
     >
       <DialogTrigger asChild>
         <Button size="sm" variant="outline">
-          <Sparkles className="size-4" /> Import
+          <Sparkles className="size-4" /> {label}
         </Button>
       </DialogTrigger>
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
         {step === "input" ? (
           <>
             <DialogHeader>
-              <DialogTitle>Import catalogue</DialogTitle>
+              <DialogTitle>{label}</DialogTitle>
               <DialogDescription>
                 Paste a menu/catalogue URL, upload several files at once (PDFs, images, JSON, CSV —
                 a whole listing folder is fine), or paste the items. Rani reads them all and merges
@@ -413,7 +420,7 @@ export function ImportCatalogueDialog() {
               <Button variant="ghost" onClick={() => setStep("input")}>Back</Button>
               <Button onClick={doImport} disabled={importing || chosenCount === 0}>
                 {importing ? <Loader2 className="size-4 animate-spin" /> : null}
-                Import {chosenCount} product{chosenCount === 1 ? "" : "s"}
+                Import {chosenCount} {chosenCount === 1 ? vocab.itemSingular : vocab.itemPlural}
               </Button>
             </DialogFooter>
           </>

@@ -9,11 +9,13 @@ import { NAV_ITEMS } from "@/components/app-shell/nav-items";
 import { getNavCounts } from "@/app/(app)/actions";
 import { useStore } from "@/components/store/store-provider";
 import { Badge } from "@/components/ui/badge";
+import { vocabFor } from "@/lib/vertical-vocab";
 
 export function Sidebar() {
   const pathname = usePathname();
   const { active, isPlatformAdmin } = useStore();
   const isOwner = active.role === "owner" || isPlatformAdmin;
+  const vocab = vocabFor(active.businessType);
 
   // "Needs attention" counts (open questions, new requests). Refresh on
   // navigation + store switch (so answering something updates it) + every 60s.
@@ -42,6 +44,7 @@ export function Sidebar() {
           if (item.ownerOnly && !isOwner) return null;
           if (item.platformAdminOnly && !isPlatformAdmin) return null;
           const Icon = item.icon;
+          const label = item.vocabKey ? vocab[item.vocabKey] : item.label;
           const isActive =
             pathname === item.href || pathname.startsWith(`${item.href}/`);
           // Divider label above the first platform-admin item.
@@ -62,7 +65,7 @@ export function Sidebar() {
               aria-disabled
             >
               <Icon className="size-4" />
-              <span className="flex-1">{item.label}</span>
+              <span className="flex-1">{label}</span>
               <Badge variant="secondary" className="px-1.5 py-0 text-[10px]">
                 Soon
               </Badge>
@@ -78,7 +81,7 @@ export function Sidebar() {
               )}
             >
               <Icon className="size-4" />
-              <span className="flex-1">{item.label}</span>
+              <span className="flex-1">{label}</span>
               {(counts[item.href] ?? 0) > 0 && (
                 <Badge
                   className={cn(

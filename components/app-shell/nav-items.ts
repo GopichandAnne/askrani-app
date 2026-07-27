@@ -28,6 +28,8 @@ export type NavItem = {
   ownerOnly?: boolean;
   /** platform-admin (super admin) only — store-agnostic tools. */
   platformAdminOnly?: boolean;
+  /** when set, the label is taken from the store's vertical vocabulary. */
+  vocabKey?: "catalogNav";
 };
 
 /** Information architecture for the panel (built in order across phases). */
@@ -37,7 +39,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Post reviews", href: "/reviews", icon: BadgeCheck, available: true },
   { label: "Campaigns", href: "/campaigns", icon: Megaphone, available: true, ownerOnly: true },
   { label: "Conversations", href: "/conversations", icon: MessagesSquare, available: true },
-  { label: "Catalog", href: "/inventory", icon: Package, available: true },
+  { label: "Catalog", href: "/inventory", icon: Package, available: true, vocabKey: "catalogNav" },
   { label: "Agent", href: "/agent", icon: Bot, available: true, ownerOnly: true },
   { label: "Knowledge", href: "/knowledge", icon: BookOpen, available: true, ownerOnly: false },
   { label: "Web Chat", href: "/link", icon: QrCode, available: true, ownerOnly: true },
