@@ -29,6 +29,9 @@ const EDITABLE: AgentKey[] = [
   "history_turns",
   "tts_voice",
   "tts_enabled",
+  "streak_goal",
+  "streak_bonus_cents",
+  "streak_cap_cents",
 ];
 
 /**

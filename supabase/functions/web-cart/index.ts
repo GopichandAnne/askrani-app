@@ -24,6 +24,7 @@ import { bindMemberSession, cartSessionFor, resolveMember } from "../_shared/mem
 import { rewardBalanceCents } from "../_shared/rewards.ts";
 import { getOrCreateReferralLink, trackedUrl } from "../_shared/referral.ts";
 import { activePostCampaign, createPostSubmission, dinerPostOffer } from "../_shared/social.ts";
+import { confirmedEarnsThisMonth, maybeAwardStreakBonus } from "../_shared/streak.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -355,8 +356,8 @@ Deno.serve(async (req) => {
       // shares_month = this member's shares + posts this month (their momentum).
       let pending_cents = 0;
       let shares_month = 0;
+      let streak = { enabled: false, goal: 0, bonus_cents: 0, just_awarded: false };
       if (member) {
-        balance_cents = await rewardBalanceCents(db, store.id, member.id);
         if (r) {
           try {
             const rl = await getOrCreateReferralLink(db, {
@@ -369,27 +370,26 @@ Deno.serve(async (req) => {
           }
         }
         try {
-          const monthStart = new Date();
-          monthStart.setUTCDate(1);
-          monthStart.setUTCHours(0, 0, 0, 0);
-          const iso = monthStart.toISOString();
-          const [held, links, posts] = await Promise.all([
-            db.from("reward_ledger").select("amount_cents").eq("store_id", store.id).eq("member_id", member.id).eq("status", "held"),
-            db.from("referral_links").select("id", { count: "exact", head: true }).eq("initiator_member_id", member.id).gte("created_at", iso),
-            db.from("social_submissions").select("id", { count: "exact", head: true }).eq("store_id", store.id).eq("member_id", member.id).gte("created_at", iso),
-          ]);
-          pending_cents = (held.data ?? []).reduce((s, x) => s + Math.round(Number(x.amount_cents ?? 0)), 0);
-          shares_month = (links.count ?? 0) + (posts.count ?? 0);
+          // Streak metric = CONFIRMED earns this month (real referral orders +
+          // approved posts) — the same count that triggers the bonus, so the
+          // progress bar can't over-promise. Award the bonus lazily + idempotently.
+          shares_month = await confirmedEarnsThisMonth(db, store.id, member.id);
+          const sr = await maybeAwardStreakBonus(db, store, member.id, shares_month);
+          streak = { enabled: sr.enabled, goal: sr.goal, bonus_cents: sr.bonusCents, just_awarded: sr.awarded };
         } catch (e) {
-          console.error(`[web-cart] rewards progress: ${e instanceof Error ? e.message : e}`);
+          console.error(`[web-cart] streak: ${e instanceof Error ? e.message : e}`);
         }
+        // Balance + pending AFTER any bonus award, so a fresh streak bonus shows now.
+        balance_cents = await rewardBalanceCents(db, store.id, member.id);
+        const { data: held } = await db.from("reward_ledger").select("amount_cents").eq("store_id", store.id).eq("member_id", member.id).eq("status", "held");
+        pending_cents = (held ?? []).reduce((s, x) => s + Math.round(Number(x.amount_cents ?? 0)), 0);
       }
       // Post & Earn (Instagram/TikTok/YouTube/Facebook) — the store's live
       // per-platform, per-format offer + shareable media, shaped for the diner's
       // channel-adaptive "Earn" cards. Anonymous-safe (describing needs no identity).
       const camp = await activePostCampaign(db, store.id);
       const post = camp ? dinerPostOffer(camp) : null;
-      return json({ offer, identified: !!member, balance_cents, link, post, progress: { pending_cents, shares_month } });
+      return json({ offer, identified: !!member, balance_cents, link, post, progress: { pending_cents, shares_month }, streak });
     }
     // Diner submits a post URL to claim post-for-credit. Needs identity (a bound
     // member session) — anonymous returns needs_identity and the diner routes the

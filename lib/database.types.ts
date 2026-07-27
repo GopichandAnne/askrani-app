@@ -2245,6 +2245,9 @@ export type Database = {
         | "catalog_label"
         | "tts_voice"
         | "tts_enabled"
+        | "streak_goal"
+        | "streak_bonus_cents"
+        | "streak_cap_cents"
       attribution_type:
         | "link_click"
         | "chat_started"
@@ -2436,6 +2439,9 @@ export const Constants = {
         "catalog_label",
         "tts_voice",
         "tts_enabled",
+        "streak_goal",
+        "streak_bonus_cents",
+        "streak_cap_cents",
       ],
       attribution_type: [
         "link_click",
