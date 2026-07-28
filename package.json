@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "db:push": "supabase db push",
     "db:test": "supabase test db",
-    "eval": "node scripts/eval.mjs"
+    "eval": "node scripts/eval.mjs",
+    "qa:restaurant": "node scripts/qa-restaurant.mjs"
   },
   "dependencies": {
     "@radix-ui/react-alert-dialog": "^1.1.17",
