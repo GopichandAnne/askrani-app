@@ -18,6 +18,12 @@ const KEY =
   process.env.QA_SERVICE_KEY ||
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU";
 const SLUG = "qa-restaurant";
+const TOKEN = "qa-restaurant-token";
+const FN = `${URL}/functions/v1`;
+// Local anon key for calling edge functions (override via env).
+const ANON =
+  process.env.QA_ANON_KEY ||
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0";
 
 const H = { apikey: KEY, Authorization: `Bearer ${KEY}`, "Content-Type": "application/json" };
 
@@ -59,7 +65,28 @@ async function seed() {
   }
   await rest("DELETE", `products?store_id=eq.${storeId}&sku=like.qa-*`);
   await rest("POST", "products", FIXTURE.map((p) => ({ ...p, store_id: storeId, currency: "USD" })), "return=minimal");
+  // Cart/ordering is gated on catalog_enabled; prices are public by default.
+  const cfg = await rest("GET", `agent_config?store_id=eq.${storeId}&key=eq.catalog_enabled&select=key`);
+  if (!cfg.length) {
+    await rest("POST", "agent_config", { store_id: storeId, key: "catalog_enabled", value: "true" }, "return=minimal");
+  }
   return storeId;
+}
+
+async function seedToken(storeId) {
+  const existing = await rest("GET", `store_tokens?store_id=eq.${storeId}&token=eq.${TOKEN}&select=token`);
+  if (!existing.length) {
+    await rest("POST", "store_tokens", { store_id: storeId, token: TOKEN, active: true, label: "qa" }, "return=minimal");
+  }
+}
+
+async function fn(action, extra = {}) {
+  const res = await fetch(`${FN}/web-cart`, {
+    method: "POST",
+    headers: { apikey: ANON, Authorization: `Bearer ${ANON}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ action, slug: SLUG, token: TOKEN, ...extra }),
+  });
+  return { status: res.status, body: await res.json().catch(() => ({})) };
 }
 
 // ── Assertions ────────────────────────────────────────────────────────────────
@@ -102,8 +129,79 @@ async function run() {
   check("facet allergens = {milk:1,tree_nuts:1}", allerg.milk === 1 && allerg.tree_nuts === 1, JSON.stringify(allerg));
   check("null-heat dish excluded from heat facet", !("null" in heat) && Object.values(heat).reduce((a, b) => a + b, 0) === 5, JSON.stringify(heat));
 
+  await orderLayer(id);
+
   console.log(`\n${fail === 0 ? "PASS" : "FAIL"} — ${pass} passed, ${fail} failed`);
   process.exit(fail === 0 ? 0 : 1);
+}
+
+// ── Order-placement layer (needs web-cart served: supabase functions serve) ─────
+async function orderLayer(id) {
+  console.log("\n-- order-placement layer (web-cart) --");
+  await seedToken(id);
+
+  // Probe: is the function reachable + answering as our function?
+  let served = false;
+  try {
+    const p = await fn("clear", { session_id: "web_qa_probe" });
+    served = p.status < 500 && p.body && p.body.ok === true;
+  } catch { served = false; }
+  if (!served) {
+    console.log("  … SKIPPED — web-cart not served (run: npx supabase functions serve web-cart)");
+    return;
+  }
+
+  const ts = Date.now();
+  const sess = (n) => `web_qa_${ts}_${n}`;
+  const setStock = (v) => rest("PATCH", `products?store_id=eq.${id}&sku=eq.qa-vindaloo`, { in_stock: v }, "return=minimal");
+  const setPrice = (v) => rest("PATCH", `products?store_id=eq.${id}&sku=eq.qa-butter`, { price: v }, "return=minimal");
+
+  // 1. Happy path: add in-stock → place → real pending_approval order
+  let s = sess(1);
+  await fn("clear", { session_id: s });
+  const add1 = await fn("add", { session_id: s, sku: "qa-vindaloo", quantity: 1 });
+  check("add in-stock item → added", add1.body.status === "added", JSON.stringify(add1.body));
+  const place1 = await fn("place", { session_id: s, name: "QA Guest", fulfillment: "dine_in", table_label: "12" });
+  check("place → placed + order_id", place1.body.placed === true && !!place1.body.order_id, JSON.stringify(place1.body));
+  if (place1.body.order_id) {
+    const o = (await rest("GET", `orders?order_id=eq.${place1.body.order_id}&select=status,items_json,table_label`))[0];
+    check(
+      "order row = pending_approval, 1 item, table 12",
+      o && o.status === "pending_approval" && Array.isArray(o.items_json) && o.items_json.length === 1 && o.table_label === "12",
+      JSON.stringify(o),
+    );
+  }
+
+  // 2. Out-of-stock between add and place → abort
+  s = sess(2);
+  await fn("clear", { session_id: s });
+  await fn("add", { session_id: s, sku: "qa-vindaloo", quantity: 1 });
+  await setStock(false);
+  const place2 = await fn("place", { session_id: s, name: "QA", fulfillment: "pickup" });
+  check("out-of-stock after add → abort (out_of_stock)", place2.body.placed === false && place2.body.reason === "out_of_stock", JSON.stringify(place2.body));
+  await setStock(true);
+
+  // 3. Price change between add and place → abort
+  s = sess(3);
+  await fn("clear", { session_id: s });
+  await fn("add", { session_id: s, sku: "qa-butter", quantity: 1 });
+  await setPrice(15);
+  const place3 = await fn("place", { session_id: s, name: "QA", fulfillment: "pickup" });
+  check("price change after add → abort (price_changed)", place3.body.placed === false && place3.body.reason === "price_changed", JSON.stringify(place3.body));
+  await setPrice(13);
+
+  // 4. Empty cart → guarded
+  s = sess(4);
+  await fn("clear", { session_id: s });
+  const place4 = await fn("place", { session_id: s, name: "QA", fulfillment: "pickup" });
+  check("empty cart → placed:false (empty_cart)", place4.body.placed === false && place4.body.reason === "empty_cart", JSON.stringify(place4.body));
+
+  // 5. Adding a sold-out item is rejected at add time
+  const add5 = await fn("add", { session_id: sess(5), sku: "qa-oos", quantity: 1 });
+  check("add sold-out item → out_of_stock status", add5.body.status === "out_of_stock", JSON.stringify(add5.body));
+
+  // Cleanup: remove any orders this run created.
+  await rest("DELETE", `orders?store_slug=eq.${SLUG}`);
 }
 
 run().catch((e) => {
