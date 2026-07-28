@@ -14,7 +14,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ prov
   const back = (s: string) => NextResponse.redirect(`${APP}/diner?pos=${provider}&pos_status=${s}`);
 
   const adapter = getAdapter(provider);
-  if (!adapter) return back("denied");
+  if (!adapter || !adapter.exchangeCode) return back("denied");
 
   const url = new URL(req.url);
   const code = url.searchParams.get("code");

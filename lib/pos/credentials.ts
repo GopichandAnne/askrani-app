@@ -17,14 +17,17 @@ export async function getPosCreds(provider: PosProviderId, storeId: string): Pro
     .maybeSingle();
   if (!data?.connected) return null;
   const c = (data.credentials ?? {}) as Partial<PosCreds>;
-  if (!c.access_token) return null;
+  // OAuth providers store an access_token; manual providers (Toast) may store
+  // only a merchant/restaurant id — either counts as connected.
+  if (!c.access_token && !c.merchant_id) return null;
   return {
-    access_token: c.access_token,
+    access_token: c.access_token ?? "",
     refresh_token: c.refresh_token ?? null,
     expires_at: c.expires_at ?? null,
     merchant_id: c.merchant_id ?? null,
     location_id: c.location_id ?? null,
     location_name: c.location_name ?? null,
+    extra: c.extra ?? null,
   };
 }
 
@@ -56,8 +59,9 @@ export async function disconnectPos(provider: PosProviderId, storeId: string): P
 }
 
 /**
- * A usable access token, refreshing via the adapter if expired or within 3 days
- * of expiry. Persists the rotated token. Throws if not connected.
+ * A usable access token for a connected provider. Token acquisition is owned by
+ * the adapter (OAuth refresh, or a client-credentials login for Toast); any
+ * rotated creds it returns are persisted here. Throws if not connected.
  */
 export async function getValidAccessToken(
   provider: PosProviderId,
@@ -68,20 +72,10 @@ export async function getValidAccessToken(
   const adapter = getAdapter(provider);
   if (!adapter) throw new Error(`Unknown POS provider: ${provider}`);
 
-  const soon = Date.now() + 3 * 24 * 60 * 60 * 1000;
-  const expMs = creds.expires_at ? Date.parse(creds.expires_at) : 0;
-  if (!creds.refresh_token || (expMs && expMs > soon)) {
-    return { accessToken: creds.access_token, creds };
+  const { accessToken, nextCreds } = await adapter.resolveAccessToken(creds);
+  if (nextCreds) {
+    await savePosCreds(provider, storeId, nextCreds);
+    return { accessToken, creds: nextCreds };
   }
-
-  const refreshed = await adapter.refresh(creds.refresh_token);
-  const next: PosCreds = {
-    ...creds,
-    access_token: refreshed.access_token,
-    refresh_token: refreshed.refresh_token || creds.refresh_token,
-    expires_at: refreshed.expires_at ?? null,
-    merchant_id: refreshed.merchant_id ?? creds.merchant_id,
-  };
-  await savePosCreds(provider, storeId, next);
-  return { accessToken: next.access_token, creds: next };
+  return { accessToken, creds };
 }

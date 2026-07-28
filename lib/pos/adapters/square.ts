@@ -39,6 +39,7 @@ async function tokenRequest(body: Record<string, string>): Promise<PosTokens> {
 export const squareAdapter: PosAdapter = {
   id: "square",
   label: "Square",
+  connectStyle: "oauth",
   configured() {
     const c = cfg();
     return !!c.appId && !!c.appSecret;
@@ -59,8 +60,21 @@ export const squareAdapter: PosAdapter = {
   exchangeCode(code) {
     return tokenRequest({ grant_type: "authorization_code", code, redirect_uri: posRedirectUrl("square") });
   },
-  refresh(refreshToken) {
-    return tokenRequest({ grant_type: "refresh_token", refresh_token: refreshToken });
+  async resolveAccessToken(creds: PosCreds) {
+    const soon = Date.now() + 3 * 24 * 60 * 60 * 1000;
+    const expMs = creds.expires_at ? Date.parse(creds.expires_at) : 0;
+    if (!creds.refresh_token || (expMs && expMs > soon)) return { accessToken: creds.access_token };
+    const t = await tokenRequest({ grant_type: "refresh_token", refresh_token: creds.refresh_token });
+    return {
+      accessToken: t.access_token,
+      nextCreds: {
+        ...creds,
+        access_token: t.access_token,
+        refresh_token: t.refresh_token || creds.refresh_token,
+        expires_at: t.expires_at,
+        merchant_id: t.merchant_id ?? creds.merchant_id,
+      },
+    };
   },
   async listLocations(accessToken): Promise<PosLocation[]> {
     const c = cfg();

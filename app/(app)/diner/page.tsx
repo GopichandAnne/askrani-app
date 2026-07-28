@@ -61,6 +61,8 @@ export default async function DinerPage() {
         connected: !!creds,
         locationName: creds?.location_name ?? null,
         environment: a.environment(),
+        connectStyle: a.connectStyle,
+        manualFields: a.manualFields,
       };
     }),
   );

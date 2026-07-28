@@ -5,8 +5,15 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Store, Loader2, Check, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { listPosLocations, setPosLocation, disconnectPosAction } from "@/app/(app)/diner/actions";
-import type { PosLocation } from "@/lib/pos/types";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  listPosLocations,
+  setPosLocation,
+  disconnectPosAction,
+  connectPosManual,
+} from "@/app/(app)/diner/actions";
+import type { PosLocation, PosManualField } from "@/lib/pos/types";
 
 export type PosProviderState = {
   id: string;
@@ -14,6 +21,8 @@ export type PosProviderState = {
   connected: boolean;
   locationName: string | null;
   environment: string;
+  connectStyle: "oauth" | "manual";
+  manualFields?: PosManualField[];
 };
 
 const RETURN_MSG: Record<string, { ok: boolean; msg: string }> = {
@@ -28,7 +37,20 @@ const RETURN_MSG: Record<string, { ok: boolean; msg: string }> = {
 export function PosCard({ providers }: { providers: PosProviderState[] }) {
   const router = useRouter();
   const [locations, setLocations] = useState<Record<string, PosLocation[] | null>>({});
+  const [manual, setManual] = useState<Record<string, Record<string, string>>>({});
   const [busy, start] = useTransition();
+
+  function submitManual(id: string, label: string) {
+    start(async () => {
+      const res = await connectPosManual(id, manual[id] ?? {});
+      if (res.ok) {
+        toast.success(`${label} connected`);
+        router.refresh();
+      } else {
+        toast.error(res.error);
+      }
+    });
+  }
 
   // One-time feedback when a provider redirects back to /diner?pos=..&pos_status=..
   useEffect(() => {
@@ -101,11 +123,33 @@ export function PosCard({ providers }: { providers: PosProviderState[] }) {
               </div>
 
               {!p.connected ? (
-                <div>
-                  <Button size="sm" onClick={() => (window.location.href = `/api/pos/${p.id}/connect`)}>
-                    <Store className="size-4" /> Connect {p.label}
-                  </Button>
-                </div>
+                p.connectStyle === "manual" ? (
+                  <div className="space-y-2">
+                    {(p.manualFields ?? []).map((f) => (
+                      <div key={f.key} className="space-y-1">
+                        <Label className="text-xs">{f.label}</Label>
+                        <Input
+                          value={manual[p.id]?.[f.key] ?? ""}
+                          onChange={(e) =>
+                            setManual((s) => ({ ...s, [p.id]: { ...s[p.id], [f.key]: e.target.value } }))
+                          }
+                          className="h-9"
+                        />
+                        {f.help && <p className="text-muted-foreground text-[11px]">{f.help}</p>}
+                      </div>
+                    ))}
+                    <Button size="sm" onClick={() => submitManual(p.id, p.label)} disabled={busy}>
+                      {busy ? <Loader2 className="size-4 animate-spin" /> : <Store className="size-4" />}
+                      Connect {p.label}
+                    </Button>
+                  </div>
+                ) : (
+                  <div>
+                    <Button size="sm" onClick={() => (window.location.href = `/api/pos/${p.id}/connect`)}>
+                      <Store className="size-4" /> Connect {p.label}
+                    </Button>
+                  </div>
+                )
               ) : (
                 <div className="space-y-2">
                   <p className="text-sm">

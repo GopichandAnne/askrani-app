@@ -1,7 +1,7 @@
 import "server-only";
 
 /** Registered POS providers. Add a new one by writing an adapter + registering it. */
-export type PosProviderId = "square" | "clover";
+export type PosProviderId = "square" | "clover" | "toast";
 
 /** Per-store OAuth state, stored as plaintext jsonb in store_provider_credentials
  *  (keyed by provider), behind service-role RLS — same posture as Stripe keys. */
@@ -12,7 +12,13 @@ export type PosCreds = {
   merchant_id: string | null;
   location_id: string | null; // where orders route
   location_name: string | null;
+  /** Provider-specific bits that don't fit the common shape (e.g. Toast's
+   *  dining-option / open-item GUIDs). */
+  extra?: Record<string, string> | null;
 };
+
+/** A field the owner types to connect a "manual" provider (e.g. Toast GUID). */
+export type PosManualField = { key: string; label: string; help?: string; required?: boolean };
 
 /** Tokens returned by an OAuth code-exchange or refresh. */
 export type PosTokens = {
@@ -41,15 +47,30 @@ export type PushResult = { ok: true; externalOrderId: string } | { ok: false; er
 export interface PosAdapter {
   id: PosProviderId;
   label: string;
+  /** How the owner connects: "oauth" = redirect flow (Square, Clover);
+   *  "manual" = the owner enters credentials (Toast: a Restaurant GUID). */
+  connectStyle: "oauth" | "manual";
   /** true when the server env for this provider is present. */
   configured(): boolean;
   environment(): "sandbox" | "production";
+
+  // ── OAuth-style providers ──
   /** OAuth authorize URL the owner is redirected to. */
-  buildAuthorizeUrl(state: string): string;
+  buildAuthorizeUrl?(state: string): string;
   /** Exchange the auth code for tokens. `params` = the full callback query
    *  (some providers, e.g. Clover, return merchant_id there). */
-  exchangeCode(code: string, params: URLSearchParams): Promise<PosTokens>;
-  refresh(refreshToken: string): Promise<PosTokens>;
+  exchangeCode?(code: string, params: URLSearchParams): Promise<PosTokens>;
+
+  // ── Manual-style providers ──
+  /** Fields the owner fills in to connect. */
+  manualFields?: PosManualField[];
+  /** Validate the owner's input into stored creds (no I/O; caller persists). */
+  connectManual?(input: Record<string, string>): { creds: PosCreds } | { error: string };
+
+  /** Return a usable access token, refreshing/logging-in as the provider needs.
+   *  `nextCreds` (if returned) is persisted by the caller. */
+  resolveAccessToken(creds: PosCreds): Promise<{ accessToken: string; nextCreds?: PosCreds | null }>;
+
   /** Locations orders can route to (a single merchant for providers without a
    *  location concept). */
   listLocations(accessToken: string, creds: PosCreds): Promise<PosLocation[]>;

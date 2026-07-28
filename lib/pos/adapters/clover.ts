@@ -42,6 +42,7 @@ async function tokenCall(path: string, body: Record<string, string>): Promise<Po
 export const cloverAdapter: PosAdapter = {
   id: "clover",
   label: "Clover",
+  connectStyle: "oauth",
   configured() {
     const c = cfg();
     return !!c.appId && !!c.appSecret;
@@ -68,9 +69,22 @@ export const cloverAdapter: PosAdapter = {
     // Clover returns the merchant id on the callback query, not in the token body.
     return { ...tok, merchant_id: tok.merchant_id ?? params.get("merchant_id") };
   },
-  refresh(refreshToken) {
+  async resolveAccessToken(creds: PosCreds) {
+    const soon = Date.now() + 3 * 24 * 60 * 60 * 1000;
+    const expMs = creds.expires_at ? Date.parse(creds.expires_at) : 0;
+    if (!creds.refresh_token || (expMs && expMs > soon)) return { accessToken: creds.access_token };
     const c = cfg();
-    return tokenCall("/oauth/v2/refresh", { client_id: c.appId, refresh_token: refreshToken });
+    const t = await tokenCall("/oauth/v2/refresh", { client_id: c.appId, refresh_token: creds.refresh_token });
+    return {
+      accessToken: t.access_token,
+      nextCreds: {
+        ...creds,
+        access_token: t.access_token,
+        refresh_token: t.refresh_token || creds.refresh_token,
+        expires_at: t.expires_at,
+        merchant_id: t.merchant_id ?? creds.merchant_id,
+      },
+    };
   },
   async listLocations(accessToken, creds: PosCreds): Promise<PosLocation[]> {
     const c = cfg();

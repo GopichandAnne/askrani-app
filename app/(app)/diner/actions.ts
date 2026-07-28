@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getActiveStore } from "@/lib/store/active-store";
 import { createClient } from "@/lib/supabase/server";
-import { getValidAccessToken, getPosCreds, patchPosCreds, disconnectPos } from "@/lib/pos/credentials";
+import { getValidAccessToken, getPosCreds, savePosCreds, patchPosCreds, disconnectPos } from "@/lib/pos/credentials";
 import { getAdapter, isPosProvider } from "@/lib/pos/registry";
 import type { PosLocation, PosProviderId } from "@/lib/pos/types";
 
@@ -46,6 +46,20 @@ export async function setPosLocation(
     location_id: locationId,
     location_name: locationName,
   });
+  revalidatePath("/diner");
+  return { ok: true };
+}
+
+/** Connect a "manual" provider (e.g. Toast) from the owner's entered fields. */
+export async function connectPosManual(provider: string, input: Record<string, string>): Promise<Result> {
+  if (!isPosProvider(provider)) return { ok: false, error: "Unknown POS provider." };
+  const gate = await requireOwner();
+  if ("error" in gate) return { ok: false, error: gate.error };
+  const adapter = getAdapter(provider);
+  if (!adapter?.connectManual) return { ok: false, error: "This provider isn't connected manually." };
+  const res = adapter.connectManual(input);
+  if ("error" in res) return { ok: false, error: res.error };
+  await savePosCreds(provider as PosProviderId, gate.storeId, res.creds);
   revalidatePath("/diner");
   return { ok: true };
 }

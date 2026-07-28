@@ -13,6 +13,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ provide
   if (!adapter || !adapter.configured()) {
     return NextResponse.redirect(`${APP}/diner?pos=${provider}&pos_status=unconfigured`);
   }
+  // Manual providers (e.g. Toast) connect via a form, not this redirect flow.
+  if (adapter.connectStyle !== "oauth" || !adapter.buildAuthorizeUrl) {
+    return NextResponse.redirect(`${APP}/diner`);
+  }
 
   const ctx = await getActiveStore();
   if (!ctx?.active) return NextResponse.redirect(`${APP}/login`);
