@@ -63,6 +63,7 @@ export default async function DinerPage() {
         environment: a.environment(),
         connectStyle: a.connectStyle,
         manualFields: a.manualFields,
+        configValues: creds?.extra ?? null,
       };
     }),
   );

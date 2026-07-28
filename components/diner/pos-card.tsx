@@ -12,6 +12,7 @@ import {
   setPosLocation,
   disconnectPosAction,
   connectPosManual,
+  setPosConfig,
 } from "@/app/(app)/diner/actions";
 import type { PosLocation, PosManualField } from "@/lib/pos/types";
 
@@ -23,6 +24,7 @@ export type PosProviderState = {
   environment: string;
   connectStyle: "oauth" | "manual";
   manualFields?: PosManualField[];
+  configValues?: Record<string, string> | null;
 };
 
 const RETURN_MSG: Record<string, { ok: boolean; msg: string }> = {
@@ -38,6 +40,7 @@ export function PosCard({ providers }: { providers: PosProviderState[] }) {
   const router = useRouter();
   const [locations, setLocations] = useState<Record<string, PosLocation[] | null>>({});
   const [manual, setManual] = useState<Record<string, Record<string, string>>>({});
+  const [config, setConfig] = useState<Record<string, Record<string, string>>>({});
   const [busy, start] = useTransition();
 
   function submitManual(id: string, label: string) {
@@ -45,6 +48,17 @@ export function PosCard({ providers }: { providers: PosProviderState[] }) {
       const res = await connectPosManual(id, manual[id] ?? {});
       if (res.ok) {
         toast.success(`${label} connected`);
+        router.refresh();
+      } else {
+        toast.error(res.error);
+      }
+    });
+  }
+  function saveConfig(id: string) {
+    start(async () => {
+      const res = await setPosConfig(id, config[id] ?? {});
+      if (res.ok) {
+        toast.success("Settings saved");
         router.refresh();
       } else {
         toast.error(res.error);
@@ -188,6 +202,28 @@ export function PosCard({ providers }: { providers: PosProviderState[] }) {
                       Disconnect
                     </Button>
                   </div>
+
+                  {/* Post-connect config (e.g. Lightspeed location / webhook / open-item ids) */}
+                  {p.connectStyle === "oauth" && (p.manualFields?.length ?? 0) > 0 && (
+                    <div className="space-y-2 border-t pt-2">
+                      {p.manualFields!.map((f) => (
+                        <div key={f.key} className="space-y-1">
+                          <Label className="text-xs">{f.label}</Label>
+                          <Input
+                            defaultValue={p.configValues?.[f.key] ?? ""}
+                            onChange={(e) =>
+                              setConfig((s) => ({ ...s, [p.id]: { ...s[p.id], [f.key]: e.target.value } }))
+                            }
+                            className="h-9"
+                          />
+                          {f.help && <p className="text-muted-foreground text-[11px]">{f.help}</p>}
+                        </div>
+                      ))}
+                      <Button size="sm" variant="outline" onClick={() => saveConfig(p.id)} disabled={busy}>
+                        {busy ? <Loader2 className="size-4 animate-spin" /> : null} Save settings
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

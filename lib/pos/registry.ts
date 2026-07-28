@@ -3,9 +3,10 @@ import type { PosAdapter, PosProviderId } from "./types";
 import { squareAdapter } from "./adapters/square";
 import { cloverAdapter } from "./adapters/clover";
 import { toastAdapter } from "./adapters/toast";
+import { lightspeedAdapter } from "./adapters/lightspeed";
 
 /** All known POS adapters, in display order. Register a new provider here. */
-export const POS_ADAPTERS: PosAdapter[] = [squareAdapter, cloverAdapter, toastAdapter];
+export const POS_ADAPTERS: PosAdapter[] = [squareAdapter, cloverAdapter, toastAdapter, lightspeedAdapter];
 
 export function getAdapter(id: string): PosAdapter | undefined {
   return POS_ADAPTERS.find((a) => a.id === id);

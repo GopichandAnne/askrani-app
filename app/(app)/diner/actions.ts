@@ -64,6 +64,25 @@ export async function connectPosManual(provider: string, input: Record<string, s
   return { ok: true };
 }
 
+/** Save provider-specific config (creds.extra) after connecting — e.g.
+ *  Lightspeed's business-location / webhook / open-item ids. */
+export async function setPosConfig(provider: string, input: Record<string, string>): Promise<Result> {
+  if (!isPosProvider(provider)) return { ok: false, error: "Unknown POS provider." };
+  const gate = await requireOwner();
+  if ("error" in gate) return { ok: false, error: gate.error };
+  const cur = await getPosCreds(provider as PosProviderId, gate.storeId);
+  if (!cur) return { ok: false, error: "Connect the provider first." };
+  const extra = { ...(cur.extra ?? {}) };
+  for (const [k, v] of Object.entries(input)) {
+    const t = (v ?? "").trim();
+    if (t) extra[k] = t;
+    else delete extra[k];
+  }
+  await patchPosCreds(provider as PosProviderId, gate.storeId, { extra });
+  revalidatePath("/diner");
+  return { ok: true };
+}
+
 export async function disconnectPosAction(provider: string): Promise<Result> {
   if (!isPosProvider(provider)) return { ok: false, error: "Unknown POS provider." };
   const gate = await requireOwner();
