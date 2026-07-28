@@ -15,13 +15,14 @@ export type MemberContext = {
   name: string | null;
   email: string | null;
   phone: string | null;
+  phoneVerified: boolean;
   metadata: Record<string, unknown>;
   blocked: boolean;
 };
 
 export type AccessMode = "open" | "optional" | "required";
 
-const MEMBER_COLS = "id, role, display_name, email, phone, metadata, blocked, active";
+const MEMBER_COLS = "id, role, display_name, email, phone, phone_verified, metadata, blocked, active";
 
 // deno-lint-ignore no-explicit-any
 function shape(row: any): MemberContext {
@@ -31,6 +32,7 @@ function shape(row: any): MemberContext {
     name: row.display_name ?? null,
     email: row.email ?? null,
     phone: row.phone ?? null,
+    phoneVerified: !!row.phone_verified,
     metadata: (row.metadata ?? {}) as Record<string, unknown>,
     blocked: !!row.blocked,
   };

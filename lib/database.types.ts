@@ -1555,6 +1555,8 @@ export type Database = {
           ig_handle: string | null
           metadata: Json
           phone: string | null
+          phone_verified: boolean
+          phone_verified_at: string | null
           referred_by: string | null
           role: string
           social_optin_at: string | null
@@ -1571,6 +1573,8 @@ export type Database = {
           ig_handle?: string | null
           metadata?: Json
           phone?: string | null
+          phone_verified?: boolean
+          phone_verified_at?: string | null
           referred_by?: string | null
           role?: string
           social_optin_at?: string | null
@@ -1587,6 +1591,8 @@ export type Database = {
           ig_handle?: string | null
           metadata?: Json
           phone?: string | null
+          phone_verified?: boolean
+          phone_verified_at?: string | null
           referred_by?: string | null
           role?: string
           social_optin_at?: string | null

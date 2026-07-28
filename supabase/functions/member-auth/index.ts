@@ -7,6 +7,7 @@
 import { serviceClient } from "../_shared/supabase.ts";
 import { getStoreBySlug } from "../_shared/config.ts";
 import { sendEmail } from "../_shared/email.ts";
+import { sendSms, smsConfigured } from "../_shared/sms.ts";
 import { bindMemberSession, findMemberByIdentity, provisionMember, resolveMember } from "../_shared/members.ts";
 import { verifyBrowseIdentity } from "../_shared/catalog.ts";
 import { verifyAppleIdToken, verifyGoogleIdToken } from "../_shared/oauth.ts";
@@ -25,7 +26,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
 
-  let body: { action?: string; slug?: string; token?: string; session_id?: string; email?: string; code?: string; browse_key?: string; provider?: string; id_token?: string; nonce?: string };
+  let body: { action?: string; slug?: string; token?: string; session_id?: string; email?: string; code?: string; browse_key?: string; provider?: string; id_token?: string; nonce?: string; phone?: string };
   try {
     body = await req.json();
   } catch {
@@ -95,6 +96,80 @@ Deno.serve(async (req) => {
     return json({ verified: true, member: { role: member.role, name: member.name } });
   }
 
+  // SMS OTP phone verification — the fraud guard on reward redemption. Its own
+  // feature (gated on the platform SMS sender being configured, NOT on the email
+  // flag). Off entirely until the operator sets TWILIO_* env.
+  if (action === "send_sms_code" || action === "verify_sms_code") {
+    if (!smsConfigured()) return json({ error: "sms verification is off" }, 403);
+    const phone = normPhone(String(body.phone ?? ""));
+    if (!phone) return json({ error: "Enter a valid phone with country code (e.g. +1 555 123 4567)." }, 400);
+
+    if (action === "send_sms_code") {
+      const { data: existing } = await db
+        .from("phone_verification_codes")
+        .select("created_at")
+        .eq("session_id", sessionId)
+        .eq("store_id", store.id)
+        .maybeSingle();
+      if (existing && Date.now() - new Date(existing.created_at).getTime() < RESEND_COOLDOWN_MS) {
+        return json({ error: "Please wait a moment before requesting another code." }, 429);
+      }
+      const code = String(Math.floor(100000 + Math.random() * 900000));
+      const expires = new Date(Date.now() + CODE_TTL_MIN * 60_000).toISOString();
+      await db.from("phone_verification_codes").upsert(
+        { session_id: sessionId, store_id: store.id, phone, code, attempts: 0, expires_at: expires, created_at: new Date().toISOString() },
+        { onConflict: "session_id,store_id" },
+      );
+      const name = store.store_display_name ?? store.slug;
+      const sent = await sendSms(phone, `${code} is your ${name} verification code. It expires in ${CODE_TTL_MIN} minutes.`);
+      return json({ ok: true, sent });
+    }
+
+    // verify_sms_code
+    const code = String(body.code ?? "").trim();
+    const { data: row } = await db
+      .from("phone_verification_codes")
+      .select("phone, code, attempts, expires_at")
+      .eq("session_id", sessionId)
+      .eq("store_id", store.id)
+      .maybeSingle();
+    const clear = () => db.from("phone_verification_codes").delete().eq("session_id", sessionId).eq("store_id", store.id);
+    if (!row) return json({ verified: false, error: "Request a code first." }, 400);
+    if (new Date(row.expires_at).getTime() < Date.now()) return json({ verified: false, error: "That code expired — request a new one." }, 400);
+    if (row.attempts >= MAX_ATTEMPTS) return json({ verified: false, error: "Too many attempts — request a new code." }, 429);
+    if (row.phone !== phone || row.code !== code) {
+      await db.from("phone_verification_codes").update({ attempts: row.attempts + 1 }).eq("session_id", sessionId).eq("store_id", store.id);
+      return json({ verified: false, error: "That code doesn't match." }, 400);
+    }
+
+    // Correct. Attach the verified phone to the right member. A phone already on
+    // ANOTHER account can't be claimed (fraud guard).
+    const phoneMember = await findMemberByIdentity(db, store.id, undefined, phone);
+    const current = await resolveMember(db, store, sessionId);
+    let memberId: string;
+    if (phoneMember) {
+      if (current && current.id !== phoneMember.id) {
+        await clear();
+        return json({ verified: false, error: "That number is already linked to another account." }, 409);
+      }
+      memberId = phoneMember.id;
+      await bindMemberSession(db, sessionId, store.id, memberId);
+    } else if (current) {
+      memberId = current.id;
+    } else {
+      const m = await provisionMember(db, store.id, { phone });
+      if (!m) return json({ verified: false, error: "Couldn't set up your account." }, 500);
+      memberId = m.id;
+      await bindMemberSession(db, sessionId, store.id, memberId);
+    }
+    await db
+      .from("store_members")
+      .update({ phone_verified: true, phone_verified_at: new Date().toISOString(), phone })
+      .eq("id", memberId);
+    await clear();
+    return json({ verified: true });
+  }
+
   // Owner gate: the feature must be turned on.
   const { data: srow } = await db
     .from("stores")
@@ -162,4 +237,13 @@ Deno.serve(async (req) => {
 
 function json(obj: unknown, status = 200): Response {
   return new Response(JSON.stringify(obj), { status, headers: { ...CORS, "Content-Type": "application/json" } });
+}
+
+/** Normalize to E.164, defaulting a bare 10-digit number to US (+1). Null if invalid. */
+function normPhone(raw: string): string | null {
+  let p = raw.replace(/[\s\-().]/g, "");
+  if (/^\d{10}$/.test(p)) p = "+1" + p;
+  else if (/^1\d{10}$/.test(p)) p = "+" + p;
+  else if (!p.startsWith("+")) return null;
+  return /^\+[1-9]\d{7,14}$/.test(p) ? p : null;
 }

@@ -22,6 +22,7 @@ import {
 } from "../_shared/catalog.ts";
 import { bindMemberSession, cartSessionFor, resolveMember } from "../_shared/members.ts";
 import { rewardBalanceCents } from "../_shared/rewards.ts";
+import { smsConfigured } from "../_shared/sms.ts";
 import { getOrCreateReferralLink, trackedUrl } from "../_shared/referral.ts";
 import { activePostCampaign, createPostSubmission, dinerPostOffer } from "../_shared/social.ts";
 import { confirmedEarnsThisMonth, maybeAwardStreakBonus } from "../_shared/streak.ts";
@@ -399,7 +400,19 @@ Deno.serve(async (req) => {
       // channel-adaptive "Earn" cards. Anonymous-safe (describing needs no identity).
       const camp = await activePostCampaign(db, store.id);
       const post = camp ? dinerPostOffer(camp) : null;
-      return json({ offer, identified: !!member, balance_cents, link, post, progress: { pending_cents, shares_month }, streak });
+      // Phone-verify state so the diner can show the fraud-guard step before a
+      // redeem attempt. sms_available is false (feature dormant) until configured.
+      return json({
+        offer,
+        identified: !!member,
+        balance_cents,
+        link,
+        post,
+        progress: { pending_cents, shares_month },
+        streak,
+        sms_available: smsConfigured(),
+        phone_verified: member?.phoneVerified ?? false,
+      });
     }
     // Diner submits a post URL to claim post-for-credit. Needs identity (a bound
     // member session) — anonymous returns needs_identity and the diner routes the

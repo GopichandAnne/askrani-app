@@ -13,6 +13,7 @@ import { resolveMember } from "./members.ts";
 import { getOrCreateReferralLink, trackedUrl } from "./referral.ts";
 import { composeAndStoreCard } from "./card.ts";
 import { issueRedemptionPass, rewardBalanceCents } from "./rewards.ts";
+import { smsConfigured } from "./sms.ts";
 import { activePostCampaign, createPostSubmission, describeRuleOffer, pickRuleForPlatform, platformFromUrl } from "./social.ts";
 import {
   browseProducts,
@@ -1072,6 +1073,15 @@ async function executeRedeemCredit(
   const member = await resolveMember(db, store, sessionId);
   if (!member?.id) {
     return { ok: false, reason: "needs_identity", note: "Can't redeem without knowing who they are — ask them to verify (or continue on WhatsApp)." };
+  }
+  // Fraud guard: redeeming credit (real money) requires a verified phone once SMS
+  // is configured. No-op when SMS is off (feature ships dormant).
+  if (smsConfigured() && !member.phoneVerified) {
+    return {
+      ok: false,
+      reason: "needs_phone_verification",
+      note: "They must verify their phone before redeeming — ask them to verify their number in the rewards panel, then try again.",
+    };
   }
   const requestedCents = args.amount != null && Number.isFinite(Number(args.amount))
     ? Math.round(Number(args.amount) * 100)
