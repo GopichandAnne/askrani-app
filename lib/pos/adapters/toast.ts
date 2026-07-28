@@ -99,23 +99,26 @@ export const toastAdapter: PosAdapter = {
       : [];
   },
 
-  async pushOrder(accessToken, creds: PosCreds, order: OrderForPush): Promise<PushResult> {
+  async pushOrder(accessToken, creds: PosCreds, order: OrderForPush, itemMap): Promise<PushResult> {
     const c = cfg();
     const restaurantGuid = creds.merchant_id;
     if (!restaurantGuid) return { ok: false, error: "No Toast restaurant connected." };
-    const openItemGuid = creds.extra?.open_item_guid;
-    if (!openItemGuid) {
-      return { ok: false, error: "Toast needs an 'open item' menu GUID to accept ad-hoc orders — add it in the Toast connection." };
-    }
     const lines = toPricedLines(order);
     if (!lines.length) return { ok: false, error: "No priced items to send to Toast." };
 
-    const selections = lines.map((l) => ({
-      item: { guid: openItemGuid },
-      quantity: l.quantity,
-      price: l.unitCents / 100, // Toast order money is decimal dollars
-      displayName: l.name,
-    }));
+    const openItemGuid = creds.extra?.open_item_guid;
+    // Mapped lines reference the real Toast menu item GUID (priced by Toast);
+    // only UNMAPPED lines need the open-item shim.
+    const hasUnmapped = lines.some((l) => !(l.sku && itemMap[l.sku]));
+    if (hasUnmapped && !openItemGuid) {
+      return { ok: false, error: "Some items aren't mapped to Toast — map them, or add an 'open item' GUID in the Toast connection." };
+    }
+    const selections = lines.map((l) => {
+      const ext = l.sku ? itemMap[l.sku] : undefined;
+      return ext
+        ? { item: { guid: ext }, quantity: l.quantity, displayName: l.name }
+        : { item: { guid: openItemGuid }, quantity: l.quantity, price: l.unitCents / 100, displayName: l.name };
+    });
     const body: Record<string, unknown> = { checks: [{ selections }] };
     if (creds.extra?.dining_option_guid) body.diningOption = { guid: creds.extra.dining_option_guid };
 

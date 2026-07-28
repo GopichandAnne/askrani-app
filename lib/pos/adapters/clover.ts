@@ -1,5 +1,13 @@
 import "server-only";
-import type { PosAdapter, PosCreds, PosLocation, PosTokens, OrderForPush, PushResult } from "../types";
+import type {
+  PosAdapter,
+  PosCreds,
+  PosLocation,
+  PosCatalogItem,
+  PosTokens,
+  OrderForPush,
+  PushResult,
+} from "../types";
 import { posRedirectUrl } from "../types";
 import { toPricedLines, ticketName } from "../lines";
 
@@ -97,7 +105,20 @@ export const cloverAdapter: PosAdapter = {
     const json = (await res.json().catch(() => ({}))) as { name?: string };
     return [{ id: mId, name: json.name || "Clover merchant", status: "ACTIVE" }];
   },
-  async pushOrder(accessToken, creds: PosCreds, order: OrderForPush): Promise<PushResult> {
+  async listCatalog(accessToken, creds: PosCreds): Promise<PosCatalogItem[]> {
+    const c = cfg();
+    const mId = creds.merchant_id;
+    if (!mId) return [];
+    const res = await fetch(`${c.api}/v3/merchants/${mId}/items?limit=1000`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    const json = (await res.json().catch(() => ({}))) as { elements?: { id?: string; name?: string; price?: number }[] };
+    if (!res.ok) return [];
+    return (json.elements ?? [])
+      .filter((e) => e.id && e.name)
+      .map((e) => ({ id: e.id!, name: e.name!, price: typeof e.price === "number" ? e.price / 100 : null }));
+  },
+  async pushOrder(accessToken, creds: PosCreds, order: OrderForPush, itemMap): Promise<PushResult> {
     const c = cfg();
     const mId = creds.merchant_id;
     if (!mId) return { ok: false, error: "No Clover merchant connected." };
@@ -106,11 +127,17 @@ export const cloverAdapter: PosAdapter = {
 
     // Clover's Atomic Order API creates the order + line items in one call.
     // Quantity is expanded into repeated line items (Clover unitQty is for
-    // weighed goods); fine for restaurant counts.
+    // weighed goods); fine for restaurant counts. Mapped lines reference the
+    // Clover catalog item id (it prices itself); unmapped go ad-hoc.
     const lineItems: Record<string, unknown>[] = [];
     for (const l of lines) {
+      const ext = l.sku ? itemMap[l.sku] : undefined;
       for (let i = 0; i < l.quantity; i++) {
-        lineItems.push({ name: l.name, price: l.unitCents, ...(l.note ? { note: l.note } : {}) });
+        lineItems.push(
+          ext
+            ? { item: { id: ext }, ...(l.note ? { note: l.note } : {}) }
+            : { name: l.name, price: l.unitCents, ...(l.note ? { note: l.note } : {}) },
+        );
       }
     }
     const res = await fetch(`${c.api}/v3/merchants/${mId}/atomic_order/orders`, {

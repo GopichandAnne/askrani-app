@@ -9,6 +9,7 @@ import { PosCard, type PosProviderState } from "@/components/diner/pos-card";
 import { TableQrs } from "@/components/store-link/table-qrs";
 import { configuredAdapters } from "@/lib/pos/registry";
 import { getPosCreds } from "@/lib/pos/credentials";
+import { countMapped } from "@/lib/pos/mapping";
 import { Button } from "@/components/ui/button";
 import { Utensils, Flame, Leaf, Star, ArrowRight, QrCode } from "lucide-react";
 
@@ -64,6 +65,8 @@ export default async function DinerPage() {
         connectStyle: a.connectStyle,
         manualFields: a.manualFields,
         configValues: creds?.extra ?? null,
+        canSync: !!a.listCatalog,
+        mappedCount: creds ? await countMapped(a.id, store.id) : 0,
       };
     }),
   );

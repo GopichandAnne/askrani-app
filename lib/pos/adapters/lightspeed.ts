@@ -118,7 +118,7 @@ export const lightspeedAdapter: PosAdapter = {
     return id ? [{ id, name: creds.location_name || `Location ${id}`, status: "ACTIVE" }] : [];
   },
 
-  async pushOrder(accessToken, creds: PosCreds, order: OrderForPush): Promise<PushResult> {
+  async pushOrder(accessToken, creds: PosCreds, order: OrderForPush, itemMap): Promise<PushResult> {
     const c = cfg();
     const locId = creds.extra?.business_location_id;
     const endpointId = creds.extra?.endpoint_id;
@@ -126,11 +126,15 @@ export const lightspeedAdapter: PosAdapter = {
     if (!locId || !endpointId) {
       return { ok: false, error: "Lightspeed needs a business location ID and a webhook endpoint ID (set in the connection)." };
     }
-    if (!openSku) {
-      return { ok: false, error: "Lightspeed needs an open-item SKU to accept ad-hoc orders (set in the connection)." };
-    }
     const lines = toPricedLines(order);
     if (!lines.length) return { ok: false, error: "No priced items to send to Lightspeed." };
+
+    // Mapped lines use the real Lightspeed menu SKU; only UNMAPPED lines need the
+    // open-item SKU (with name/price overrides).
+    const hasUnmapped = lines.some((l) => !(l.sku && itemMap[l.sku]));
+    if (hasUnmapped && !openSku) {
+      return { ok: false, error: "Some items aren't mapped to Lightspeed — map them, or set an open-item SKU in the connection." };
+    }
 
     const total = lines.reduce((s, l) => s + (l.unitCents * l.quantity) / 100, 0);
     const body = {
@@ -139,12 +143,17 @@ export const lightspeedAdapter: PosAdapter = {
       endpointId,
       customerInfo: { firstName: (order.customer_name || "Guest").slice(0, 40) },
       payment: { paymentAmount: Number(total.toFixed(2)) },
-      items: lines.map((l) => ({
-        sku: openSku.slice(0, 25),
-        quantity: l.quantity,
-        customItemName: l.name.slice(0, 100),
-        customItemPrice: l.unitCents / 100,
-      })),
+      items: lines.map((l) => {
+        const ext = l.sku ? itemMap[l.sku] : undefined;
+        return ext
+          ? { sku: ext.slice(0, 25), quantity: l.quantity }
+          : {
+              sku: openSku!.slice(0, 25),
+              quantity: l.quantity,
+              customItemName: l.name.slice(0, 100),
+              customItemPrice: l.unitCents / 100,
+            };
+      }),
     };
     const res = await fetch(`${c.apiHost}/o/op/1/order/local`, {
       method: "POST",

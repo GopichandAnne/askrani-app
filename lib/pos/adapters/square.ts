@@ -1,5 +1,13 @@
 import "server-only";
-import type { PosAdapter, PosCreds, PosLocation, PosTokens, OrderForPush, PushResult } from "../types";
+import type {
+  PosAdapter,
+  PosCreds,
+  PosLocation,
+  PosCatalogItem,
+  PosTokens,
+  OrderForPush,
+  PushResult,
+} from "../types";
 import { posRedirectUrl } from "../types";
 import { toPricedLines, ticketName } from "../lines";
 
@@ -87,7 +95,37 @@ export const squareAdapter: PosAdapter = {
     if (!res.ok) return [];
     return (json.locations ?? []).map((l) => ({ id: l.id, name: l.name, status: l.status }));
   },
-  async pushOrder(accessToken, creds: PosCreds, order: OrderForPush): Promise<PushResult> {
+  async listCatalog(accessToken): Promise<PosCatalogItem[]> {
+    const c = cfg();
+    const res = await fetch(`${c.host}/v2/catalog/list?types=ITEM`, {
+      headers: { Authorization: `Bearer ${accessToken}`, "Square-Version": VERSION },
+    });
+    const json = (await res.json().catch(() => ({}))) as {
+      objects?: {
+        item_data?: {
+          name?: string;
+          variations?: { id?: string; item_variation_data?: { name?: string; price_money?: { amount?: number } } }[];
+        };
+      }[];
+    };
+    if (!res.ok) return [];
+    const out: PosCatalogItem[] = [];
+    for (const o of json.objects ?? []) {
+      const itemName = o.item_data?.name ?? "";
+      for (const v of o.item_data?.variations ?? []) {
+        if (!v.id) continue;
+        const vn = v.item_variation_data?.name;
+        const amt = v.item_variation_data?.price_money?.amount;
+        out.push({
+          id: v.id, // the variation id is what order line items reference
+          name: vn && vn.toLowerCase() !== "regular" ? `${itemName} (${vn})` : itemName,
+          price: typeof amt === "number" ? amt / 100 : null,
+        });
+      }
+    }
+    return out;
+  },
+  async pushOrder(accessToken, creds: PosCreds, order: OrderForPush, itemMap): Promise<PushResult> {
     const c = cfg();
     if (!creds.location_id) return { ok: false, error: "No Square location selected." };
     const currency = (order.currency ?? "USD").toUpperCase();
@@ -101,12 +139,17 @@ export const squareAdapter: PosAdapter = {
         reference_id: order.order_id.slice(0, 40),
         ticket_name: ticketName(order),
         source: { name: "Ask Rani" },
-        line_items: lines.map((l) => ({
-          name: l.name,
-          quantity: String(l.quantity),
-          base_price_money: { amount: l.unitCents, currency },
-          ...(l.note ? { note: l.note } : {}),
-        })),
+        line_items: lines.map((l) => {
+          const ext = l.sku ? itemMap[l.sku] : undefined;
+          // Mapped → reference the Square catalog variation (it prices itself).
+          if (ext) return { catalog_object_id: ext, quantity: String(l.quantity), ...(l.note ? { note: l.note } : {}) };
+          return {
+            name: l.name,
+            quantity: String(l.quantity),
+            base_price_money: { amount: l.unitCents, currency },
+            ...(l.note ? { note: l.note } : {}),
+          };
+        }),
       },
     };
     const res = await fetch(`${c.host}/v2/orders`, {

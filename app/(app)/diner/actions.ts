@@ -5,6 +5,7 @@ import { getActiveStore } from "@/lib/store/active-store";
 import { createClient } from "@/lib/supabase/server";
 import { getValidAccessToken, getPosCreds, savePosCreds, patchPosCreds, disconnectPos } from "@/lib/pos/credentials";
 import { getAdapter, isPosProvider } from "@/lib/pos/registry";
+import { syncCatalog } from "@/lib/pos/mapping";
 import type { PosLocation, PosProviderId } from "@/lib/pos/types";
 
 type Result = { ok: true } | { ok: false; error: string };
@@ -81,6 +82,19 @@ export async function setPosConfig(provider: string, input: Record<string, strin
   await patchPosCreds(provider as PosProviderId, gate.storeId, { extra });
   revalidatePath("/diner");
   return { ok: true };
+}
+
+/** Auto-map our menu to the POS catalog by name. Returns a summary for a toast. */
+export async function syncPosCatalog(
+  provider: string,
+): Promise<{ ok: true; mapped: number; products: number } | { ok: false; error: string }> {
+  if (!isPosProvider(provider)) return { ok: false, error: "Unknown POS provider." };
+  const gate = await requireOwner();
+  if ("error" in gate) return { ok: false, error: gate.error };
+  const res = await syncCatalog(provider as PosProviderId, gate.storeId);
+  if (!res.ok) return res;
+  revalidatePath("/diner");
+  return { ok: true, mapped: res.mapped, products: res.products };
 }
 
 export async function disconnectPosAction(provider: string): Promise<Result> {

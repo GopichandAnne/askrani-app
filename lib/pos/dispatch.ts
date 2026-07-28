@@ -2,6 +2,7 @@ import "server-only";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { configuredAdapters } from "./registry";
 import { getPosCreds, getValidAccessToken } from "./credentials";
+import { getItemMap } from "./mapping";
 
 /**
  * Best-effort push of an approved order to whichever POS the store connected.
@@ -42,7 +43,8 @@ export async function dispatchApprovedOrder(orderId: string): Promise<void> {
       if (!creds) continue; // store didn't connect this POS
       try {
         const { accessToken, creds: fresh } = await getValidAccessToken(adapter.id, store.id);
-        const result = await adapter.pushOrder(accessToken, fresh, order);
+        const itemMap = await getItemMap(adapter.id, store.id);
+        const result = await adapter.pushOrder(accessToken, fresh, order, itemMap);
         if (result.ok) {
           if (!success) success = { provider: adapter.id, externalId: result.externalOrderId };
         } else {

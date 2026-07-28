@@ -3,6 +3,8 @@ import type { OrderForPush } from "./types";
 
 /** One line as stored in orders.items_json (priced catalog line). */
 type OrderItem = {
+  sku?: string | null;
+  base_sku?: string | null;
   name?: string | null;
   description?: string | null;
   quantity?: number | null;
@@ -11,8 +13,15 @@ type OrderItem = {
   mod_sel?: { group: string; option: string }[] | null;
 };
 
-/** A provider-neutral priced line: name, integer quantity, unit price in cents. */
-export type PricedLine = { name: string; quantity: number; unitCents: number; note: string | null };
+/** A provider-neutral priced line: our sku (for POS item mapping), name,
+ *  integer quantity, unit price in cents. */
+export type PricedLine = {
+  sku: string | null;
+  name: string;
+  quantity: number;
+  unitCents: number;
+  note: string | null;
+};
 
 /**
  * Normalize an order's items into priced lines for a POS push. Unpriced/request
@@ -27,6 +36,7 @@ export function toPricedLines(order: OrderForPush): PricedLine[] {
     const mods = (it.mod_sel ?? []).map((m) => `${m.group}: ${m.option}`).join(", ");
     const note = [mods, it.notes].filter(Boolean).join(" · ").slice(0, 500) || null;
     out.push({
+      sku: it.sku ?? it.base_sku ?? null,
       name: (it.name ?? it.description ?? "Item").slice(0, 500),
       quantity: Math.max(1, Math.round(Number(it.quantity ?? 1))),
       unitCents: cents,

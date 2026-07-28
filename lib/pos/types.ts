@@ -30,6 +30,9 @@ export type PosTokens = {
 
 export type PosLocation = { id: string; name: string; status?: string };
 
+/** One item in the POS's own catalog, for menu mapping. price in currency units. */
+export type PosCatalogItem = { id: string; name: string; price: number | null };
+
 export type OrderForPush = {
   order_id: string;
   currency: string | null;
@@ -74,8 +77,18 @@ export interface PosAdapter {
   /** Locations orders can route to (a single merchant for providers without a
    *  location concept). */
   listLocations(accessToken: string, creds: PosCreds): Promise<PosLocation[]>;
-  /** Push one approved order; return the external order/ticket id. */
-  pushOrder(accessToken: string, creds: PosCreds, order: OrderForPush): Promise<PushResult>;
+  /** List the POS's catalog items for menu mapping (auto-match). Optional — some
+   *  providers (partner-gated) don't expose a listable catalog here yet. */
+  listCatalog?(accessToken: string, creds: PosCreds): Promise<PosCatalogItem[]>;
+  /** Push one approved order; return the external order/ticket id. `itemMap` is
+   *  our sku → the POS item id (mapped lines push as real menu items; unmapped
+   *  fall back to ad-hoc/open-item where supported). */
+  pushOrder(
+    accessToken: string,
+    creds: PosCreds,
+    order: OrderForPush,
+    itemMap: Record<string, string>,
+  ): Promise<PushResult>;
 }
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") || "https://app.askrani.ai";

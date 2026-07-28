@@ -1610,6 +1610,41 @@ export type Database = {
           },
         ]
       }
+      pos_item_map: {
+        Row: {
+          external_id: string
+          external_name: string | null
+          provider: string
+          sku: string
+          store_id: string
+          updated_at: string
+        }
+        Insert: {
+          external_id: string
+          external_name?: string | null
+          provider: string
+          sku: string
+          store_id: string
+          updated_at?: string
+        }
+        Update: {
+          external_id?: string
+          external_name?: string | null
+          provider?: string
+          sku?: string
+          store_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pos_item_map_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       store_provider_credentials: {
         Row: {
           connected: boolean

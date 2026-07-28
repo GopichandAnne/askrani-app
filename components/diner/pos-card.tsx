@@ -13,6 +13,7 @@ import {
   disconnectPosAction,
   connectPosManual,
   setPosConfig,
+  syncPosCatalog,
 } from "@/app/(app)/diner/actions";
 import type { PosLocation, PosManualField } from "@/lib/pos/types";
 
@@ -25,6 +26,8 @@ export type PosProviderState = {
   connectStyle: "oauth" | "manual";
   manualFields?: PosManualField[];
   configValues?: Record<string, string> | null;
+  canSync?: boolean;
+  mappedCount?: number;
 };
 
 const RETURN_MSG: Record<string, { ok: boolean; msg: string }> = {
@@ -59,6 +62,17 @@ export function PosCard({ providers }: { providers: PosProviderState[] }) {
       const res = await setPosConfig(id, config[id] ?? {});
       if (res.ok) {
         toast.success("Settings saved");
+        router.refresh();
+      } else {
+        toast.error(res.error);
+      }
+    });
+  }
+  function sync(id: string) {
+    start(async () => {
+      const res = await syncPosCatalog(id);
+      if (res.ok) {
+        toast.success(`Matched ${res.mapped} of ${res.products} menu items`);
         router.refresh();
       } else {
         toast.error(res.error);
@@ -202,6 +216,20 @@ export function PosCard({ providers }: { providers: PosProviderState[] }) {
                       Disconnect
                     </Button>
                   </div>
+
+                  {/* Menu mapping — match our dishes to the POS catalog so orders
+                       push as real menu items (else they go as ad-hoc lines). */}
+                  {p.canSync && (
+                    <div className="flex flex-wrap items-center gap-2 border-t pt-2">
+                      <span className="text-muted-foreground text-xs">
+                        {p.mappedCount ? `${p.mappedCount} menu items mapped` : "No menu items mapped yet"}
+                      </span>
+                      <Button size="sm" variant="outline" onClick={() => sync(p.id)} disabled={busy}>
+                        {busy ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+                        Sync menu
+                      </Button>
+                    </div>
+                  )}
 
                   {/* Post-connect config (e.g. Lightspeed location / webhook / open-item ids) */}
                   {p.connectStyle === "oauth" && (p.manualFields?.length ?? 0) > 0 && (
