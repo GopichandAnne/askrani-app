@@ -15,7 +15,7 @@ import {
   canEdit,
   canReject,
 } from "@/lib/orders/status";
-import { dispatchApprovedOrderToSquare } from "@/lib/square/dispatch";
+import { dispatchApprovedOrder } from "@/lib/pos/dispatch";
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
 
@@ -87,18 +87,18 @@ export async function approveOrder(orderId: string): Promise<ActionResult> {
   );
   if (res.ok) {
     await sendProposalToCustomer(orderId); // best-effort; approval already saved
-    await dispatchApprovedOrderToSquare(orderId); // best-effort POS push (no-op if not connected)
+    await dispatchApprovedOrder(orderId); // best-effort POS push (no-op if not connected)
   }
   return res;
 }
 
-/** Retry the Square push for an order whose earlier push failed (owner-triggered
+/** Retry the POS push for an order whose earlier push failed (owner-triggered
  *  from the panel). RLS-scoped: only acts on an order the caller can see. */
-export async function resendToSquare(orderId: string): Promise<ActionResult> {
+export async function resendToPos(orderId: string): Promise<ActionResult> {
   const supabase = await createClient();
   const current = await loadOrder(supabase, orderId);
   if (!current) return { ok: false, error: "Order not found." };
-  await dispatchApprovedOrderToSquare(orderId);
+  await dispatchApprovedOrder(orderId);
   const admin = createAdminClient();
   const { data: o } = await admin
     .from("orders")
@@ -107,7 +107,7 @@ export async function resendToSquare(orderId: string): Promise<ActionResult> {
     .maybeSingle();
   revalidatePath("/orders");
   if (o?.pos_order_id) return { ok: true };
-  return { ok: false, error: o?.pos_error ?? "Square push did not complete." };
+  return { ok: false, error: o?.pos_error ?? "POS push did not complete." };
 }
 
 /** Message the customer their priced order on WhatsApp + persist it to the thread. */

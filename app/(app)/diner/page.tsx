@@ -5,10 +5,10 @@ import { getActiveStore } from "@/lib/store/active-store";
 import { createClient } from "@/lib/supabase/server";
 import { VoiceCard } from "@/components/agent/voice-card";
 import { StreakCard } from "@/components/agent/streak-card";
-import { SquareCard } from "@/components/diner/square-card";
+import { PosCard, type PosProviderState } from "@/components/diner/pos-card";
 import { TableQrs } from "@/components/store-link/table-qrs";
-import { squareConfig } from "@/lib/square/config";
-import { getSquareCreds } from "@/lib/square/credentials";
+import { configuredAdapters } from "@/lib/pos/registry";
+import { getPosCreds } from "@/lib/pos/credentials";
 import { Button } from "@/components/ui/button";
 import { Utensils, Flame, Leaf, Star, ArrowRight, QrCode } from "lucide-react";
 
@@ -51,8 +51,19 @@ export default async function DinerPage() {
   for (const r of cfgRes.data ?? []) cfg[r.key] = r.value ?? "";
   const token = tokRes.data?.[0]?.token ?? null;
 
-  const sqCfg = squareConfig();
-  const sqCreds = sqCfg.configured ? await getSquareCreds(store.id) : null;
+  // Build the connectable-POS list (only providers whose server env is set).
+  const posProviders: PosProviderState[] = await Promise.all(
+    configuredAdapters().map(async (a) => {
+      const creds = await getPosCreds(a.id, store.id);
+      return {
+        id: a.id,
+        label: a.label,
+        connected: !!creds,
+        locationName: creds?.location_name ?? null,
+        environment: a.environment(),
+      };
+    }),
+  );
 
   const products = prodRes.data ?? [];
   const dishes = products.length;
@@ -131,13 +142,8 @@ export default async function DinerPage() {
         )}
       </div>
 
-      {/* Square POS — approved orders route to the connected location */}
-      <SquareCard
-        configured={sqCfg.configured}
-        connected={!!sqCreds}
-        locationName={sqCreds?.location_name ?? null}
-        environment={sqCfg.environment}
-      />
+      {/* Point of sale — approved orders route to the connected location */}
+      <PosCard providers={posProviders} />
 
       {/* Rani's voice */}
       <VoiceCard />

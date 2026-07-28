@@ -21,7 +21,7 @@ import {
   confirmOrder,
   editOrder,
   rejectOrder,
-  resendToSquare,
+  resendToPos,
   type ActionResult,
 } from "@/app/(app)/orders/actions";
 import { useStore } from "@/components/store/store-provider";
@@ -59,6 +59,12 @@ type TimelineRow = {
   sender: string | null;
   text: string | null;
 };
+
+/** Display name for a POS provider stored on the order (e.g. "square" → "Square"). */
+function posLabel(provider: string | null): string {
+  if (!provider) return "POS";
+  return provider.charAt(0).toUpperCase() + provider.slice(1);
+}
 
 
 export function OrderDetailSheet({
@@ -141,12 +147,12 @@ export function OrderDetailSheet({
 
   function doResend() {
     startTransition(async () => {
-      const res = await resendToSquare(order!.order_id);
+      const res = await resendToPos(order!.order_id);
       if (res.ok) {
         onApplied(order!.order_id, { pos_order_id: "sent", pos_error: null } as Partial<Order>);
-        toast.success("Sent to Square");
+        toast.success("Sent to POS");
       } else {
-        toast.error("Square push failed", { description: res.error });
+        toast.error("POS push failed", { description: res.error });
       }
     });
   }
@@ -217,7 +223,7 @@ export function OrderDetailSheet({
             )}
             {order.pos_order_id && (
               <span className="inline-flex items-center gap-1 rounded-full bg-teal-mist px-2 py-0.5 text-xs font-medium text-teal-deep">
-                <Check className="size-3" /> Sent to Square
+                <Check className="size-3" /> Sent to {posLabel(order.pos_provider)}
               </span>
             )}
             {order.timestamp && (
@@ -402,12 +408,12 @@ export function OrderDetailSheet({
           {isOwner && order.pos_error && !order.pos_order_id && (
             <section className="space-y-1.5 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/30">
               <h3 className="flex items-center gap-1.5 text-sm font-semibold text-amber-800 dark:text-amber-300">
-                <Store className="size-4" /> Square push failed
+                <Store className="size-4" /> POS push failed
               </h3>
               <p className="text-xs text-amber-700 dark:text-amber-400">{order.pos_error}</p>
               <Button size="sm" variant="outline" onClick={doResend} disabled={pending}>
                 {pending ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-                Resend to Square
+                Resend to POS
               </Button>
             </section>
           )}
