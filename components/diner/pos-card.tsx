@@ -15,6 +15,7 @@ import {
   setPosConfig,
   syncPosCatalog,
 } from "@/app/(app)/diner/actions";
+import { MenuMappingDialog } from "./menu-mapping-dialog";
 import type { PosLocation, PosManualField } from "@/lib/pos/types";
 
 export type PosProviderState = {
@@ -218,18 +219,20 @@ export function PosCard({ providers }: { providers: PosProviderState[] }) {
                   </div>
 
                   {/* Menu mapping — match our dishes to the POS catalog so orders
-                       push as real menu items (else they go as ad-hoc lines). */}
-                  {p.canSync && (
-                    <div className="flex flex-wrap items-center gap-2 border-t pt-2">
-                      <span className="text-muted-foreground text-xs">
-                        {p.mappedCount ? `${p.mappedCount} menu items mapped` : "No menu items mapped yet"}
-                      </span>
+                       push as real menu items (else they go as ad-hoc lines).
+                       Auto-sync (Square/Clover) + manual mapping (all providers). */}
+                  <div className="flex flex-wrap items-center gap-2 border-t pt-2">
+                    <span className="text-muted-foreground text-xs">
+                      {p.mappedCount ? `${p.mappedCount} menu items mapped` : "No menu items mapped yet"}
+                    </span>
+                    {p.canSync && (
                       <Button size="sm" variant="outline" onClick={() => sync(p.id)} disabled={busy}>
                         {busy ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
                         Sync menu
                       </Button>
-                    </div>
-                  )}
+                    )}
+                    <MenuMappingDialog provider={p.id} label={p.label} />
+                  </div>
 
                   {/* Post-connect config (e.g. Lightspeed location / webhook / open-item ids) */}
                   {p.connectStyle === "oauth" && (p.manualFields?.length ?? 0) > 0 && (

@@ -5,8 +5,9 @@ import { getActiveStore } from "@/lib/store/active-store";
 import { createClient } from "@/lib/supabase/server";
 import { getValidAccessToken, getPosCreds, savePosCreds, patchPosCreds, disconnectPos } from "@/lib/pos/credentials";
 import { getAdapter, isPosProvider } from "@/lib/pos/registry";
-import { syncCatalog } from "@/lib/pos/mapping";
-import type { PosLocation, PosProviderId } from "@/lib/pos/types";
+import { syncCatalog, getMappings, setMapping } from "@/lib/pos/mapping";
+import { createAdminClient } from "@/lib/supabase/admin";
+import type { PosLocation, PosCatalogItem, PosProviderId } from "@/lib/pos/types";
 
 type Result = { ok: true } | { ok: false; error: string };
 
@@ -95,6 +96,59 @@ export async function syncPosCatalog(
   if (!res.ok) return res;
   revalidatePath("/diner");
   return { ok: true, mapped: res.mapped, products: res.products };
+}
+
+export type MappingPayload = {
+  products: { sku: string; name: string }[];
+  mappings: Record<string, { external_id: string; external_name: string | null }>;
+  catalog: PosCatalogItem[] | null; // null when the POS has no listable catalog
+};
+
+/** Load everything the manual mapping editor needs: our dishes, current
+ *  mappings, and (if available) the POS catalog to pick from. */
+export async function loadPosMapping(provider: string): Promise<MappingPayload | { error: string }> {
+  if (!isPosProvider(provider)) return { error: "Unknown POS provider." };
+  const gate = await requireOwner();
+  if ("error" in gate) return { error: gate.error };
+  const pid = provider as PosProviderId;
+
+  const admin = createAdminClient();
+  const { data: prods } = await admin
+    .from("products")
+    .select("sku, name")
+    .eq("store_id", gate.storeId)
+    .not("sku", "is", null)
+    .order("name", { ascending: true });
+  const products = (prods ?? []).filter((p): p is { sku: string; name: string } => !!p.sku && !!p.name);
+
+  const mappings = await getMappings(pid, gate.storeId);
+
+  let catalog: PosCatalogItem[] | null = null;
+  const adapter = getAdapter(pid);
+  if (adapter?.listCatalog) {
+    try {
+      const { accessToken, creds } = await getValidAccessToken(pid, gate.storeId);
+      catalog = await adapter.listCatalog(accessToken, creds);
+    } catch {
+      catalog = [];
+    }
+  }
+  return { products, mappings, catalog };
+}
+
+/** Set or clear one dish's POS item mapping (blank id clears it). */
+export async function setPosItemMapping(
+  provider: string,
+  sku: string,
+  externalId: string,
+  externalName: string | null,
+): Promise<Result> {
+  if (!isPosProvider(provider)) return { ok: false, error: "Unknown POS provider." };
+  const gate = await requireOwner();
+  if ("error" in gate) return { ok: false, error: gate.error };
+  await setMapping(provider as PosProviderId, gate.storeId, sku, externalId, externalName);
+  revalidatePath("/diner");
+  return { ok: true };
 }
 
 export async function disconnectPosAction(provider: string): Promise<Result> {

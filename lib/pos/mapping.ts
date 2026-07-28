@@ -17,6 +17,42 @@ export async function getItemMap(provider: PosProviderId, storeId: string): Prom
   return map;
 }
 
+/** Full mappings for the manual editor: sku → {external_id, external_name}. */
+export async function getMappings(
+  provider: PosProviderId,
+  storeId: string,
+): Promise<Record<string, { external_id: string; external_name: string | null }>> {
+  const db = createAdminClient();
+  const { data } = await db
+    .from("pos_item_map")
+    .select("sku, external_id, external_name")
+    .eq("store_id", storeId)
+    .eq("provider", provider);
+  const map: Record<string, { external_id: string; external_name: string | null }> = {};
+  for (const r of data ?? []) if (r.sku) map[r.sku] = { external_id: r.external_id, external_name: r.external_name };
+  return map;
+}
+
+/** Set (or clear, when externalId is blank) one dish's POS item mapping. */
+export async function setMapping(
+  provider: PosProviderId,
+  storeId: string,
+  sku: string,
+  externalId: string,
+  externalName: string | null,
+): Promise<void> {
+  const db = createAdminClient();
+  const id = externalId.trim();
+  if (!id) {
+    await db.from("pos_item_map").delete().eq("store_id", storeId).eq("provider", provider).eq("sku", sku);
+    return;
+  }
+  await db.from("pos_item_map").upsert(
+    { store_id: storeId, provider, sku, external_id: id, external_name: externalName, updated_at: new Date().toISOString() },
+    { onConflict: "store_id,provider,sku" },
+  );
+}
+
 export async function countMapped(provider: PosProviderId, storeId: string): Promise<number> {
   const db = createAdminClient();
   const { count } = await db
