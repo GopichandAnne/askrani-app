@@ -466,6 +466,10 @@ export type Database = {
           paid_at: string | null
           payment_ref: string | null
           payment_status: string
+          pos_error: string | null
+          pos_order_id: string | null
+          pos_provider: string | null
+          pos_synced_at: string | null
           session_id: string | null
           source_channel: string | null
           status: Database["public"]["Enums"]["order_status"]
@@ -492,6 +496,10 @@ export type Database = {
           paid_at?: string | null
           payment_ref?: string | null
           payment_status?: string
+          pos_error?: string | null
+          pos_order_id?: string | null
+          pos_provider?: string | null
+          pos_synced_at?: string | null
           session_id?: string | null
           source_channel?: string | null
           status?: Database["public"]["Enums"]["order_status"]
@@ -518,6 +526,10 @@ export type Database = {
           paid_at?: string | null
           payment_ref?: string | null
           payment_status?: string
+          pos_error?: string | null
+          pos_order_id?: string | null
+          pos_provider?: string | null
+          pos_synced_at?: string | null
           session_id?: string | null
           source_channel?: string | null
           status?: Database["public"]["Enums"]["order_status"]

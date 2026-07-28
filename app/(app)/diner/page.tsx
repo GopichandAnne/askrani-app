@@ -5,7 +5,10 @@ import { getActiveStore } from "@/lib/store/active-store";
 import { createClient } from "@/lib/supabase/server";
 import { VoiceCard } from "@/components/agent/voice-card";
 import { StreakCard } from "@/components/agent/streak-card";
+import { SquareCard } from "@/components/diner/square-card";
 import { TableQrs } from "@/components/store-link/table-qrs";
+import { squareConfig } from "@/lib/square/config";
+import { getSquareCreds } from "@/lib/square/credentials";
 import { Button } from "@/components/ui/button";
 import { Utensils, Flame, Leaf, Star, ArrowRight, QrCode } from "lucide-react";
 
@@ -47,6 +50,9 @@ export default async function DinerPage() {
   const cfg: Record<string, string> = {};
   for (const r of cfgRes.data ?? []) cfg[r.key] = r.value ?? "";
   const token = tokRes.data?.[0]?.token ?? null;
+
+  const sqCfg = squareConfig();
+  const sqCreds = sqCfg.configured ? await getSquareCreds(store.id) : null;
 
   const products = prodRes.data ?? [];
   const dishes = products.length;
@@ -124,6 +130,14 @@ export default async function DinerPage() {
           </div>
         )}
       </div>
+
+      {/* Square POS — approved orders route to the connected location */}
+      <SquareCard
+        configured={sqCfg.configured}
+        connected={!!sqCreds}
+        locationName={sqCreds?.location_name ?? null}
+        environment={sqCfg.environment}
+      />
 
       {/* Rani's voice */}
       <VoiceCard />

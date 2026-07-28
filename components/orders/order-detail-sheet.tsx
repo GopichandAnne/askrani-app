@@ -21,6 +21,7 @@ import {
   confirmOrder,
   editOrder,
   rejectOrder,
+  resendToSquare,
   type ActionResult,
 } from "@/app/(app)/orders/actions";
 import { useStore } from "@/components/store/store-provider";
@@ -47,7 +48,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Check, Loader2, Pencil, StickyNote } from "lucide-react";
+import { Check, Loader2, Pencil, RefreshCw, StickyNote, Store } from "lucide-react";
 
 type TimelineRow = {
   message_id: string;
@@ -138,6 +139,18 @@ export function OrderDetailSheet({
     });
   }
 
+  function doResend() {
+    startTransition(async () => {
+      const res = await resendToSquare(order!.order_id);
+      if (res.ok) {
+        onApplied(order!.order_id, { pos_order_id: "sent", pos_error: null } as Partial<Order>);
+        toast.success("Sent to Square");
+      } else {
+        toast.error("Square push failed", { description: res.error });
+      }
+    });
+  }
+
   function saveEdit() {
     const totals = computeCharged(draft, charges, (order?.fulfillment ?? null) as "pickup" | "delivery" | "dine_in" | null);
     startTransition(async () => {
@@ -200,6 +213,11 @@ export function OrderDetailSheet({
             {order.payment_status === "paid" && (
               <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
                 <Check className="size-3" /> Paid
+              </span>
+            )}
+            {order.pos_order_id && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-teal-mist px-2 py-0.5 text-xs font-medium text-teal-deep">
+                <Check className="size-3" /> Sent to Square
               </span>
             )}
             {order.timestamp && (
@@ -378,6 +396,19 @@ export function OrderDetailSheet({
               <p className="text-muted-foreground whitespace-pre-wrap text-sm">
                 {order.notes}
               </p>
+            </section>
+          )}
+
+          {isOwner && order.pos_error && !order.pos_order_id && (
+            <section className="space-y-1.5 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/30">
+              <h3 className="flex items-center gap-1.5 text-sm font-semibold text-amber-800 dark:text-amber-300">
+                <Store className="size-4" /> Square push failed
+              </h3>
+              <p className="text-xs text-amber-700 dark:text-amber-400">{order.pos_error}</p>
+              <Button size="sm" variant="outline" onClick={doResend} disabled={pending}>
+                {pending ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+                Resend to Square
+              </Button>
             </section>
           )}
 
