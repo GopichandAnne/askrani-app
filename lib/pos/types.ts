@@ -1,7 +1,7 @@
 import "server-only";
 
 /** Registered POS providers. Add a new one by writing an adapter + registering it. */
-export type PosProviderId = "square" | "clover" | "toast" | "lightspeed";
+export type PosProviderId = "square" | "clover" | "toast" | "lightspeed" | "mock";
 
 /** Per-store OAuth state, stored as plaintext jsonb in store_provider_credentials
  *  (keyed by provider), behind service-role RLS — same posture as Stripe keys. */
