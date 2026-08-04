@@ -9,7 +9,7 @@ export default async function StoresPage() {
   const [{ data: stores }, { data: staff }, usersRes] = await Promise.all([
     db
       .from("stores")
-      .select("id, slug, store_display_name, business_type, active, whatsapp_status, created_at")
+      .select("id, slug, store_display_name, business_type, active, whatsapp_status, created_at, insights_enabled")
       .order("created_at", { ascending: false }),
     db.from("staff").select("store_id, user_id, role, name").eq("role", "owner"),
     db.auth.admin.listUsers({ page: 1, perPage: 1000 }),
@@ -33,6 +33,7 @@ export default async function StoresPage() {
     whatsappStatus: s.whatsapp_status,
     createdAt: s.created_at,
     owners: ownersByStore.get(s.id) ?? [],
+    insightsEnabled: s.insights_enabled ?? false,
   }));
 
   return <StoresView initial={rows} />;

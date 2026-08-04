@@ -136,6 +136,22 @@ export async function assignOwner(input: {
   return { ok: true, invited };
 }
 
+// ── Grant / revoke embedded Insights access for a store ─────────────────────
+export async function setInsightsAccess(
+  storeId: string,
+  enabled: boolean,
+): Promise<ActionResult> {
+  await requireAdmin();
+  const db = createAdminClient();
+  const { error } = await db
+    .from("stores")
+    .update({ insights_enabled: enabled })
+    .eq("id", storeId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/admin/stores");
+  return { ok: true };
+}
+
 // ── Waitlist management ──────────────────────────────────────────────────────
 export async function deleteWaitlistEntry(id: string): Promise<ActionResult> {
   await requireAdmin();

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { onboardStore } from "@/app/(app)/admin/actions";
+import { onboardStore, setInsightsAccess } from "@/app/(app)/admin/actions";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -28,7 +28,7 @@ import {
 import { StoreLinkPanel } from "@/components/store-link/store-link-panel";
 import { TeamManager } from "@/components/team/team-manager";
 import { BUSINESS_PRESETS, presetFor } from "@/lib/business-presets";
-import { Building2, Plus, QrCode, Users } from "lucide-react";
+import { Building2, Plus, QrCode, Telescope, Users } from "lucide-react";
 
 export type StoreRow = {
   id: string;
@@ -39,6 +39,7 @@ export type StoreRow = {
   whatsappStatus: string | null;
   createdAt: string | null;
   owners: string[];
+  insightsEnabled: boolean;
 };
 
 export function StoresView({ initial }: { initial: StoreRow[] }) {
@@ -100,6 +101,7 @@ export function StoresView({ initial }: { initial: StoreRow[] }) {
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
+                  <InsightsToggle storeId={s.id} initial={s.insightsEnabled} />
                   <Button variant="outline" size="sm" onClick={() => setLinkFor(s)}>
                     <QrCode className="size-4" /> Link &amp; QR
                   </Button>
@@ -152,6 +154,40 @@ export function StoresView({ initial }: { initial: StoreRow[] }) {
           )}
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+/** Platform-admin switch that grants/revokes embedded Insights access per store. */
+function InsightsToggle({ storeId, initial }: { storeId: string; initial: boolean }) {
+  const [on, setOn] = useState(initial);
+  const [pending, setPending] = useState(false);
+
+  async function toggle(next: boolean) {
+    setOn(next); // optimistic
+    setPending(true);
+    const res = await setInsightsAccess(storeId, next);
+    setPending(false);
+    if (res.ok) {
+      toast.success(next ? "Insights access granted" : "Insights access revoked");
+    } else {
+      setOn(!next); // roll back
+      toast.error("Couldn't update Insights access", { description: res.error });
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-2 rounded-md border px-2.5 py-1.5">
+      <Telescope className="text-muted-foreground size-4" />
+      <Label htmlFor={`insights-${storeId}`} className="text-xs">
+        Insights
+      </Label>
+      <Switch
+        id={`insights-${storeId}`}
+        checked={on}
+        disabled={pending}
+        onCheckedChange={toggle}
+      />
     </div>
   );
 }

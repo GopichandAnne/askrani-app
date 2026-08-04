@@ -11,6 +11,8 @@ export type StoreAccess = {
   role: StoreRole;
   /** Drives the vertical vocabulary layer (lib/vertical-vocab.ts). */
   businessType: string | null;
+  /** Platform-admin grant: store can open the embedded Ask Rani Insights product. */
+  insightsEnabled: boolean;
 };
 
 export type SessionContext = {
@@ -44,7 +46,7 @@ export const getSessionContext = cache(
       supabase.rpc("is_platform_admin"),
       supabase
         .from("stores")
-        .select("id, slug, store_display_name, business_type")
+        .select("id, slug, store_display_name, business_type, insights_enabled")
         .order("store_display_name", { ascending: true }),
       supabase.from("staff").select("store_id, role").eq("user_id", user.id),
     ]);
@@ -62,6 +64,7 @@ export const getSessionContext = cache(
       name: s.store_display_name ?? s.slug,
       role: roleByStore.get(s.id) ?? (isPlatformAdmin ? "owner" : "staff"),
       businessType: s.business_type ?? null,
+      insightsEnabled: s.insights_enabled ?? false,
     }));
 
     return {
