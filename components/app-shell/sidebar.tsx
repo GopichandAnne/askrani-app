@@ -44,6 +44,7 @@ export function Sidebar() {
           if (item.ownerOnly && !isOwner) return null;
           if (item.platformAdminOnly && !isPlatformAdmin) return null;
           if (item.businessTypes && !item.businessTypes.includes(active.businessType ?? "")) return null;
+          if (item.entitlement === "insights" && !active.insightsEnabled) return null;
           const Icon = item.icon;
           const label = item.vocabKey ? vocab[item.vocabKey] : item.label;
           const isActive =

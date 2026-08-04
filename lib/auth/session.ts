@@ -11,6 +11,8 @@ export type StoreAccess = {
   role: StoreRole;
   /** Drives the vertical vocabulary layer (lib/vertical-vocab.ts). */
   businessType: string | null;
+  /** Platform-admin grant: store can open the embedded Ask Rani Insights product. */
+  insightsEnabled: boolean;
 };
 
 export type SessionContext = {
@@ -44,7 +46,7 @@ export const getSessionContext = cache(
       supabase.rpc("is_platform_admin"),
       supabase
         .from("stores")
-        .select("id, slug, store_display_name, business_type")
+        .select("id, slug, store_display_name, business_type, insights_enabled")
         .order("store_display_name", { ascending: true }),
       supabase.from("staff").select("store_id, role").eq("user_id", user.id),
     ]);
@@ -56,12 +58,29 @@ export const getSessionContext = cache(
       roleByStore.set(row.store_id, row.role);
     }
 
-    const stores: StoreAccess[] = (storesRes.data ?? []).map((s) => ({
+    // Resilient to migration 0065 not being applied yet: if the select errored
+    // (e.g. the insights_enabled column doesn't exist), fall back to the base
+    // columns so auth/store resolution never breaks. Insights just stays hidden
+    // until the column exists.
+    let storeRows: Array<{
+      id: string; slug: string; store_display_name: string | null;
+      business_type: string | null; insights_enabled?: boolean;
+    }> = storesRes.data ?? [];
+    if (storesRes.error) {
+      const fb = await supabase
+        .from("stores")
+        .select("id, slug, store_display_name, business_type")
+        .order("store_display_name", { ascending: true });
+      storeRows = fb.data ?? [];
+    }
+
+    const stores: StoreAccess[] = storeRows.map((s) => ({
       id: s.id,
       slug: s.slug,
       name: s.store_display_name ?? s.slug,
       role: roleByStore.get(s.id) ?? (isPlatformAdmin ? "owner" : "staff"),
       businessType: s.business_type ?? null,
+      insightsEnabled: s.insights_enabled ?? false,
     }));
 
     return {

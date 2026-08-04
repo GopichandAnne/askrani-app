@@ -1828,6 +1828,7 @@ export type Database = {
           details_folder_id: string | null
           id: string
           identity_secret: string | null
+          insights_enabled: boolean
           location_folder_id: string | null
           logo_url: string | null
           pricing_file_id: string | null
@@ -1860,6 +1861,7 @@ export type Database = {
           details_folder_id?: string | null
           id?: string
           identity_secret?: string | null
+          insights_enabled?: boolean
           location_folder_id?: string | null
           logo_url?: string | null
           pricing_file_id?: string | null
@@ -1892,6 +1894,7 @@ export type Database = {
           details_folder_id?: string | null
           id?: string
           identity_secret?: string | null
+          insights_enabled?: boolean
           location_folder_id?: string | null
           logo_url?: string | null
           pricing_file_id?: string | null

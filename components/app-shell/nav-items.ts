@@ -15,6 +15,7 @@ import {
   Ticket,
   ShieldCheck,
   ShoppingCart,
+  Telescope,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -33,6 +34,8 @@ export type NavItem = {
   vocabKey?: "catalogNav";
   /** when set, shown only for these stores.business_type values. */
   businessTypes?: string[];
+  /** when set, shown only for stores granted this entitlement (see StoreAccess). */
+  entitlement?: "insights";
 };
 
 /** Information architecture for the panel (built in order across phases). */
@@ -52,6 +55,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Integrations", href: "/integrations", icon: Plug, available: true, ownerOnly: true },
   { label: "Inbox", href: "/inbox", icon: Inbox, available: true },
   { label: "Dashboard", href: "/dashboard", icon: BarChart3, available: true, ownerOnly: true },
+  { label: "Insights", href: "/insights", icon: Telescope, available: true, ownerOnly: true, entitlement: "insights" },
   // ── Platform admin (super admin) — store-agnostic ──
   { label: "Stores", href: "/admin/stores", icon: Building2, available: true, platformAdminOnly: true },
   { label: "Waitlist", href: "/admin/waitlist", icon: ClipboardList, available: true, platformAdminOnly: true },
