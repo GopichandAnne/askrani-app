@@ -58,7 +58,23 @@ export const getSessionContext = cache(
       roleByStore.set(row.store_id, row.role);
     }
 
-    const stores: StoreAccess[] = (storesRes.data ?? []).map((s) => ({
+    // Resilient to migration 0065 not being applied yet: if the select errored
+    // (e.g. the insights_enabled column doesn't exist), fall back to the base
+    // columns so auth/store resolution never breaks. Insights just stays hidden
+    // until the column exists.
+    let storeRows: Array<{
+      id: string; slug: string; store_display_name: string | null;
+      business_type: string | null; insights_enabled?: boolean;
+    }> = storesRes.data ?? [];
+    if (storesRes.error) {
+      const fb = await supabase
+        .from("stores")
+        .select("id, slug, store_display_name, business_type")
+        .order("store_display_name", { ascending: true });
+      storeRows = fb.data ?? [];
+    }
+
+    const stores: StoreAccess[] = storeRows.map((s) => ({
       id: s.id,
       slug: s.slug,
       name: s.store_display_name ?? s.slug,
