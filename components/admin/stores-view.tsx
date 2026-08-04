@@ -40,6 +40,8 @@ export type StoreRow = {
   createdAt: string | null;
   owners: string[];
   insightsEnabled: boolean;
+  /** Most recent Insights access change (audit) for this store, if any. */
+  lastAccessChange: { email: string | null; at: string; enabled: boolean } | null;
 };
 
 export function StoresView({ initial }: { initial: StoreRow[] }) {
@@ -99,6 +101,13 @@ export function StoresView({ initial }: { initial: StoreRow[] }) {
                       <span className="text-destructive">No owner assigned yet</span>
                     )}
                   </p>
+                  {s.lastAccessChange && (
+                    <p className="text-muted-foreground text-xs">
+                      Insights {s.lastAccessChange.enabled ? "granted" : "revoked"}
+                      {s.lastAccessChange.email ? ` by ${s.lastAccessChange.email}` : ""} ·{" "}
+                      {timeAgo(s.lastAccessChange.at)}
+                    </p>
+                  )}
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <InsightsToggle storeId={s.id} initial={s.insightsEnabled} />
@@ -158,8 +167,22 @@ export function StoresView({ initial }: { initial: StoreRow[] }) {
   );
 }
 
-/** Platform-admin switch that grants/revokes embedded Insights access per store. */
+/** Relative "2h ago" / "3d ago" label from an ISO timestamp. */
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const m = Math.round(diff / 60000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.round(h / 24);
+  if (d < 30) return `${d}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+/** Platform-admin switch that grants/revokes Insights access per store. */
 function InsightsToggle({ storeId, initial }: { storeId: string; initial: boolean }) {
+  const router = useRouter();
   const [on, setOn] = useState(initial);
   const [pending, setPending] = useState(false);
 
@@ -170,6 +193,7 @@ function InsightsToggle({ storeId, initial }: { storeId: string; initial: boolea
     setPending(false);
     if (res.ok) {
       toast.success(next ? "Insights access granted" : "Insights access revoked");
+      router.refresh(); // pull the fresh audit line
     } else {
       setOn(!next); // roll back
       toast.error("Couldn't update Insights access", { description: res.error });
