@@ -128,6 +128,38 @@ Both hosts resolve simultaneously, so rollback is just reverting the env vars to
 
 ---
 
-**Status:** code is prepped (nothing hardcoded to `*.supabase.co` anymore). Enable
-the add-on + DNS when ready, then ping me — I'll run Steps 1 & 3 (CLI), give you the
-exact DNS records, and flip all the env in Steps 4–6.
+---
+
+## ✅ LIVE (activated 2026-08-14)
+
+Both custom domains are **active and serving** all surfaces:
+
+| Project | Custom domain | Verified |
+|---|---|---|
+| Rani (askrani-prod) | **api.askrani.ai** | auth 200 · functions (ops-slice) 200 · REST ✓ |
+| Insights | **insights-api.askrani.ai** | auth 200 ✓ |
+
+**Note on the flow:** these projects use Supabase's **legacy** custom-domain flow —
+the CNAME must exist *before* `domains create` (create then validates it and issues
+the ownership + `_acme-challenge` TXT records). Order was: add CNAME → create → add
+TXT → `reverify` → `activate`.
+
+**DNS in Cloudflare (DNS-only / grey cloud):**
+- `CNAME api           → ctdczunzetcftcadbrot.supabase.co`
+- `CNAME insights-api   → lmyyomktjlearynqmthu.supabase.co`
+- `TXT _cf-custom-hostname.api.askrani.ai`, `TXT _acme-challenge.api.askrani.ai`
+- `TXT _cf-custom-hostname.insights-api.askrani.ai`, `TXT _acme-challenge.insights-api.askrani.ai`
+
+**Env flipped + redeployed:**
+- Insights (Vercel `askrani-insights`): `NEXT_PUBLIC_SUPABASE_URL=https://insights-api.askrani.ai`, `RANI_OPS_URL=https://api.askrani.ai/functions/v1/ops-slice` ✓
+- Rani web (Vercel `askrani-web`): `NEXT_PUBLIC_SUPABASE_URL=https://api.askrani.ai` ✓
+- Rani functions secret: `PUBLIC_ASSET_BASE=https://api.askrani.ai` ✓
+
+**Auth safety:** this stack's session storage key is the fixed `supabase.auth.token`
+(URL-independent), so the URL flip did **not** log anyone out.
+
+### Still optional (old `*.supabase.co` URLs keep working, so no rush)
+- Repoint **WhatsApp (Meta)** + **Stripe** webhooks to `https://api.askrani.ai/functions/v1/...`.
+- Add the custom domains to each project's Auth **redirect allow-list**.
+- Redeploy the `mock-realty` function so it picks up `PUBLIC_ASSET_BASE`
+  (`npx supabase functions deploy mock-realty --project-ref ctdczunzetcftcadbrot`) — demo only.
