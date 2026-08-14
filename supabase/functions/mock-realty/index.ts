@@ -32,7 +32,10 @@ const LISTINGS: Listing[] = [
 
 // Public photo URLs (a RESO Media resource). In production these are the MLS's
 // hosted photo URLs; here they point at demo images in the public branding bucket.
-const PHOTO_BASE = "https://ctdczunzetcftcadbrot.supabase.co/storage/v1/object/public/branding/realty-demo";
+// Base is env-driven so it follows the custom domain (PUBLIC_ASSET_BASE, e.g.
+// https://api.askrani.ai) — falls back to the project URL, then the default host.
+const PUBLIC_ASSET_BASE = (Deno.env.get("PUBLIC_ASSET_BASE") ?? Deno.env.get("SUPABASE_URL") ?? "https://ctdczunzetcftcadbrot.supabase.co").replace(/\/$/, "");
+const PHOTO_BASE = `${PUBLIC_ASSET_BASE}/storage/v1/object/public/branding/realty-demo`;
 const SLOTS = ["front", "kitchen", "living"];
 function photosFor(mls: string): string[] {
   return SLOTS.map((s) => `${PHOTO_BASE}/${mls.toLowerCase()}-${s}.svg`);
