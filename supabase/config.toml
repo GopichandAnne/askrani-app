@@ -122,3 +122,9 @@ verify_jwt = false
 # public short code — and it must open from any forwarded WhatsApp chat.
 [functions.ref]
 verify_jwt = false
+
+# Read-only operations aggregate for Insights (the "one data umbrella"). Gated by
+# the INSIGHTS_OPS_SECRET function secret (Bearer / x-ops-secret); verify_jwt=false
+# so Insights can pull it directly. Returns AGGREGATES ONLY — no raw customer PII.
+[functions.ops-slice]
+verify_jwt = false
