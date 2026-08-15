@@ -5,7 +5,6 @@ import { Sidebar } from "@/components/app-shell/sidebar";
 import { StoreSwitcher } from "@/components/app-shell/store-switcher";
 import { ThemeToggle } from "@/components/app-shell/theme-toggle";
 import { UserMenu } from "@/components/app-shell/user-menu";
-import { NoAccess } from "@/components/app-shell/no-access";
 
 export default async function AppLayout({
   children,
@@ -15,9 +14,9 @@ export default async function AppLayout({
   const ctx = await getActiveStore();
   if (!ctx) redirect("/login");
 
-  // Authenticated but linked to no store.
+  // Authenticated but linked to no store → first-run self-serve store creation.
   if (!ctx.active || ctx.stores.length === 0) {
-    return <NoAccess email={ctx.user.email} />;
+    redirect("/welcome");
   }
 
   return (

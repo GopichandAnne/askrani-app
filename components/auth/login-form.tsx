@@ -9,6 +9,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, Mail } from "lucide-react";
 
+const normPhone = (s: string) => {
+  const d = s.replace(/\D/g, "");
+  return d ? `+${d}` : "";
+};
+
 function GoogleIcon() {
   return (
     <svg viewBox="0 0 24 24" className="size-4" aria-hidden="true">
@@ -41,6 +46,10 @@ export function LoginForm() {
   const [password, setPassword] = useState("");
   const [pwLoading, setPwLoading] = useState(false);
   const [sent, setSent] = useState(false);
+  const [phone, setPhone] = useState("");
+  const [phoneCode, setPhoneCode] = useState("");
+  const [phoneStep, setPhoneStep] = useState<"phone" | "code">("phone");
+  const [phoneLoading, setPhoneLoading] = useState(false);
 
   const callbackUrl = (path: string) =>
     `${window.location.origin}/auth/callback?next=${encodeURIComponent(path)}`;
@@ -91,6 +100,38 @@ export function LoginForm() {
     toast.success("Check your email", {
       description: `We sent a sign-in link to ${email.trim()}.`,
     });
+  }
+
+  async function sendPhoneOtp() {
+    const p = normPhone(phone);
+    if (p.length < 9) {
+      toast.error("Enter your phone with country code, e.g. +1 512 555 0142.");
+      return;
+    }
+    setPhoneLoading(true);
+    const supabase = createClient();
+    const { error } = await supabase.auth.signInWithOtp({ phone: p, options: { channel: "sms" } });
+    setPhoneLoading(false);
+    if (error) {
+      toast.error("Couldn't send the code", { description: error.message });
+      return;
+    }
+    setPhoneStep("code");
+    toast.success("Code sent", { description: `We texted a 6-digit code to ${p}.` });
+  }
+
+  async function verifyPhoneOtp() {
+    const p = normPhone(phone);
+    setPhoneLoading(true);
+    const supabase = createClient();
+    const { error } = await supabase.auth.verifyOtp({ phone: p, token: phoneCode.trim(), type: "sms" });
+    setPhoneLoading(false);
+    if (error) {
+      toast.error("That code didn't work", { description: error.message });
+      return;
+    }
+    // New phone accounts have no store yet → the app layout routes them to /welcome.
+    window.location.assign(next.startsWith("/") ? next : "/");
   }
 
   if (sent) {
@@ -175,6 +216,53 @@ export function LoginForm() {
           Email me a magic link instead
         </Button>
       </form>
+
+      <div className="flex items-center gap-3">
+        <span className="bg-border h-px flex-1" />
+        <span className="text-muted-foreground text-xs">or</span>
+        <span className="bg-border h-px flex-1" />
+      </div>
+
+      {phoneStep === "phone" ? (
+        <div className="space-y-2">
+          <Label htmlFor="phone">Phone</Label>
+          <Input
+            id="phone"
+            type="tel"
+            inputMode="tel"
+            autoComplete="tel"
+            placeholder="+1 512 555 0142"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+          />
+          <Button type="button" variant="outline" className="w-full" onClick={sendPhoneOtp} disabled={phoneLoading}>
+            {phoneLoading && <Loader2 className="size-4 animate-spin" />}
+            Text me a code
+          </Button>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <Label htmlFor="code">Enter the 6-digit code</Label>
+          <Input
+            id="code"
+            inputMode="numeric"
+            placeholder="••••••"
+            value={phoneCode}
+            onChange={(e) => setPhoneCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+          />
+          <Button type="button" className="w-full" onClick={verifyPhoneOtp} disabled={phoneLoading || phoneCode.length < 4}>
+            {phoneLoading && <Loader2 className="size-4 animate-spin" />}
+            Verify &amp; continue
+          </Button>
+          <button
+            type="button"
+            onClick={() => { setPhoneStep("phone"); setPhoneCode(""); }}
+            className="text-muted-foreground w-full text-center text-xs hover:underline"
+          >
+            Use a different number
+          </button>
+        </div>
+      )}
     </div>
   );
 }
