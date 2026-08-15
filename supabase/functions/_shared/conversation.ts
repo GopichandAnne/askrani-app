@@ -127,7 +127,9 @@ export async function generateTurnReply(
     db, store, opts.sessionId, config.ordersEnabled, hasProposal, config.catalogEnabled, today, integrations,
     requestTypes, ui,
   );
-  const reply = await generateReply(systemInstruction, contents, toolset);
+  const reply = await generateReply(systemInstruction, contents, toolset, {
+    svc: db, storeId: store.id, kind: "bot_chat", ref: { sessionId: opts.sessionId },
+  });
   return { ...reply, catalogView: ui.catalog_view };
 }
 

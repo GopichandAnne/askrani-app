@@ -125,7 +125,7 @@ Deno.serve(async (req) => {
       }
       case "search": {
         const query = String(body.query ?? "");
-        const embedding = await embedQuery(query);
+        const embedding = await embedQuery(query, { svc: db, storeId: store.id, kind: "search_embed" });
         const { data, error } = await db.rpc("search_products", {
           p_store_id: store.id,
           p_query: query,
@@ -228,8 +228,8 @@ Deno.serve(async (req) => {
           "reasonably cook the heat to the diner's taste; false for desserts, sweets, drinks, and fixed-recipe " +
           "items (a spice-level option will be offered to diners for the true ones). Never invent items or prices.";
         const result = media
-          ? await generateStructuredFromMedia(SYS, media.mime, media.data)
-          : await generateStructured(SYS, text.slice(0, 40000));
+          ? await generateStructuredFromMedia(SYS, media.mime, media.data, { svc: db, storeId: store.id, kind: "catalog_extract" })
+          : await generateStructured(SYS, text.slice(0, 40000), undefined, { svc: db, storeId: store.id, kind: "catalog_extract" });
         if (!result) return json({ error: "Couldn't read a catalogue from that — try a clearer file or paste the items." }, 200);
         // deno-lint-ignore no-explicit-any
         const raw = Array.isArray((result as any).products) ? (result as any).products : [];
@@ -535,7 +535,7 @@ Deno.serve(async (req) => {
           "{\"kind\":\"upsert_type\",\"key\":\"quote_request\",\"label\":\"Quote request\",\"description\":\"When a visitor asks for a price quote.\",\"fields\":[{\"key\":\"product\",\"required\":true},{\"key\":\"quantity\",\"required\":true}]}," +
           "{\"kind\":\"subscribe\",\"topic\":\"quote_request\",\"responder_email\":\"sam@shop.com\"}]}\n\n" +
           "Current store config:\n" + ctx;
-        const plan = await generateStructured(sys, instruction);
+        const plan = await generateStructured(sys, instruction, undefined, { svc: db, storeId: store.id, kind: "plan_generate" });
         if (!plan) return json({ error: "Couldn't understand that (AI config is unavailable). Try the manual controls." }, 502);
         return json({ store: store.slug, plan });
       }
@@ -885,7 +885,7 @@ Deno.serve(async (req) => {
         return json({ store: store.slug, deleted: title });
       }
       case "search_knowledge": {
-        const embedding = await embedQuery(String(body.query ?? ""));
+        const embedding = await embedQuery(String(body.query ?? ""), { svc: db, storeId: store.id, kind: "search_embed" });
         const { data, error } = await db.rpc("search_knowledge", {
           p_store_id: store.id,
           p_query_embedding: toVectorLiteral(embedding),
@@ -965,7 +965,7 @@ async function drainReindex(db: any, storeId: string, maxRows: number) {
   if (error) throw new Error(error.message);
   if (!stale || stale.length === 0) return { embedded: 0, remaining: 0 };
 
-  const vectors = await embedDocuments(stale.map(productEmbedText));
+  const vectors = await embedDocuments(stale.map(productEmbedText), { svc: db, storeId, kind: "index_embed" });
   const now = new Date().toISOString();
   for (let i = 0; i < stale.length; i++) {
     const { error: upErr } = await db

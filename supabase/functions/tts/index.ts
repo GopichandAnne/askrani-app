@@ -77,7 +77,7 @@ Deno.serve(async (req) => {
   const reqVoice = String(body.voice ?? "").trim();
   const voice = reqVoice ? resolveVoice(reqVoice).key : resolveVoice(conf.tts_voice).key;
 
-  const bytes = await cachedSpeech(db, voice, text);
+  const bytes = await cachedSpeech(db, voice, text, { svc: db, storeId: store.id, kind: "tts", ref: { sessionId } });
   if (!bytes) return json({ error: "voice unavailable" }, 502);
   // Copy into a plain ArrayBuffer (a valid, un-generic BodyInit) and stream it.
   const out = new ArrayBuffer(bytes.byteLength);

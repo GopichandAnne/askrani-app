@@ -75,7 +75,9 @@ async function processOne(db: any, row: any): Promise<"sent" | "skipped"> {
     history,
     "[The customer has gone quiet for a few minutes since your last message. Follow your check-back instructions now.]",
   );
-  const { text } = await generateReply(instruction, contents);
+  const { text } = await generateReply(instruction, contents, undefined, {
+    svc: db, storeId: store.id, kind: "followup_draft", ref: { sessionId: row.session_id },
+  });
   const nudge = (text ?? "").trim();
   // Model declined, or produced nothing usable.
   if (!nudge || /^skip\b/i.test(nudge) || nudge.toUpperCase() === "SKIP") return "skipped";

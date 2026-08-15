@@ -15,6 +15,7 @@
 // never breaks and the bot stays quiet.
 
 import type { Toolset } from "./tools.ts";
+import { addUsage, emptyUsage, geminiChatUsd, recordUsage, type MeterCtx } from "./meter.ts";
 
 // `-latest` alias tracks the current flash so a model retirement (e.g. Google
 // pulling gemini-2.5-flash) can't 404 the whole bot. Override with GEMINI_MODEL.
@@ -79,6 +80,7 @@ export async function generateStructured(
   systemInstruction: string,
   userText: string,
   responseSchema?: Record<string, unknown>,
+  meter?: MeterCtx,
 ): Promise<Record<string, unknown> | null> {
   const key = Deno.env.get("GEMINI_API_KEY");
   if (!key) {
@@ -110,6 +112,10 @@ export async function generateStructured(
     }
     // deno-lint-ignore no-explicit-any
     const json: any = await res.json();
+    if (meter) {
+      const u = addUsage(emptyUsage(), json?.usageMetadata);
+      await recordUsage(meter, "gemini", model, { ...u }, geminiChatUsd(u));
+    }
     const text: string = (json?.candidates?.[0]?.content?.parts ?? [])
       // deno-lint-ignore no-explicit-any
       .map((p: any) => p.text ?? "").join("");
@@ -130,6 +136,7 @@ export async function generateStructuredFromMedia(
   systemInstruction: string,
   mime: string,
   dataBase64: string,
+  meter?: MeterCtx,
 ): Promise<Record<string, unknown> | null> {
   const key = Deno.env.get("GEMINI_API_KEY");
   if (!key) return null;
@@ -154,6 +161,10 @@ export async function generateStructuredFromMedia(
     }
     // deno-lint-ignore no-explicit-any
     const json: any = await res.json();
+    if (meter) {
+      const u = addUsage(emptyUsage(), json?.usageMetadata);
+      await recordUsage(meter, "gemini", model, { ...u, media: mime }, geminiChatUsd(u));
+    }
     const text: string = (json?.candidates?.[0]?.content?.parts ?? [])
       // deno-lint-ignore no-explicit-any
       .map((p: any) => p.text ?? "").join("");
@@ -173,6 +184,7 @@ export async function generateReply(
   systemInstruction: string,
   contents: GeminiContent[],
   toolset?: Toolset,
+  meter?: MeterCtx,
 ): Promise<GeminiReply> {
   const key = Deno.env.get("GEMINI_API_KEY");
   if (!key) {
@@ -187,6 +199,7 @@ export async function generateReply(
 
   const convo: GeminiContent[] = [...contents];
   const toolsUsed: string[] = [];
+  const usage = emptyUsage(); // accumulated across every generateContent round-trip this turn
 
   try {
     for (let iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
@@ -211,6 +224,7 @@ export async function generateReply(
       }
       // deno-lint-ignore no-explicit-any
       const json: any = await res.json();
+      addUsage(usage, json?.usageMetadata);
       const cached = json?.usageMetadata?.cachedContentTokenCount;
       if (cached) console.log(`[gemini] cache hit: ${cached} tokens`);
 
@@ -268,6 +282,7 @@ export async function generateReply(
     }
     // deno-lint-ignore no-explicit-any
     const finalJson: any = await finalRes.json();
+    addUsage(usage, finalJson?.usageMetadata);
     const finalParts: GeminiPart[] = finalJson?.candidates?.[0]?.content?.parts ?? [];
     return {
       text: finalParts.map((p) => p.text ?? "").join("").trim() || null,
@@ -276,5 +291,10 @@ export async function generateReply(
   } catch (err) {
     console.error("[gemini] error:", err);
     return { text: null, toolsUsed };
+  } finally {
+    // One usage_event per turn covering every round-trip. Fail-open + record-only.
+    if (meter && usage.calls > 0) {
+      await recordUsage(meter, "gemini", model, { ...usage }, geminiChatUsd(usage));
+    }
   }
 }

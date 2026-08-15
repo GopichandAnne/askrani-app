@@ -9,6 +9,8 @@
 // backoff. Vectors are MRL-truncated to 768 dims and L2-normalized (Google's
 // guidance when using <3072 dims; also lets cosine/dot behave consistently).
 
+import { estimateTokens, geminiEmbedUsd, recordUsage, type MeterCtx } from "./meter.ts";
+
 const MODEL = "gemini-embedding-001";
 const API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 export const EMBED_DIM = 768;
@@ -45,7 +47,7 @@ export function toVectorLiteral(v: number[]): string {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Embed one query string. Returns a normalized 768-dim vector. */
-export async function embedQuery(text: string): Promise<number[]> {
+export async function embedQuery(text: string, meter?: MeterCtx): Promise<number[]> {
   const res = await withRetry(() =>
     fetch(`${API_BASE}/models/${MODEL}:embedContent?key=${apiKey()}`, {
       method: "POST",
@@ -60,6 +62,10 @@ export async function embedQuery(text: string): Promise<number[]> {
   );
   const json = await res.json();
   const values: number[] = json?.embedding?.values ?? [];
+  if (meter) {
+    const tokens = estimateTokens(text);
+    await recordUsage(meter, "gemini", MODEL, { tokens, chars: text.length, count: 1 }, geminiEmbedUsd(tokens));
+  }
   return l2normalize(values);
 }
 
@@ -68,7 +74,7 @@ export async function embedQuery(text: string): Promise<number[]> {
  * normalized vector per input, in order. Built for the 20K bulk/incremental
  * reindex path — call it with the stale rows' text.
  */
-export async function embedDocuments(texts: string[]): Promise<number[][]> {
+export async function embedDocuments(texts: string[], meter?: MeterCtx): Promise<number[][]> {
   const out: number[][] = [];
   for (let i = 0; i < texts.length; i += BATCH_SIZE) {
     const batch = texts.slice(i, i + BATCH_SIZE);
@@ -90,6 +96,11 @@ export async function embedDocuments(texts: string[]): Promise<number[][]> {
     const embeddings: { values: number[] }[] = json?.embeddings ?? [];
     for (const e of embeddings) out.push(l2normalize(e.values ?? []));
     if (i + BATCH_SIZE < texts.length) await sleep(BASE_DELAY_MS); // pace
+  }
+  if (meter && texts.length > 0) {
+    const tokens = texts.reduce((s, t) => s + estimateTokens(t), 0);
+    const chars = texts.reduce((s, t) => s + (t?.length ?? 0), 0);
+    await recordUsage(meter, "gemini", MODEL, { tokens, chars, count: texts.length }, geminiEmbedUsd(tokens));
   }
   return out;
 }

@@ -7,6 +7,7 @@
 // per-question menu explanations ever hit OpenAI.
 
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import { recordUsage, ttsUsd, type MeterCtx } from "./meter.ts";
 
 // Owner-facing voice names → OpenAI voice + a rich DELIVERY instruction.
 // gpt-4o-mini-tts sounds like "reading text" unless you direct HOW to speak — so
@@ -38,8 +39,10 @@ export function resolveVoice(name?: string | null): { key: string; openai: strin
 
 const BUCKET = "tts-cache";
 
-/** Raw OpenAI synthesis → MP3 bytes, or null on any failure (caller falls back). */
-export async function synthesizeSpeech(text: string, voiceName: string): Promise<Uint8Array | null> {
+/** Raw OpenAI synthesis → MP3 bytes, or null on any failure (caller falls back).
+ *  Metered only here (a cache HIT never reaches this), so we charge exactly the
+ *  clips that actually hit OpenAI. */
+export async function synthesizeSpeech(text: string, voiceName: string, meter?: MeterCtx): Promise<Uint8Array | null> {
   const key = Deno.env.get("OPENAI_API_KEY");
   if (!key) {
     console.error("[tts] OPENAI_API_KEY not set");
@@ -62,6 +65,7 @@ export async function synthesizeSpeech(text: string, voiceName: string): Promise
       console.error(`[tts] openai ${res.status}: ${(await res.text()).slice(0, 200)}`);
       return null;
     }
+    if (meter) await recordUsage(meter, "openai", "gpt-4o-mini-tts", { chars: text.length }, ttsUsd(text.length));
     return new Uint8Array(await res.arrayBuffer());
   } catch (e) {
     console.error(`[tts] fetch: ${e instanceof Error ? e.message : e}`);
@@ -77,14 +81,14 @@ async function cachePath(voiceName: string, text: string): Promise<string> {
 
 /** Cache-first speech: serve the stored clip if we've said this line in this
  *  voice before; otherwise synthesize, store (best-effort), and serve. */
-export async function cachedSpeech(db: SupabaseClient, voiceName: string, text: string): Promise<Uint8Array | null> {
+export async function cachedSpeech(db: SupabaseClient, voiceName: string, text: string, meter?: MeterCtx): Promise<Uint8Array | null> {
   const path = await cachePath(voiceName, text);
   try {
     const { data: hit } = await db.storage.from(BUCKET).download(path);
     if (hit) return new Uint8Array(await hit.arrayBuffer());
   } catch { /* miss or bucket cold — fall through to synth */ }
 
-  const bytes = await synthesizeSpeech(text, voiceName);
+  const bytes = await synthesizeSpeech(text, voiceName, meter);
   if (!bytes) return null;
   try {
     await db.storage.from(BUCKET).upload(path, bytes, { contentType: "audio/mpeg", upsert: true });

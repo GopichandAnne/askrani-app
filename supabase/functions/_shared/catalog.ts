@@ -106,7 +106,7 @@ export async function browseProducts(
   let embedding: string | null = null;
   if (q.length >= 3) {
     try {
-      embedding = toVectorLiteral(await embedQuery(q));
+      embedding = toVectorLiteral(await embedQuery(q, { svc: db, storeId: store.id, kind: "browse_embed" }));
     } catch (e) {
       console.error(`[catalog] embed failed, falling back to text: ${e instanceof Error ? e.message : e}`);
     }

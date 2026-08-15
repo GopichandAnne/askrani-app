@@ -143,6 +143,7 @@ export async function reindexKnowledge(
 
   const vectors = await embedDocuments(
     stale.map((r: { chunk_text: string }) => r.chunk_text),
+    { svc: db, storeId, kind: "index_embed" },
   );
   const now = new Date().toISOString();
   for (let i = 0; i < stale.length; i++) {

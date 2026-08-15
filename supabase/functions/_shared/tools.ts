@@ -170,7 +170,7 @@ async function executeSearchProducts(
 
   let embedding: number[];
   try {
-    embedding = await embedQuery(query);
+    embedding = await embedQuery(query, { svc: db, storeId: store.id, kind: "search_embed" });
   } catch (e) {
     console.error(`[tools] search_products embed failed: ${e instanceof Error ? e.message : e}`);
     return { products: [], note: "search temporarily unavailable — offer to check with the store" };
@@ -230,7 +230,7 @@ async function executeSearchKnowledge(
 
   let embedding: number[];
   try {
-    embedding = await embedQuery(query);
+    embedding = await embedQuery(query, { svc: db, storeId: store.id, kind: "search_embed" });
   } catch (e) {
     console.error(`[tools] search_knowledge embed failed: ${e instanceof Error ? e.message : e}`);
     return { snippets: [], note: "search temporarily unavailable — offer to check with the store" };
