@@ -128,3 +128,8 @@ verify_jwt = false
 # so Insights can pull it directly. Returns AGGREGATES ONLY — no raw customer PII.
 [functions.ops-slice]
 verify_jwt = false
+
+# wallet — the shared credit wallet API. Insights reads/debits the same per-store
+# wallet the chatbot uses (shared-secret INSIGHTS_OPS_SECRET). No project JWT.
+[functions.wallet]
+verify_jwt = false
