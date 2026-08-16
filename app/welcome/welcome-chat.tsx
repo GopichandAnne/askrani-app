@@ -9,8 +9,22 @@ import { Input } from "@/components/ui/input";
 import { Loader2, Mic, Send } from "lucide-react";
 
 type Msg = { role: "owner" | "rani"; text: string };
-// deno-lint-ignore no-explicit-any
-type Config = any;
+interface Config {
+  businessName?: string;
+  businessType?: string;
+  ownerName?: string;
+  email?: string;
+  personality?: string;
+  storePrompt?: string;
+  greeting?: string;
+  suggestionChips?: string[];
+}
+type SpeechRec = {
+  lang: string; interimResults: boolean; maxAlternatives?: number;
+  onresult: (e: { results: { [k: number]: { [k: number]: { transcript: string } } } }) => void;
+  onerror: () => void; onend: () => void; start: () => void;
+};
+type SpeechWindow = Window & { webkitSpeechRecognition?: new () => SpeechRec; SpeechRecognition?: new () => SpeechRec };
 
 /**
  * The Setup Copilot — conversational store setup. Rani interviews the owner one
@@ -91,8 +105,8 @@ export function WelcomeChat({ email }: { email: string | null }) {
 
   // Voice input via the browser's built-in Web Speech API (no key, no cost).
   function startVoice() {
-    // deno-lint-ignore no-explicit-any
-    const SR = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
+    const w = window as SpeechWindow;
+    const SR = w.webkitSpeechRecognition || w.SpeechRecognition;
     if (!SR) {
       toast.error("Voice input isn't supported in this browser", { description: "Try Chrome, or type your answer." });
       return;

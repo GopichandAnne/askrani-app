@@ -18,6 +18,13 @@ const STARTERS = [
   "Help me go live on WhatsApp",
 ];
 
+type SpeechRec = {
+  lang: string; interimResults: boolean;
+  onresult: (e: { results: { [k: number]: { [k: number]: { transcript: string } } } }) => void;
+  onerror: () => void; onend: () => void; start: () => void;
+};
+type SpeechWindow = Window & { webkitSpeechRecognition?: new () => SpeechRec; SpeechRecognition?: new () => SpeechRec };
+
 /** The in-panel copilot chat. Answers help questions AND changes store settings by
  *  natural language (the owner-copilot function executes the edits, metered). */
 export function AssistantChat({ storeSlug, storeName }: { storeSlug: string; storeName: string }) {
@@ -56,8 +63,8 @@ export function AssistantChat({ storeSlug, storeName }: { storeSlug: string; sto
   }
 
   function startVoice() {
-    // deno-lint-ignore no-explicit-any
-    const SR = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
+    const w = window as SpeechWindow;
+    const SR = w.webkitSpeechRecognition || w.SpeechRecognition;
     if (!SR) {
       toast.error("Voice input isn't supported in this browser", { description: "Try Chrome, or type." });
       return;
