@@ -15,6 +15,7 @@ import {
   Ticket,
   ShieldCheck,
   ShoppingCart,
+  Sparkles,
   Telescope,
   Users,
   type LucideIcon,
@@ -40,6 +41,7 @@ export type NavItem = {
 
 /** Information architecture for the panel (built in order across phases). */
 export const NAV_ITEMS: NavItem[] = [
+  { label: "Ask Rani", href: "/assistant", icon: Sparkles, available: true },
   { label: "Orders", href: "/orders", icon: ShoppingCart, available: true },
   { label: "Redemptions", href: "/redemptions", icon: Ticket, available: true },
   { label: "Post reviews", href: "/reviews", icon: BadgeCheck, available: true },
