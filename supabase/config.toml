@@ -133,3 +133,8 @@ verify_jwt = false
 # wallet the chatbot uses (shared-secret INSIGHTS_OPS_SECRET). No project JWT.
 [functions.wallet]
 verify_jwt = false
+
+# transcribe — shared Whisper STT. Authenticates itself (Rani user JWT OR the
+# shared INSIGHTS_OPS_SECRET so Insights can borrow Rani's OpenAI key).
+[functions.transcribe]
+verify_jwt = false
