@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { createMyStore } from "./actions";
+import { useVoiceInput } from "@/lib/useVoiceInput";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Loader2, Mic, Send } from "lucide-react";
@@ -19,12 +20,6 @@ interface Config {
   greeting?: string;
   suggestionChips?: string[];
 }
-type SpeechRec = {
-  lang: string; interimResults: boolean; maxAlternatives?: number;
-  onresult: (e: { results: { [k: number]: { [k: number]: { transcript: string } } } }) => void;
-  onerror: () => void; onend: () => void; start: () => void;
-};
-type SpeechWindow = Window & { webkitSpeechRecognition?: new () => SpeechRec; SpeechRecognition?: new () => SpeechRec };
 
 /**
  * The Setup Copilot — conversational store setup. Rani interviews the owner one
@@ -37,7 +32,6 @@ export function WelcomeChat({ email }: { email: string | null }) {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(true);
   const [provisioning, setProvisioning] = useState(false);
-  const [listening, setListening] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const started = useRef(false);
 
@@ -103,27 +97,17 @@ export function WelcomeChat({ email }: { email: string | null }) {
     void turn([...messages, { role: "owner", text: t }]);
   }
 
-  // Voice input via the browser's built-in Web Speech API (no key, no cost).
-  function startVoice() {
-    const w = window as SpeechWindow;
-    const SR = w.webkitSpeechRecognition || w.SpeechRecognition;
-    if (!SR) {
-      toast.error("Voice input isn't supported in this browser", { description: "Try Chrome, or type your answer." });
-      return;
-    }
-    const rec = new SR();
-    rec.lang = navigator.language || "en-US";
-    rec.interimResults = false;
-    rec.maxAlternatives = 1;
-    setListening(true);
-    rec.onresult = (e: { results: { [k: number]: { [k: number]: { transcript: string } } } }) => {
-      const said = e.results[0]?.[0]?.transcript ?? "";
-      setInput((prev) => (prev ? `${prev} ${said}` : said));
-    };
-    rec.onerror = () => setListening(false);
-    rec.onend = () => setListening(false);
-    rec.start();
-  }
+  // Voice input: on-device Web Speech API where available, else record + Whisper
+  // (the transcribe edge function) so voice works on every device.
+  const { listening, busy: transcribing, toggle: startVoice } = useVoiceInput(
+    async (blob) => {
+      const fd = new FormData();
+      fd.append("file", blob, (blob as File).name || "speech.webm");
+      const { data } = await supabase.functions.invoke("transcribe", { body: fd });
+      return (data as { text?: string } | null)?.text ?? "";
+    },
+    (t) => setInput((prev) => (prev ? `${prev} ${t}` : t)),
+  );
 
   return (
     <div className="flex h-[460px] flex-col">
@@ -174,15 +158,15 @@ export function WelcomeChat({ email }: { email: string | null }) {
           size="icon"
           variant={listening ? "default" : "outline"}
           onClick={startVoice}
-          disabled={busy || provisioning}
-          title="Speak your answer"
+          disabled={busy || provisioning || transcribing}
+          title={listening ? "Tap to stop" : "Speak your answer"}
         >
-          <Mic className="size-4" />
+          {transcribing ? <Loader2 className="size-4 animate-spin" /> : <Mic className="size-4" />}
         </Button>
         <Input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder={listening ? "Listening…" : "Type or tap the mic to speak…"}
+          placeholder={listening ? "Listening… tap the mic to stop" : transcribing ? "Transcribing…" : "Type or tap the mic to speak…"}
           disabled={busy || provisioning}
         />
         <Button type="submit" size="icon" disabled={busy || provisioning || !input.trim()}>

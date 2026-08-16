@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
+import { useVoiceInput } from "@/lib/useVoiceInput";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Loader2, Mic, Send } from "lucide-react";
@@ -18,13 +19,6 @@ const STARTERS = [
   "Help me go live on WhatsApp",
 ];
 
-type SpeechRec = {
-  lang: string; interimResults: boolean;
-  onresult: (e: { results: { [k: number]: { [k: number]: { transcript: string } } } }) => void;
-  onerror: () => void; onend: () => void; start: () => void;
-};
-type SpeechWindow = Window & { webkitSpeechRecognition?: new () => SpeechRec; SpeechRecognition?: new () => SpeechRec };
-
 /** The in-panel copilot chat. Answers help questions AND changes store settings by
  *  natural language (the owner-copilot function executes the edits, metered). */
 export function AssistantChat({ storeSlug, storeName }: { storeSlug: string; storeName: string }) {
@@ -34,7 +28,6 @@ export function AssistantChat({ storeSlug, storeName }: { storeSlug: string; sto
   ]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
-  const [listening, setListening] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const supabase = createClient();
 
@@ -62,25 +55,17 @@ export function AssistantChat({ storeSlug, storeName }: { storeSlug: string; sto
     if (Array.isArray(data.changed) && data.changed.length > 0) router.refresh();
   }
 
-  function startVoice() {
-    const w = window as SpeechWindow;
-    const SR = w.webkitSpeechRecognition || w.SpeechRecognition;
-    if (!SR) {
-      toast.error("Voice input isn't supported in this browser", { description: "Try Chrome, or type." });
-      return;
-    }
-    const rec = new SR();
-    rec.lang = navigator.language || "en-US";
-    rec.interimResults = false;
-    setListening(true);
-    rec.onresult = (e: { results: { [k: number]: { [k: number]: { transcript: string } } } }) => {
-      const said = e.results[0]?.[0]?.transcript ?? "";
-      setInput((p) => (p ? `${p} ${said}` : said));
-    };
-    rec.onerror = () => setListening(false);
-    rec.onend = () => setListening(false);
-    rec.start();
-  }
+  // Voice: on-device Web Speech API where available, else record + Whisper (the
+  // transcribe edge function) so voice works on every device.
+  const { listening, busy: transcribing, toggle: startVoice } = useVoiceInput(
+    async (blob) => {
+      const fd = new FormData();
+      fd.append("file", blob, (blob as File).name || "speech.webm");
+      const { data } = await supabase.functions.invoke("transcribe", { body: fd });
+      return (data as { text?: string } | null)?.text ?? "";
+    },
+    (t) => setInput((p) => (p ? `${p} ${t}` : t)),
+  );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -122,13 +107,13 @@ export function AssistantChat({ storeSlug, storeName }: { storeSlug: string; sto
       )}
 
       <form onSubmit={(e) => { e.preventDefault(); send(input); }} className="flex items-center gap-2 border-t pt-3">
-        <Button type="button" size="icon" variant={listening ? "default" : "outline"} onClick={startVoice} disabled={busy} title="Speak">
-          <Mic className="size-4" />
+        <Button type="button" size="icon" variant={listening ? "default" : "outline"} onClick={startVoice} disabled={busy || transcribing} title={listening ? "Tap to stop" : "Speak"}>
+          {transcribing ? <Loader2 className="size-4 animate-spin" /> : <Mic className="size-4" />}
         </Button>
         <Input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder={listening ? "Listening…" : "Ask, or tell me what to change…"}
+          placeholder={listening ? "Listening… tap the mic to stop" : transcribing ? "Transcribing…" : "Ask, or tell me what to change…"}
           disabled={busy}
         />
         <Button type="submit" size="icon" disabled={busy || !input.trim()}>
