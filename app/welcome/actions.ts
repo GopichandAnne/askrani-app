@@ -29,6 +29,9 @@ export async function createMyStore(input: {
   businessType?: string;
   ownerName?: string;
   email?: string;
+  /** Optional config synthesized by the Setup Copilot interview. Overrides the
+   *  business-type preset so the bot is on-brand + business-aware from turn one. */
+  agent?: { personality?: string; storePrompt?: string; greeting?: string; suggestionChips?: string[] };
 }): Promise<CreateResult> {
   const ctx = await getSessionContext();
   if (!ctx) return { ok: false, error: "You're not signed in." };
@@ -70,9 +73,21 @@ export async function createMyStore(input: {
   });
   if (staffErr) return { ok: false, error: staffErr.message };
 
-  // Seed the agent so the bot is on-brand immediately; owner fine-tunes later.
-  const preset = presetConfig(input.businessType, displayName);
-  const rows = Object.entries(preset).map(([key, value]) => ({ store_id: store.id, key: key as AgentKey, value }));
+  // Seed the agent from the business-type preset, then let the Setup Copilot's
+  // synthesized config override the persona + business knowledge so the bot is
+  // on-brand AND business-aware from the very first customer message.
+  const merged: Partial<Record<AgentKey, string>> = { ...presetConfig(input.businessType, displayName) };
+  const a = input.agent;
+  if (a?.personality) {
+    merged.personality = a.greeting
+      ? `${a.personality}\n\nOpen new conversations with something like: "${a.greeting}"`
+      : a.personality;
+  }
+  if (a?.storePrompt) {
+    const chips = a.suggestionChips?.length ? `\n\nCommon things customers ask: ${a.suggestionChips.join("; ")}.` : "";
+    merged.store_prompt = `${a.storePrompt}${chips}`;
+  }
+  const rows = Object.entries(merged).map(([key, value]) => ({ store_id: store.id, key: key as AgentKey, value }));
   if (rows.length) {
     const { error: cfgErr } = await db.from("agent_config").insert(rows);
     if (cfgErr) console.error("[welcome] seed config:", cfgErr.message);

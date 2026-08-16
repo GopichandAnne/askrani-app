@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { getSessionContext } from "@/lib/auth/session";
-import { WelcomeForm } from "./welcome-form";
+import { WelcomeChat } from "./welcome-chat";
 import { Wordmark } from "@/components/app-shell/wordmark";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -19,16 +19,16 @@ export default async function WelcomePage() {
 
   return (
     <div className="flex min-h-dvh items-center justify-center p-6">
-      <Card className="w-full max-w-md">
+      <Card className="w-full max-w-lg">
         <CardHeader className="space-y-3 text-center">
           <Wordmark className="justify-center text-2xl" />
           <div className="space-y-1">
-            <CardTitle className="text-lg">Set up your store</CardTitle>
-            <CardDescription>Tell us about your business and we&apos;ll get Rani ready.</CardDescription>
+            <CardTitle className="text-lg">Let&apos;s set up your Rani</CardTitle>
+            <CardDescription>Just chat with me about your business — type or tap the mic. No forms.</CardDescription>
           </div>
         </CardHeader>
         <CardContent>
-          <WelcomeForm email={ctx.user.email} />
+          <WelcomeChat email={ctx.user.email} />
         </CardContent>
       </Card>
     </div>
