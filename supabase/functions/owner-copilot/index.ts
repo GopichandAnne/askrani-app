@@ -105,10 +105,14 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
 
   // The platform already verified the JWT (verify_jwt on); read the user from it.
+  // JWT segments are base64URL (─/_ , no padding) — plain atob() throws on those,
+  // so normalise to base64 first.
   let userId = "";
   try {
-    const jwt = (req.headers.get("Authorization") ?? "").replace("Bearer ", "");
-    userId = JSON.parse(atob(jwt.split(".")[1])).sub ?? "";
+    const seg = (req.headers.get("Authorization") ?? "").replace("Bearer ", "").split(".")[1] ?? "";
+    let s = seg.replace(/-/g, "+").replace(/_/g, "/");
+    while (s.length % 4) s += "=";
+    userId = JSON.parse(atob(s)).sub ?? "";
   } catch { /* ignore */ }
   if (!userId) return json({ error: "unauthorized" }, 401);
 
@@ -121,10 +125,16 @@ Deno.serve(async (req) => {
   const { data: store } = await db.from("stores").select("id, slug, store_display_name, business_type, whatsapp_status").eq("slug", slug).maybeSingle();
   if (!store) return json({ error: "unknown store" }, 404);
 
-  // Authorize: the caller must be staff of this store; owners may edit.
-  const { data: staff } = await db.from("staff").select("role").eq("store_id", store.id).eq("user_id", userId).eq("status", "active").maybeSingle();
-  if (!staff) return json({ error: "forbidden" }, 403);
-  const isOwner = staff.role === "owner";
+  // Authorize: staff of this store OR a platform admin (all-store access). Owners
+  // and platform admins may edit; other staff can ask but not change.
+  const [staffRes, adminRes] = await Promise.all([
+    db.from("staff").select("role").eq("store_id", store.id).eq("user_id", userId).eq("status", "active").maybeSingle(),
+    db.from("platform_admins").select("user_id").eq("user_id", userId).maybeSingle(),
+  ]);
+  const staff = staffRes.data;
+  const isAdmin = !!adminRes.data;
+  if (!staff && !isAdmin) return json({ error: "forbidden" }, 403);
+  const isOwner = staff?.role === "owner" || isAdmin;
 
   async function readConfig(): Promise<Record<string, string>> {
     const { data } = await db.from("agent_config").select("key, value").eq("store_id", store.id);
