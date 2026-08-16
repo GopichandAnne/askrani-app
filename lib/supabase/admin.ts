@@ -17,7 +17,9 @@ import type { Database } from "@/lib/database.types";
  * store-scope check — it sees every row in every table.
  */
 export function createAdminClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  // Direct host server-side (SUPABASE_INTERNAL_URL) — avoids the ~1.5s custom-domain
+  // hop from Vercel; falls back to the public URL when unset.
+  const url = process.env.SUPABASE_INTERNAL_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!url || !serviceKey) {

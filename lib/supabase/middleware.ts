@@ -22,7 +22,9 @@ export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    // Direct host for this per-request server-side auth call — the custom domain
+    // adds ~1.5s from Vercel. Browser keeps the custom domain. (SUPABASE_INTERNAL_URL)
+    (process.env.SUPABASE_INTERNAL_URL || process.env.NEXT_PUBLIC_SUPABASE_URL)!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {

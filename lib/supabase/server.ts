@@ -11,7 +11,10 @@ export async function createClient() {
   const cookieStore = await cookies();
 
   return createServerClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    // Server-side calls use the DIRECT *.supabase.co host (SUPABASE_INTERNAL_URL);
+    // from Vercel the custom-domain Cloudflare hop adds ~1.5s to every auth call.
+    // The browser (client.ts) still uses the custom domain. No-op until env is set.
+    (process.env.SUPABASE_INTERNAL_URL || process.env.NEXT_PUBLIC_SUPABASE_URL)!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
