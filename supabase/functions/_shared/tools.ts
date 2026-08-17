@@ -219,9 +219,20 @@ async function executeSearchProducts(
   return { products, count: products.length };
 }
 
+/** Lever B — log a knowledge gap when the store has no answer for what a customer
+ *  asked, so the owner-copilot can surface it and the owner can fill it. Fire-and-
+ *  forget + fail-soft: it must never slow or break a customer reply. */
+async function logKnowledgeGap(db: SupabaseClient, store: Store, sessionId: string, query: string): Promise<void> {
+  if (query.trim().length < 6) return; // skip trivial/greeting-ish queries
+  try {
+    await db.from("knowledge_gap").insert({ store_id: store.id, session_id: sessionId, question: query.trim().slice(0, 500) });
+  } catch { /* non-fatal */ }
+}
+
 async function executeSearchKnowledge(
   db: SupabaseClient,
   store: Store,
+  sessionId: string,
   args: Record<string, unknown>,
   today: string | null,
 ): Promise<Record<string, unknown>> {
@@ -261,6 +272,9 @@ async function executeSearchKnowledge(
       ...(r.valid_until ? { valid_until: r.valid_until } : {}),
     }),
   );
+  // Nothing relevant on file → the customer wanted something we haven't taught
+  // Rani. Log it so the owner can fill exactly this gap (Lever B).
+  if (snippets.length === 0) await logKnowledgeGap(db, store, sessionId, query);
   return { snippets, count: snippets.length };
 }
 
@@ -1199,7 +1213,7 @@ export function buildToolset(
     my_credit: (args) => executeMyCredit(db, store, sessionId, args),
     redeem_credit: (args) => executeRedeemCredit(db, store, sessionId, args),
     submit_post_url: (args) => executeSubmitPost(db, store, sessionId, args),
-    search_knowledge: (args) => executeSearchKnowledge(db, store, args, today),
+    search_knowledge: (args) => executeSearchKnowledge(db, store, sessionId, args, today),
     send_image: (args) => executeSendImage(db, store, sessionId, args),
     send_photos: (args) => executeSendPhotos(db, store, sessionId, args),
     send_photo_urls: (args) => executeSendPhotoUrls(db, store, sessionId, args),

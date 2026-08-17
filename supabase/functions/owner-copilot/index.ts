@@ -14,6 +14,7 @@
 import { serviceClient } from "../_shared/supabase.ts";
 import { generateReply, type GeminiContent } from "../_shared/gemini.ts";
 import type { Toolset, FunctionDeclaration } from "../_shared/tools.ts";
+import { reindexKnowledge, syncSavedQaToIndex } from "../_shared/knowledge.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -95,7 +96,27 @@ const DECLARATIONS: FunctionDeclaration[] = [
     description: "Record that the owner wants help going live on WhatsApp (the done-for-you setup). Call this when they express interest.",
     parameters: { type: "object", properties: {}, required: [] },
   },
+  {
+    name: "list_open_questions",
+    description: "List real questions customers recently asked Rani that it could NOT answer (they aren't in the store's knowledge yet), most-asked first. Each has a short `code`. Use it to show the owner what shoppers want, then help them fill the gaps.",
+    parameters: { type: "object", properties: {}, required: [] },
+  },
+  {
+    name: "answer_customer_question",
+    description: "Save the owner's answer to one of the open customer questions from list_open_questions. Pass its `code` and the `answer` in the store's voice. This makes Rani answer that question automatically from now on, and clears it from the open list.",
+    parameters: {
+      type: "object",
+      properties: {
+        code: { type: "string", description: "The code of the question from list_open_questions, e.g. 'g1'." },
+        answer: { type: "string", description: "The answer, in plain language — what Rani should tell customers who ask this." },
+      },
+      required: ["code", "answer"],
+    },
+  },
 ];
+
+/** Normalize a question for grouping near-identical asks together. */
+const normQ = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
 
 // deno-lint-ignore no-explicit-any
 type Db = any;
@@ -145,6 +166,38 @@ Deno.serve(async (req) => {
     await db.from("agent_config").upsert({ store_id: store.id, key, value }, { onConflict: "store_id,key" });
   }
 
+  // ── Lever B: the store's open knowledge gaps (questions customers asked that
+  // Rani couldn't answer), grouped by near-identical wording, most-asked first.
+  // The code→rows map lets answer_customer_question resolve exactly what it shows.
+  const gapIndex = new Map<string, { ids: string[]; question: string }>();
+  const gapList: { code: string; question: string; times: number }[] = [];
+  {
+    const { data: rows } = await db
+      .from("knowledge_gap")
+      .select("id, question, created_at")
+      .eq("store_id", store.id)
+      .eq("status", "open")
+      .order("created_at", { ascending: false })
+      .limit(120);
+    const groups = new Map<string, { ids: string[]; question: string; times: number }>();
+    for (const r of (rows ?? []) as { id: string; question: string }[]) {
+      const key = normQ(r.question).slice(0, 80) || r.id;
+      const g = groups.get(key) ?? { ids: [], question: r.question, times: 0 };
+      g.ids.push(r.id);
+      g.times++;
+      groups.set(key, g);
+    }
+    [...groups.values()]
+      .sort((a, b) => b.times - a.times)
+      .slice(0, 15)
+      .forEach((g, i) => {
+        const code = `g${i + 1}`;
+        gapIndex.set(code, { ids: g.ids, question: g.question });
+        gapList.push({ code, question: g.question, times: g.times });
+      });
+  }
+  const openCount = gapList.length;
+
   const changed: string[] = [];
   const toolset: Toolset = {
     declarations: DECLARATIONS,
@@ -185,6 +238,32 @@ Deno.serve(async (req) => {
         changed.push("whatsapp_interest");
         return { ok: true, note: "Noted — the team will reach out to help you go live on WhatsApp." };
       }
+      if (name === "list_open_questions") {
+        return {
+          questions: gapList.map((g) => ({ code: g.code, question: g.question, times_asked: g.times })),
+          count: gapList.length,
+          note: gapList.length ? "Show the owner the top few in plain words and offer to answer them." : "No open questions right now.",
+        };
+      }
+      if (name === "answer_customer_question") {
+        const g = gapIndex.get(String(args.code ?? ""));
+        const answer = String(args.answer ?? "").trim();
+        if (!g) return { ok: false, note: "That question code isn't in the current list — call list_open_questions first." };
+        if (!answer) return { ok: false, note: "No answer provided." };
+        const { error } = await db.from("saved_qa").insert({
+          store_id: store.id,
+          question: g.question,
+          answer,
+          active: true,
+          category: "Answered from a customer question",
+        });
+        if (error) return { ok: false, note: "Couldn't save that answer — try again." };
+        // Clear the matching open gaps and make the new answer searchable now.
+        try { await db.from("knowledge_gap").update({ status: "resolved", resolved_at: new Date().toISOString() }).in("id", g.ids); } catch { /* non-fatal */ }
+        try { await syncSavedQaToIndex(db, store.id); await reindexKnowledge(db, store.id, 200); } catch { /* index best-effort */ }
+        changed.push("answered_question");
+        return { ok: true, note: `Saved — Rani will now answer "${g.question}" on its own.` };
+      }
       return { ok: false, note: "unknown tool" };
     },
   };
@@ -193,9 +272,27 @@ Deno.serve(async (req) => {
   const contents: GeminiContent[] = (body.messages ?? [])
     .filter((m) => m?.text)
     .map((m) => ({ role: m.role === "rani" ? "model" : "user", parts: [{ text: String(m.text) }] }));
-  if (contents.length === 0) return json({ reply: "Hi! I'm Rani. Ask me anything about your store, or tell me what to change — like 'make the greeting friendlier' or 'we're closed Sundays now'.", changed: [] });
 
-  const { text } = await generateReply(sys(store.store_display_name ?? store.slug, isOwner), contents, toolset, {
+  // Opening message — lead with the demand signal when there are open gaps, so the
+  // owner is pulled straight to the highest-value thing they can do.
+  if (contents.length === 0) {
+    if (openCount > 0 && isOwner) {
+      const top = gapList.slice(0, 3).map((g) => `“${g.question}”`).join(", ");
+      const lead = openCount === 1 ? "a customer recently asked something" : `${openCount} things came up that customers recently asked`;
+      return json({
+        reply: `Hi! Heads-up: ${lead} that I couldn't answer — like ${top}. Want to add answers so I can handle them next time? Or ask me anything, or tell me what to change.`,
+        changed: [],
+      });
+    }
+    return json({ reply: "Hi! I'm Rani. Ask me anything about your store, or tell me what to change — like 'make the greeting friendlier' or 'we're closed Sundays now'.", changed: [] });
+  }
+
+  // When gaps exist, tell the copilot to champion them proactively.
+  const gapNudge = openCount > 0 && isOwner
+    ? `\n\nDEMAND SIGNAL — HIGHEST VALUE: ${openCount} question(s) customers recently asked that you could NOT answer (they aren't in this store's knowledge yet). Filling these is the single most useful thing the owner can do. When it fits the conversation, bring it up: call list_open_questions, show the owner the top few in plain words, and offer to answer them. When the owner gives an answer, call answer_customer_question(code, answer) so Rani handles it automatically next time. Always frame it as opportunity ("shoppers asked X — want to add an answer?"), never as a failure.`
+    : "";
+
+  const { text } = await generateReply(sys(store.store_display_name ?? store.slug, isOwner) + gapNudge, contents, toolset, {
     svc: db, storeId: store.id, kind: "owner_copilot",
   });
 
