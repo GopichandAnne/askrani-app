@@ -39,7 +39,12 @@ function GoogleIcon() {
 
 export function LoginForm() {
   const searchParams = useSearchParams();
-  const next = searchParams.get("next") ?? "/";
+  const [mode, setMode] = useState<"signin" | "signup">(
+    searchParams.get("mode") === "signup" ? "signup" : "signin",
+  );
+  // New owners land in the setup interview; returning staff go where they asked.
+  const next = mode === "signup" ? "/welcome" : (searchParams.get("next") ?? "/");
+  const isSignup = mode === "signup";
   const [email, setEmail] = useState("");
   const [googleLoading, setGoogleLoading] = useState(false);
   const [magicLoading, setMagicLoading] = useState(false);
@@ -155,6 +160,17 @@ export function LoginForm() {
 
   return (
     <div className="space-y-5">
+      <div className="space-y-1 text-center">
+        <h1 className="text-lg font-semibold">
+          {isSignup ? "Create your store" : "Sign in to the control panel"}
+        </h1>
+        <p className="text-muted-foreground text-sm">
+          {isSignup
+            ? "Set up your AI assistant in a couple of minutes — just chat, no forms."
+            : "Staff & owners of Ask Rani stores."}
+        </p>
+      </div>
+
       <Button
         type="button"
         variant="outline"
@@ -167,7 +183,7 @@ export function LoginForm() {
         ) : (
           <GoogleIcon />
         )}
-        Continue with Google
+        {isSignup ? "Sign up with Google" : "Continue with Google"}
       </Button>
 
       <div className="flex items-center gap-3">
@@ -176,46 +192,73 @@ export function LoginForm() {
         <span className="bg-border h-px flex-1" />
       </div>
 
-      <form onSubmit={signInWithPassword} className="space-y-3">
-        <div className="space-y-2">
-          <Label htmlFor="email">Email</Label>
-          <Input
-            id="email"
-            type="email"
-            inputMode="email"
-            autoComplete="email"
-            placeholder="you@store.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
+      {isSignup ? (
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <Label htmlFor="email">Email</Label>
+            <Input
+              id="email"
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              placeholder="you@store.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            onClick={signInWithMagicLink}
+            disabled={magicLoading}
+          >
+            {magicLoading && <Loader2 className="size-4 animate-spin" />}
+            Email me a sign-up link
+          </Button>
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="password">Password</Label>
-          <Input
-            id="password"
-            type="password"
-            autoComplete="current-password"
-            placeholder="••••••••"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-        </div>
-        <Button type="submit" className="w-full" disabled={pwLoading || magicLoading}>
-          {pwLoading && <Loader2 className="size-4 animate-spin" />}
-          Sign in
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          className="w-full"
-          onClick={signInWithMagicLink}
-          disabled={magicLoading || pwLoading}
-        >
-          {magicLoading && <Loader2 className="size-4 animate-spin" />}
-          Email me a magic link instead
-        </Button>
-      </form>
+      ) : (
+        <form onSubmit={signInWithPassword} className="space-y-3">
+          <div className="space-y-2">
+            <Label htmlFor="email">Email</Label>
+            <Input
+              id="email"
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              placeholder="you@store.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="password">Password</Label>
+            <Input
+              id="password"
+              type="password"
+              autoComplete="current-password"
+              placeholder="••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
+          <Button type="submit" className="w-full" disabled={pwLoading || magicLoading}>
+            {pwLoading && <Loader2 className="size-4 animate-spin" />}
+            Sign in
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            className="w-full"
+            onClick={signInWithMagicLink}
+            disabled={magicLoading || pwLoading}
+          >
+            {magicLoading && <Loader2 className="size-4 animate-spin" />}
+            Email me a magic link instead
+          </Button>
+        </form>
+      )}
 
       <div className="flex items-center gap-3">
         <span className="bg-border h-px flex-1" />
@@ -263,6 +306,17 @@ export function LoginForm() {
           </button>
         </div>
       )}
+
+      <p className="text-muted-foreground text-center text-sm">
+        {isSignup ? "Already have a store? " : "New to Ask Rani? "}
+        <button
+          type="button"
+          onClick={() => setMode(isSignup ? "signin" : "signup")}
+          className="text-foreground font-medium hover:underline"
+        >
+          {isSignup ? "Sign in" : "Create your store"}
+        </button>
+      </p>
     </div>
   );
 }
