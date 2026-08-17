@@ -64,7 +64,12 @@ export function LoginForm() {
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: callbackUrl(next) },
+      options: {
+        redirectTo: callbackUrl(next),
+        // Always show the Google account picker instead of silently reusing the
+        // one signed-in account — owners often have a personal + a business gmail.
+        queryParams: { prompt: "select_account" },
+      },
     });
     if (error) {
       toast.error("Couldn't start Google sign-in", { description: error.message });
