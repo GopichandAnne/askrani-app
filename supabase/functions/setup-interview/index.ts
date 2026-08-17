@@ -46,6 +46,7 @@ THE FLOW (follow this order):
    - If the block includes DRAFT STORE KNOWLEDGE (departments, services, likely questions), tell the owner you've also set up a starting point for them and SUMMARIZE it in a friendly, compact way (e.g. "I also set you up to answer about your departments — produce, frozen, spices… — plus common questions like fresh sabzi and catering."). Then ask, in the SAME message, one simple confirm: "Want to add or change anything, or shall I go with this?" Offer chips like "Looks good" and "Add something". Keep it to a few lines — do NOT dump the whole list.
    - If it found NOTHING (or the owner says something's off), don't dwell on it — just continue asking normally.
 5. Fill only the REMAINING gaps. If the draft knowledge already covered what they sell/offer, do NOT re-interrogate — just confirm the tone they want (friendly vs professional) and anything the owner wants to add. Infer sensible defaults for anything they don't know.
+5b. FOR ONLINE / PRODUCT / B2B COMPANIES (a DRAFT PRODUCT KNOWLEDGE block was provided): after confirming the product facts, offer to set up LEAD CAPTURE — tell them Rani can capture the lead types the site suggested (e.g. "demo requests, sales/pricing enquiries, support questions, job applicants") and ask which they want. Put the agreed keys (any of: demo, quote, support, careers) in config.captureTypes. Fold the features, integrations, pricing and prospect Q&A into storePrompt so Rani answers prospects from day one.
 6. When you have enough (often just the confirm + tone after the lookup), set "done": true, write a warm closing message, and produce "config".
 
 In "config":
@@ -57,7 +58,9 @@ In "config":
 - Include "businessName", "website" and "address" when known, and "ownerName"/"email" only if the owner gave them.
 
 Respond with ONLY a JSON object of this exact shape (no markdown, no code fences):
-{"reply": string, "chips": string[], "done": boolean, "detect"?: {"kind": "local"|"online", "query": string, "name"?: string}, "config"?: {"businessName": string, "businessType": string, "website"?: string, "address"?: string, "ownerName"?: string, "email"?: string, "personality": string, "storePrompt": string, "suggestionChips": string[], "greeting": string}}
+{"reply": string, "chips": string[], "done": boolean, "detect"?: {"kind": "local"|"online", "query": string, "name"?: string}, "config"?: {"businessName": string, "businessType": string, "website"?: string, "address"?: string, "ownerName"?: string, "email"?: string, "personality": string, "storePrompt": string, "suggestionChips": string[], "greeting": string, "captureTypes"?: string[]}}
+
+"captureTypes" (online/product/B2B only): any of "demo", "quote", "support", "careers" — the lead types the owner agreed to capture. Omit for local storefronts.
 
 If the transcript is empty (first turn), warmly welcome them and ask for the business name, with no chips.`;
 
@@ -78,6 +81,21 @@ function formatDetected(d: Record<string, unknown> | null): string {
   if (typeof d.rating === "number") lines.push(`Rating: ${d.rating}★ (${d.reviews ?? 0} reviews)`);
   if (s(d.summary)) lines.push(`What they do: ${s(d.summary)}`);
   if (Array.isArray(d.offerings) && d.offerings.length) lines.push(`Main offerings: ${d.offerings.map(String).join(", ")}`);
+
+  // P3 — the product/B2B company draft (from the website).
+  const bz = d.b2b as Record<string, unknown> | undefined;
+  if (bz && typeof bz === "object") {
+    const bl: string[] = [];
+    if (Array.isArray(bz.features) && bz.features.length) bl.push(`Key features: ${bz.features.map(String).join(", ")}`);
+    if (Array.isArray(bz.integrations) && bz.integrations.length) bl.push(`Integrations: ${bz.integrations.map(String).join(", ")}`);
+    if (Array.isArray(bz.pricingTiers) && bz.pricingTiers.length) bl.push(`Pricing/plans: ${bz.pricingTiers.map(String).join(", ")}`);
+    if (Array.isArray(bz.faqs) && bz.faqs.length) {
+      const faqs = (bz.faqs as { q?: unknown; a?: unknown }[]).filter((f) => s(f?.q) && s(f?.a)).map((f) => `    • ${s(f.q)} → ${s(f.a)}`);
+      if (faqs.length) bl.push(`Likely prospect questions (with draft answers):\n${faqs.join("\n")}`);
+    }
+    if (Array.isArray(bz.captureTypes) && bz.captureTypes.length) bl.push(`Leads worth capturing: ${bz.captureTypes.map(String).join(", ")}`);
+    if (bl.length) lines.push(`\nDRAFT PRODUCT KNOWLEDGE (built from their website — present as a draft to confirm; put the product facts + Q&A into storePrompt, and set config.captureTypes from the capture list they agree to):\n${bl.join("\n")}`);
+  }
 
   // Lever A — a draft knowledge base built from the business's public footprint.
   const k = d.knowledge as Record<string, unknown> | undefined;

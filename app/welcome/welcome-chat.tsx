@@ -21,6 +21,7 @@ interface Config {
   storePrompt?: string;
   greeting?: string;
   suggestionChips?: string[];
+  captureTypes?: string[];
 }
 type Detect = { kind: "local" | "online"; query: string; name?: string };
 type Detected = Record<string, unknown> | null;
@@ -100,6 +101,7 @@ export function WelcomeChat({ email }: { email: string | null }) {
         greeting: config.greeting || undefined,
         suggestionChips: Array.isArray(config.suggestionChips) ? config.suggestionChips : undefined,
       },
+      captureTypes: Array.isArray(config.captureTypes) ? config.captureTypes : undefined,
     });
     if (!res.ok) {
       setProvisioning(false);

@@ -14,6 +14,33 @@ function slugify(s: string): string {
   return s.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 50);
 }
 
+/** Canonical lead-capture request types for product / B2B companies (P3). The
+ *  onboarding interview picks which apply (demo / quote / support / careers) and
+ *  we seed them so the bot's file_request tool can capture leads from day one. */
+type ReqField = { key: string; label: string; required: boolean };
+const REQUEST_TYPE_PRESETS: Record<string, { key: string; label: string; description: string; fields: ReqField[] }> = {
+  demo: {
+    key: "demo_request", label: "Demo request",
+    description: "A prospect wants a product demo or trial. Collect their name, work email, company, and what they want to see.",
+    fields: [{ key: "name", label: "Name", required: true }, { key: "email", label: "Work email", required: true }, { key: "company", label: "Company", required: true }, { key: "use_case", label: "What they want to see", required: false }],
+  },
+  quote: {
+    key: "sales_quote", label: "Sales & pricing",
+    description: "A prospect wants pricing or to talk to sales. Collect name, work email, company, and their needs or team size.",
+    fields: [{ key: "name", label: "Name", required: true }, { key: "email", label: "Work email", required: true }, { key: "company", label: "Company", required: true }, { key: "needs", label: "Needs / team size", required: false }],
+  },
+  support: {
+    key: "support", label: "Support",
+    description: "An existing customer needs help. Collect their name, email, and a description of the issue.",
+    fields: [{ key: "name", label: "Name", required: true }, { key: "email", label: "Email", required: true }, { key: "issue", label: "Issue", required: true }],
+  },
+  careers: {
+    key: "career_interest", label: "Career interest",
+    description: "Someone interested in working here. Collect their name, email, and the role they're interested in.",
+    fields: [{ key: "name", label: "Name", required: true }, { key: "email", label: "Email", required: true }, { key: "role", label: "Role of interest", required: false }],
+  },
+};
+
 /**
  * Self-serve store creation — the Rani side of the first-run flow. Any SIGNED-IN
  * user (no admin gate) provisions their OWN store and becomes its owner:
@@ -32,6 +59,9 @@ export async function createMyStore(input: {
   /** Optional config synthesized by the Setup Copilot interview. Overrides the
    *  business-type preset so the bot is on-brand + business-aware from turn one. */
   agent?: { personality?: string; storePrompt?: string; greeting?: string; suggestionChips?: string[] };
+  /** Online/B2B only — lead types to capture (demo/quote/support/careers). Seeds
+   *  request_types so the bot captures leads from day one (P3). */
+  captureTypes?: string[];
 }): Promise<CreateResult> {
   const ctx = await getSessionContext();
   if (!ctx) return { ok: false, error: "You're not signed in." };
@@ -91,6 +121,17 @@ export async function createMyStore(input: {
   if (rows.length) {
     const { error: cfgErr } = await db.from("agent_config").insert(rows);
     if (cfgErr) console.error("[welcome] seed config:", cfgErr.message);
+  }
+
+  // Seed lead-capture request types for a product/B2B company (P3), so the bot's
+  // file_request tool can take demos/quotes/support/careers from the first chat.
+  const reqRows = [...new Set(input.captureTypes ?? [])]
+    .map((t) => REQUEST_TYPE_PRESETS[t])
+    .filter(Boolean)
+    .map((p) => ({ store_id: store.id, key: p.key, label: p.label, description: p.description, fields: p.fields, enabled: true }));
+  if (reqRows.length) {
+    const { error: reqErr } = await db.from("request_types").upsert(reqRows, { onConflict: "store_id,key", ignoreDuplicates: true });
+    if (reqErr) console.error("[welcome] seed request types:", reqErr.message);
   }
 
   // Attach an email to the account (best-effort) so the umbrella can link by email
