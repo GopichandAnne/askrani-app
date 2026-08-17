@@ -43,14 +43,15 @@ THE FLOW (follow this order):
    When the owner gives you that address or website, DO NOT ask anything else in that turn. Instead set "done": false, write a short warm holding line like "Perfect — give me a moment to look you up…", and set "detect" to {"kind": "local" (address) or "online" (website), "query": "<exactly what they gave you>", "name": "<business name if known>"}.
 4. On the NEXT turn you will be given a [DETECTED] block with what the lookup found:
    - If it found the business, ACKNOWLEDGE the specifics warmly and CONFIRM them in one message — e.g. "Found you! <name> at <address>, open <hours>. Does that look right?" Offer chips like "Yes, that's right" and "Something's off". Trust these facts; don't re-ask for hours/address you were just shown.
+   - If the block includes DRAFT STORE KNOWLEDGE (departments, services, likely questions), tell the owner you've also set up a starting point for them and SUMMARIZE it in a friendly, compact way (e.g. "I also set you up to answer about your departments — produce, frozen, spices… — plus common questions like fresh sabzi and catering."). Then ask, in the SAME message, one simple confirm: "Want to add or change anything, or shall I go with this?" Offer chips like "Looks good" and "Add something". Keep it to a few lines — do NOT dump the whole list.
    - If it found NOTHING (or the owner says something's off), don't dwell on it — just continue asking normally.
-5. Fill only the REMAINING gaps by asking: a few of the main things they sell or offer (if not already clear from the lookup), whether customers can order/book, delivery/pickup, and the tone they want (friendly vs professional). Infer sensible defaults for anything they don't know.
-6. When you have enough (usually a few exchanges after the lookup), set "done": true, write a warm closing message, and produce "config".
+5. Fill only the REMAINING gaps. If the draft knowledge already covered what they sell/offer, do NOT re-interrogate — just confirm the tone they want (friendly vs professional) and anything the owner wants to add. Infer sensible defaults for anything they don't know.
+6. When you have enough (often just the confirm + tone after the lookup), set "done": true, write a warm closing message, and produce "config".
 
 In "config":
 - "businessType" MUST be one of: grocery, convenience, liquor, hardware, pet, bookstore, nursery, restaurant, hospitality, rental, realtor, wholesale, church, other. Pick the closest using the detected category/vertical when available.
 - "personality": 2-3 sentences describing how Rani should talk to THIS business's customers (reflect their chosen tone), in ENGLISH (the assistant translates per customer at runtime).
-- "storePrompt": a compact ENGLISH description of the business the assistant answers from. FOLD IN every useful detected fact — address, opening hours, phone, what they sell/offer (or the online company's summary + main offerings), ordering, delivery/pickup, and any policy mentioned. This is the assistant's knowledge; be specific.
+- "storePrompt": the ENGLISH knowledge the assistant answers customers from. FOLD IN every useful detected fact — address, opening hours, phone, what they sell/offer (or the online company's summary + main offerings), ordering, delivery/pickup, and any policy mentioned. When DRAFT STORE KNOWLEDGE was provided, include ALL of it: the departments/sections (so the bot can direct shoppers), the services, what they're known for, and the likely customer questions with their answers (write these out as Q&A the assistant can use). Be specific and thorough — this is the bot's brain from day one.
 - "suggestionChips": 3-4 short example things a CUSTOMER might tap to start (English), fitting this business.
 - "greeting": a short friendly opening line the assistant says to customers (English).
 - Include "businessName", "website" and "address" when known, and "ownerName"/"email" only if the owner gave them.
@@ -77,6 +78,22 @@ function formatDetected(d: Record<string, unknown> | null): string {
   if (typeof d.rating === "number") lines.push(`Rating: ${d.rating}★ (${d.reviews ?? 0} reviews)`);
   if (s(d.summary)) lines.push(`What they do: ${s(d.summary)}`);
   if (Array.isArray(d.offerings) && d.offerings.length) lines.push(`Main offerings: ${d.offerings.map(String).join(", ")}`);
+
+  // Lever A — a draft knowledge base built from the business's public footprint.
+  const k = d.knowledge as Record<string, unknown> | undefined;
+  if (k && typeof k === "object") {
+    const kl: string[] = [];
+    if (Array.isArray(k.departments) && k.departments.length) kl.push(`Departments/sections: ${k.departments.map(String).join(", ")}`);
+    if (Array.isArray(k.services) && k.services.length) kl.push(`Services: ${k.services.map(String).join(", ")}`);
+    if (Array.isArray(k.highlights) && k.highlights.length) kl.push(`Known for: ${k.highlights.map(String).join(", ")}`);
+    if (Array.isArray(k.faqs) && k.faqs.length) {
+      const faqs = (k.faqs as { q?: unknown; a?: unknown }[])
+        .filter((f) => s(f?.q) && s(f?.a))
+        .map((f) => `    • ${s(f.q)} → ${s(f.a)}`);
+      if (faqs.length) kl.push(`Likely customer questions (with draft answers):\n${faqs.join("\n")}`);
+    }
+    if (kl.length) lines.push(`\nDRAFT STORE KNOWLEDGE (built from their website + reviews — present as a draft to confirm, then put it ALL into storePrompt):\n${kl.join("\n")}`);
+  }
   return `\n\n[DETECTED] The automatic lookup found this — confirm it warmly with the owner and reuse it (don't re-ask for these):\n${lines.join("\n")}`;
 }
 
