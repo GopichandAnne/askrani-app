@@ -13,6 +13,8 @@ type Msg = { role: "owner" | "rani"; text: string };
 interface Config {
   businessName?: string;
   businessType?: string;
+  website?: string;
+  address?: string;
   ownerName?: string;
   email?: string;
   personality?: string;
@@ -20,6 +22,8 @@ interface Config {
   greeting?: string;
   suggestionChips?: string[];
 }
+type Detect = { kind: "local" | "online"; query: string; name?: string };
+type Detected = Record<string, unknown> | null;
 
 /**
  * The Setup Copilot — conversational store setup. Rani interviews the owner one
@@ -31,22 +35,50 @@ export function WelcomeChat({ email }: { email: string | null }) {
   const [chips, setChips] = useState<string[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(true);
+  const [detecting, setDetecting] = useState(false);
   const [provisioning, setProvisioning] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const started = useRef(false);
 
   const supabase = createClient();
 
-  async function turn(next: Msg[]) {
+  // Look the business up from the one identifier the owner gave (address → Google
+  // Place + hours, or website → homepage read). Fail-soft: a miss just returns null
+  // and the interview carries on asking normally.
+  async function runDetect(detect: Detect): Promise<Detected> {
+    try {
+      const { data } = await supabase.functions.invoke("detect-business", { body: detect });
+      return (data as { detected?: Detected } | null)?.detected ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function turn(next: Msg[], detected?: Detected, afterDetect = false) {
     setBusy(true);
     setChips([]);
-    const { data, error } = await supabase.functions.invoke("setup-interview", { body: { messages: next, email } });
+    const { data, error } = await supabase.functions.invoke("setup-interview", { body: { messages: next, email, detected } });
     if (error || !data?.reply) {
       setBusy(false);
+      setDetecting(false);
       toast.error("Rani had trouble responding", { description: "Please try again." });
       return;
     }
-    setMessages([...next, { role: "rani", text: data.reply as string }]);
+    const withReply: Msg[] = [...next, { role: "rani", text: data.reply as string }];
+    setMessages(withReply);
+
+    // Detect handshake: Rani asked us to look the business up. Run it, then feed the
+    // result back into the very next turn so Rani confirms instead of interrogates.
+    // `afterDetect` guards against ever looping on a second detect signal.
+    const detect = data.detect as Detect | null;
+    if (detect?.query && !afterDetect) {
+      setDetecting(true);
+      const found = await runDetect(detect);
+      setDetecting(false);
+      await turn(withReply, found ?? { found: false }, true);
+      return;
+    }
+
     if (data.done && data.config) {
       await provision(data.config as Config);
     } else {
@@ -129,7 +161,7 @@ export function WelcomeChat({ email }: { email: string | null }) {
           <div className="flex justify-start">
             <div className="bg-muted text-muted-foreground flex items-center gap-2 rounded-2xl rounded-bl-sm px-3.5 py-2 text-sm">
               <Loader2 className="size-3.5 animate-spin" />
-              {provisioning ? "Setting up your store…" : "Rani is typing…"}
+              {provisioning ? "Setting up your store…" : detecting ? "Looking up your business…" : "Rani is typing…"}
             </div>
           </div>
         )}
