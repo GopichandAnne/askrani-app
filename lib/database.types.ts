@@ -823,6 +823,68 @@ export type Database = {
           },
         ]
       }
+      http_tool: {
+        Row: {
+          api_key: string | null
+          auth: Json
+          base_url: string
+          created_at: string
+          description: string
+          enabled: boolean
+          id: string
+          method: string
+          name: string
+          params: Json
+          path: string
+          request_map: Json
+          side_effect: boolean
+          store_id: string
+          timeout_ms: number
+        }
+        Insert: {
+          api_key?: string | null
+          auth?: Json
+          base_url: string
+          created_at?: string
+          description: string
+          enabled?: boolean
+          id?: string
+          method?: string
+          name: string
+          params?: Json
+          path: string
+          request_map?: Json
+          side_effect?: boolean
+          store_id: string
+          timeout_ms?: number
+        }
+        Update: {
+          api_key?: string | null
+          auth?: Json
+          base_url?: string
+          created_at?: string
+          description?: string
+          enabled?: boolean
+          id?: string
+          method?: string
+          name?: string
+          params?: Json
+          path?: string
+          request_map?: Json
+          side_effect?: boolean
+          store_id?: string
+          timeout_ms?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "http_tool_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       oauth_connection: {
         Row: {
           access_token: string

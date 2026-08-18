@@ -54,6 +54,7 @@ import { getAccessToken } from "./connections.ts";
 import { listBusy, freeSlots, isBusy, createEvent, zonedToUtc } from "./gcal.ts";
 import { findItems as sqFindItems, orderStatus as sqOrderStatus } from "./square.ts";
 import { findContact as hsFindContact, createLead as hsCreateLead } from "./hubspot.ts";
+import { executeHttpTool, httpToolDeclaration, type HttpTool } from "./httptool.ts";
 
 // ── Gemini functionDeclaration shapes ───────────────────────────────────────
 // A JSON-Schema-ish node; `items`/`properties` may nest (e.g. an array of objects).
@@ -1417,6 +1418,7 @@ export function buildToolset(
   ui: UiDirectives = {},
   timezone = "UTC",
   connected: string[] = [],
+  httpTools: HttpTool[] = [],
 ): Toolset {
   const executors: Record<string, ToolExecutor> = {
     search_products: (args) => executeSearchProducts(db, store, args),
@@ -1525,6 +1527,12 @@ export function buildToolset(
     if (executors[integ.name]) continue; // never override a built-in tool
     executors[integ.name] = (args) => executeIntegration(integ, store, sessionId, args);
     declarations.push(integrationDeclaration(integ) as FunctionDeclaration);
+  }
+  // Builder-generated direct-HTTP tools (from an API spec via integration-build).
+  for (const t of httpTools) {
+    if (executors[t.name]) continue; // never override a built-in or connector tool
+    executors[t.name] = (args) => executeHttpTool(db, store, t, args);
+    declarations.push(httpToolDeclaration(t));
   }
   return {
     declarations,

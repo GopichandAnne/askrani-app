@@ -148,7 +148,7 @@ export async function encrypt(text: string): Promise<string> {
   const out = new Uint8Array(iv.length + ct.length); out.set(iv); out.set(ct, iv.length);
   return bytesToBase64(out);
 }
-async function decrypt(b64: string): Promise<string> {
+export async function decrypt(b64: string): Promise<string> {
   const key = await encKey();
   if (!key) throw new Error("OAUTH_ENC_KEY missing or not 32 bytes");
   const all = base64ToBytes(b64);

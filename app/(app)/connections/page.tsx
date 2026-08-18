@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { getActiveStore } from "@/lib/store/active-store";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ConnectionsClient, type ConnStatus } from "./connections-client";
+import { ApiBuilder, type ApiTool } from "./api-builder";
 
 export const metadata: Metadata = { title: "Connections · Ask Rani" };
 export const dynamic = "force-dynamic";
@@ -30,6 +31,13 @@ export default async function ConnectionsPage() {
     connected[r.provider] = { label: r.account_label };
   }
 
+  const { data: toolRows } = await db
+    .from("http_tool")
+    .select("id, name, description, method, side_effect")
+    .eq("store_id", ctx.active.id)
+    .order("created_at", { ascending: false });
+  const customTools = (toolRows ?? []) as ApiTool[];
+
   return (
     <div className="mx-auto max-w-2xl p-4">
       <div className="mb-5">
@@ -43,6 +51,7 @@ export default async function ConnectionsPage() {
         isOwner={ctx.active.role === "owner"}
         connected={connected}
       />
+      <ApiBuilder storeSlug={ctx.active.slug} isOwner={ctx.active.role === "owner"} tools={customTools} />
     </div>
   );
 }
