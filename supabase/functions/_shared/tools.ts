@@ -57,6 +57,7 @@ import { listBusy as msListBusy, createEvent as msCreateEvent } from "./msgraph.
 type CalProvider = "google" | "microsoft";
 import { findItems as sqFindItems, orderStatus as sqOrderStatus } from "./square.ts";
 import { findContact as hsFindContact, createLead as hsCreateLead } from "./hubspot.ts";
+import { me as calMe, listEventTypes as calEventTypes, availableTimes as calAvailableTimes } from "./calendly.ts";
 import { executeHttpTool, httpToolDeclaration, type HttpTool, type Visitor } from "./httptool.ts";
 
 // ── Gemini functionDeclaration shapes ───────────────────────────────────────
@@ -1413,6 +1414,89 @@ async function executeHubspotFindContact(db: SupabaseClient, store: Store, args:
   }
 }
 
+// ── Calendly (attached only when the store has connected Calendly) ────────────
+const CALENDLY_EVENT_TYPES_DECL: FunctionDeclaration = {
+  name: "calendly_event_types",
+  description:
+    "List the store's Calendly meeting types — each with its length and a booking link. " +
+    "Use when a customer wants to book a call, consult, or meeting: offer the right type and " +
+    "share its link (they pick a time and confirm on Calendly). If they've named a day, prefer " +
+    "calendly_available_times to show open slots.",
+  parameters: { type: "object", properties: {}, required: [] },
+};
+const CALENDLY_TIMES_DECL: FunctionDeclaration = {
+  name: "calendly_available_times",
+  description:
+    "Get open Calendly times for a given day. Use after the customer picks a meeting type and a day. " +
+    "Pass `date` as YYYY-MM-DD (work it out from the store's local date — e.g. 'tomorrow') and " +
+    "optionally `event_type` (the meeting name, e.g. 'Intro call'). Returns open start times in the " +
+    "store's timezone, each with a booking link the customer taps to confirm on Calendly.",
+  parameters: {
+    type: "object",
+    properties: {
+      date: { type: "string", description: "The day to check, as YYYY-MM-DD." },
+      event_type: { type: "string", description: "Optional — the meeting type name, e.g. 'Intro call'." },
+    },
+    required: ["date"],
+  },
+};
+
+/** Local HH:MM (store tz) of a UTC instant. */
+function localHM(d: Date, tz: string): string {
+  const p: Record<string, string> = {};
+  for (const part of new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(d)) p[part.type] = part.value;
+  return `${p.hour}:${p.minute}`;
+}
+
+async function executeCalendlyEventTypes(db: SupabaseClient, store: Store, _args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const token = await getAccessToken(db, store.id, "calendly");
+  if (!token) return { ok: false, note: "Calendly isn't connected — offer to check with the store" };
+  try {
+    const u = await calMe(token);
+    if (!u) return { ok: false, note: "couldn't read the Calendly account" };
+    const types = (await calEventTypes(token, u.uri)).filter((t) => t.active);
+    const list = types.map((t) => ({ name: t.name, duration_minutes: t.duration, book_link: t.scheduling_url }));
+    return {
+      ok: true, scheduling_url: u.scheduling_url, event_types: list,
+      note: list.length
+        ? "Share the matching booking link; the customer books the time on Calendly."
+        : "No specific meeting types — share the main scheduling link.",
+    };
+  } catch (e) {
+    console.error(`[tools] calendly_event_types: ${e instanceof Error ? e.message : e}`);
+    return { ok: false, note: "couldn't reach Calendly right now — offer to check with the store" };
+  }
+}
+
+async function executeCalendlyTimes(db: SupabaseClient, store: Store, tz: string, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const token = await getAccessToken(db, store.id, "calendly");
+  if (!token) return { ok: false, note: "Calendly isn't connected — offer to check with the store" };
+  const date = String(args.date ?? "").trim();
+  if (!DATE_RE.test(date)) return { ok: false, note: "need the day as YYYY-MM-DD" };
+  try {
+    const u = await calMe(token);
+    if (!u) return { ok: false, note: "couldn't read the Calendly account" };
+    const types = (await calEventTypes(token, u.uri)).filter((t) => t.active);
+    if (!types.length) return { ok: true, date, available: [], scheduling_url: u.scheduling_url, note: "Share the main scheduling link." };
+    const wanted = String(args.event_type ?? "").trim().toLowerCase();
+    const et = (wanted && types.find((t) => t.name.toLowerCase().includes(wanted))) || types[0];
+    const [y, mo, d] = date.split("-").map(Number);
+    // Calendly needs a future start within a 7-day window; clamp today's start to now.
+    let startU = zonedToUtc(y, mo, d, 0, 0, tz);
+    const endU = zonedToUtc(y, mo, d, 23, 59, tz);
+    if (startU.getTime() < Date.now() + 60000) startU = new Date(Date.now() + 60000);
+    if (startU.getTime() >= endU.getTime()) return { ok: true, event_type: et.name, date, available: [], note: "That day has already passed — suggest another day." };
+    const slots = await calAvailableTimes(token, et.uri, startU.toISOString(), endU.toISOString());
+    const times = slots.slice(0, 12).map((s) => ({ time: localHM(new Date(s.start_time), tz), book_link: s.scheduling_url }));
+    return times.length
+      ? { ok: true, event_type: et.name, date, timezone: tz, available: times, note: "Offer a couple of these times; each has a booking link the customer taps to confirm on Calendly." }
+      : { ok: true, event_type: et.name, date, timezone: tz, available: [], scheduling_url: et.scheduling_url, note: "No open times that day — suggest another day or share the booking link." };
+  } catch (e) {
+    console.error(`[tools] calendly_available_times: ${e instanceof Error ? e.message : e}`);
+    return { ok: false, note: "couldn't read Calendly availability right now — offer to check with the store" };
+  }
+}
+
 /** Build the toolset bound to a store + session context. Cart/order tools are
  *  attached only when ordering is enabled for the store (Agent Setup). */
 export function buildToolset(
@@ -1449,6 +1533,8 @@ export function buildToolset(
     square_order_status: (args) => executeSquareOrderStatus(db, store, args),
     hubspot_save_lead: (args) => executeHubspotSaveLead(db, store, args),
     hubspot_find_contact: (args) => executeHubspotFindContact(db, store, args),
+    calendly_event_types: (args) => executeCalendlyEventTypes(db, store, args),
+    calendly_available_times: (args) => executeCalendlyTimes(db, store, timezone, args),
     send_image: (args) => executeSendImage(db, store, sessionId, args),
     send_photos: (args) => executeSendPhotos(db, store, sessionId, args),
     send_photo_urls: (args) => executeSendPhotoUrls(db, store, sessionId, args),
@@ -1519,6 +1605,7 @@ export function buildToolset(
   if (calProvider) declarations.push(CHECK_AVAILABILITY_DECL, BOOK_APPOINTMENT_DECL);
   if (connected.includes("square")) declarations.push(SQUARE_FIND_ITEM_DECL, SQUARE_ORDER_STATUS_DECL);
   if (connected.includes("hubspot")) declarations.push(HUBSPOT_SAVE_LEAD_DECL, HUBSPOT_FIND_CONTACT_DECL);
+  if (connected.includes("calendly")) declarations.push(CALENDLY_EVENT_TYPES_DECL, CALENDLY_TIMES_DECL);
   // Generic request capture — offered only when the store has defined request
   // types (e.g. "Career interest", "Callback"). Nothing here is use-case-specific.
   if (requestTypes.length) declarations.push(fileRequestDeclaration(requestTypes));
