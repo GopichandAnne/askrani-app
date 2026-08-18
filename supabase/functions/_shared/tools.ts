@@ -52,6 +52,9 @@ import {
 } from "./requests.ts";
 import { getAccessToken } from "./connections.ts";
 import { listBusy, freeSlots, isBusy, createEvent, zonedToUtc } from "./gcal.ts";
+import { listBusy as msListBusy, createEvent as msCreateEvent } from "./msgraph.ts";
+
+type CalProvider = "google" | "microsoft";
 import { findItems as sqFindItems, orderStatus as sqOrderStatus } from "./square.ts";
 import { findContact as hsFindContact, createLead as hsCreateLead } from "./hubspot.ts";
 import { executeHttpTool, httpToolDeclaration, type HttpTool, type Visitor } from "./httptool.ts";
@@ -1196,11 +1199,11 @@ async function executeSubmitPost(
   return { ok: true, submitted: true, earns, note: res.note };
 }
 
-// ── Google Calendar (attached only when the store has connected Google) ───────
+// ── Calendar (attached when the store has connected Google or Microsoft) ──────
 const CHECK_AVAILABILITY_DECL: FunctionDeclaration = {
   name: "check_calendar_availability",
   description:
-    "Check the store's Google Calendar for open appointment times on a given day. " +
+    "Check the store's calendar for open appointment times on a given day. " +
     "Use it when a customer wants to book, asks 'when are you free?', or picks a day. " +
     "Pass `date` as YYYY-MM-DD (work it out from the store's local date — e.g. " +
     "'tomorrow', 'next Tuesday') and optionally `duration_minutes` (default 30). " +
@@ -1217,7 +1220,7 @@ const CHECK_AVAILABILITY_DECL: FunctionDeclaration = {
 const BOOK_APPOINTMENT_DECL: FunctionDeclaration = {
   name: "book_appointment",
   description:
-    "Book an appointment on the store's Google Calendar. This creates a REAL event — " +
+    "Book an appointment on the store's calendar. This creates a REAL event — " +
     "only call it AFTER the customer has confirmed the exact day and time. First use " +
     "check_calendar_availability so you offer a free slot. Pass date (YYYY-MM-DD), time " +
     "(HH:MM, 24h, store timezone), a short title, and the customer's name; email is " +
@@ -1241,18 +1244,21 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^([01]?\d|2[0-3]):[0-5]\d$/;
 
 async function executeCheckAvailability(
-  db: SupabaseClient, store: Store, tz: string, args: Record<string, unknown>,
+  db: SupabaseClient, store: Store, tz: string, provider: CalProvider | null, args: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
+  if (!provider) return { ok: false, note: "the calendar isn't connected — offer to check with the store" };
   const date = String(args.date ?? "").trim();
   if (!DATE_RE.test(date)) return { ok: false, note: "need the day as YYYY-MM-DD" };
   const duration = Math.min(Math.max(Number(args.duration_minutes ?? 30), 15), 240);
-  const token = await getAccessToken(db, store.id, "google");
+  const token = await getAccessToken(db, store.id, provider);
   if (!token) return { ok: false, note: "the calendar isn't connected — offer to check with the store" };
   try {
     const [y, mo, d] = date.split("-").map(Number);
     const dayStart = zonedToUtc(y, mo, d, 0, 0, tz);
     const dayEnd = zonedToUtc(y, mo, d, 23, 59, tz);
-    const busy = await listBusy(token, dayStart.toISOString(), dayEnd.toISOString());
+    const busy = provider === "microsoft"
+      ? await msListBusy(token, dayStart.toISOString(), dayEnd.toISOString())
+      : await listBusy(token, dayStart.toISOString(), dayEnd.toISOString());
     const slots = freeSlots(date, tz, busy, duration).slice(0, 12);
     return slots.length
       ? { ok: true, date, timezone: tz, available: slots, note: "Offer a couple of these times; then book_appointment once they pick and confirm." }
@@ -1264,8 +1270,9 @@ async function executeCheckAvailability(
 }
 
 async function executeBookAppointment(
-  db: SupabaseClient, store: Store, tz: string, args: Record<string, unknown>,
+  db: SupabaseClient, store: Store, tz: string, provider: CalProvider | null, args: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
+  if (!provider) return { ok: false, note: "the calendar isn't connected — offer to check with the store" };
   const date = String(args.date ?? "").trim();
   const time = String(args.time ?? "").trim();
   const title = String(args.title ?? "").trim();
@@ -1274,19 +1281,22 @@ async function executeBookAppointment(
   if (!title || !name) return { ok: false, note: "need a title and the customer's name" };
   const duration = Math.min(Math.max(Number(args.duration_minutes ?? 30), 15), 240);
   const email = String(args.customer_email ?? "").trim() || undefined;
-  const token = await getAccessToken(db, store.id, "google");
+  const token = await getAccessToken(db, store.id, provider);
   if (!token) return { ok: false, note: "the calendar isn't connected — offer to check with the store" };
   try {
     // Re-check the slot is still free at the moment of booking.
     const [y, mo, d] = date.split("-").map(Number);
     const dayStart = zonedToUtc(y, mo, d, 0, 0, tz);
     const dayEnd = zonedToUtc(y, mo, d, 23, 59, tz);
-    const busy = await listBusy(token, dayStart.toISOString(), dayEnd.toISOString());
+    const busy = provider === "microsoft"
+      ? await msListBusy(token, dayStart.toISOString(), dayEnd.toISOString())
+      : await listBusy(token, dayStart.toISOString(), dayEnd.toISOString());
     if (isBusy(date, time, duration, tz, busy)) {
       return { ok: false, note: "that time was just taken — check availability again and offer another slot" };
     }
     const desc = [name && `Booked for ${name}`, email && email, args.notes && String(args.notes)].filter(Boolean).join("\n");
-    const res = await createEvent(token, { date, time, durationMin: duration, tz, summary: title, description: desc, email });
+    const create = provider === "microsoft" ? msCreateEvent : createEvent;
+    const res = await create(token, { date, time, durationMin: duration, tz, summary: title, description: desc, email });
     return res.ok
       ? { ok: true, booked: true, when: `${date} ${time}`, timezone: tz, note: `Booked ${date} at ${time}. Confirm the time back to the customer.` }
       : { ok: false, note: "couldn't book that — offer to try another time or check with the store" };
@@ -1421,6 +1431,9 @@ export function buildToolset(
   httpTools: HttpTool[] = [],
   visitor?: Visitor,
 ): Toolset {
+  // One calendar tool pair serves whichever calendar the store connected — prefer
+  // Google if both are on. (Most stores connect just one.)
+  const calProvider: CalProvider | null = connected.includes("google") ? "google" : connected.includes("microsoft") ? "microsoft" : null;
   const executors: Record<string, ToolExecutor> = {
     search_products: (args) => executeSearchProducts(db, store, args),
     show_products: (args) => executeShowProducts(db, store, sessionId, ui, args),
@@ -1430,8 +1443,8 @@ export function buildToolset(
     redeem_credit: (args) => executeRedeemCredit(db, store, sessionId, args),
     submit_post_url: (args) => executeSubmitPost(db, store, sessionId, args),
     search_knowledge: (args) => executeSearchKnowledge(db, store, sessionId, args, today),
-    check_calendar_availability: (args) => executeCheckAvailability(db, store, timezone, args),
-    book_appointment: (args) => executeBookAppointment(db, store, timezone, args),
+    check_calendar_availability: (args) => executeCheckAvailability(db, store, timezone, calProvider, args),
+    book_appointment: (args) => executeBookAppointment(db, store, timezone, calProvider, args),
     square_find_item: (args) => executeSquareFindItem(db, store, args),
     square_order_status: (args) => executeSquareOrderStatus(db, store, args),
     hubspot_save_lead: (args) => executeHubspotSaveLead(db, store, args),
@@ -1503,7 +1516,7 @@ export function buildToolset(
     ESCALATE_DECL,
   ];
   // Connected-provider tools — attached only when that provider is connected.
-  if (connected.includes("google")) declarations.push(CHECK_AVAILABILITY_DECL, BOOK_APPOINTMENT_DECL);
+  if (calProvider) declarations.push(CHECK_AVAILABILITY_DECL, BOOK_APPOINTMENT_DECL);
   if (connected.includes("square")) declarations.push(SQUARE_FIND_ITEM_DECL, SQUARE_ORDER_STATUS_DECL);
   if (connected.includes("hubspot")) declarations.push(HUBSPOT_SAVE_LEAD_DECL, HUBSPOT_FIND_CONTACT_DECL);
   // Generic request capture — offered only when the store has defined request
