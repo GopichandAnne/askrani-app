@@ -34,6 +34,31 @@ const MODES: { value: AccessMode; label: string; help: string }[] = [
   { value: "required", label: "Members only", help: "Only verified members may use the agent at all." },
 ];
 
+// Host-side signing example (built as lines to avoid template-literal escaping).
+// Your server runs this for the logged-in user and passes the result to the embed.
+const SIGN_SNIPPET = [
+  "// On YOUR server — mint a short token for the logged-in user, then hand it to Rani.",
+  'import crypto from "node:crypto";',
+  "",
+  "// RANI_SSO_SECRET = the secret shown above. Keep it server-side only — never ship it to the browser.",
+  "function raniUserToken(user) {",
+  "  const payload = {",
+  "    email: user.email,                        // required (phone also works)",
+  "    name: user.name,                          // optional",
+  "    exp: Math.floor(Date.now() / 1000) + 600, // valid for 10 minutes",
+  "  };",
+  '  const body = Buffer.from(JSON.stringify(payload)).toString("base64url");',
+  '  const sig = crypto.createHmac("sha256", process.env.RANI_SSO_SECRET)',
+  '    .update(body).digest("hex");',
+  "  return body + '.' + sig;                    // -> use as data-user-token",
+  "}",
+  "",
+  "// Then render the embed with the token for the current user:",
+  '// <script src="https://app.askrani.ai/embed.js"',
+  '//   data-store="your-store-slug"',
+  '//   data-user-token="<the raniUserToken(user) value>"></script>',
+].join("\n");
+
 export function MembersManager({ storeId }: { storeId: string }) {
   const [mode, setMode] = useState<AccessMode>("open");
   const [members, setMembers] = useState<Member[] | null>(null);
@@ -45,6 +70,7 @@ export function MembersManager({ storeId }: { storeId: string }) {
   const [role, setRole] = useState("resident");
   const [secret, setSecret] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
   const [csv, setCsv] = useState("");
   const [emailVerify, setEmailVerify] = useState(false);
 
@@ -318,9 +344,37 @@ export function MembersManager({ storeId }: { storeId: string }) {
         <p className="text-muted-foreground text-xs">
           Your backend signs <code className="bg-muted rounded px-1">base64url(JSON)+&quot;.&quot;+HMAC-SHA256</code>{" "}
           of <code className="bg-muted rounded px-1">{"{email, exp}"}</code> and adds{" "}
-          <code className="bg-muted rounded px-1">data-user-token</code> to the embed snippet. Full
-          steps are in your integration docs.
+          <code className="bg-muted rounded px-1">data-user-token</code> to the embed snippet. The same
+          signed-in identity also lets Rani call your own APIs <em>as that customer</em> (Connections →
+          &ldquo;answer as the signed-in customer&rdquo;).
         </p>
+        <details className="group">
+          <summary className="text-teal-deep hover:text-teal-deep/80 cursor-pointer select-none text-xs font-medium">
+            Show the signing code (Node.js)
+          </summary>
+          <div className="relative mt-2">
+            <pre className="bg-muted overflow-x-auto rounded p-3 text-[11px] leading-relaxed">
+              <code>{SIGN_SNIPPET}</code>
+            </pre>
+            <Button
+              size="sm"
+              variant="outline"
+              className="absolute right-2 top-2"
+              onClick={() => {
+                navigator.clipboard.writeText(SIGN_SNIPPET);
+                setCopiedCode(true);
+                setTimeout(() => setCopiedCode(false), 1500);
+              }}
+            >
+              {copiedCode ? <Check className="size-4" /> : <Copy className="size-4" />}
+              {copiedCode ? "Copied" : "Copy"}
+            </Button>
+          </div>
+          <p className="text-muted-foreground mt-2 text-xs">
+            Other stacks: same recipe — base64url the JSON <code className="bg-muted rounded px-1">{"{email, exp}"}</code>,
+            HMAC-SHA256 it with your secret, join as <code className="bg-muted rounded px-1">body.signature</code>.
+          </p>
+        </details>
       </div>
     </div>
   );
