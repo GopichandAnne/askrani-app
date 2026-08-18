@@ -111,11 +111,11 @@ export function ApiBuilder({ storeSlug, isOwner, tools }: { storeSlug: string; i
     <div className="mt-8">
       <h2 className="text-base font-semibold">Connect a custom API</h2>
       <p className="text-muted-foreground mb-3 text-sm">
-        Have an API of your own? Paste its OpenAPI (Swagger) link and say what Rani should be able to do — it builds the tools for you.
+        Have an API of your own? Paste its OpenAPI (Swagger) link — JSON or YAML — and say what Rani should be able to do; it builds the tools for you.
       </p>
 
       <div className="space-y-2 rounded-xl border p-4">
-        <Input placeholder="https://api.yourservice.com/openapi.json" value={url} onChange={(e) => setUrl(e.target.value)} disabled={!isOwner || busy} />
+        <Input placeholder="https://api.yourservice.com/openapi.json (or .yaml)" value={url} onChange={(e) => setUrl(e.target.value)} disabled={!isOwner || busy} />
         <Input placeholder="What should Rani do with it? e.g. look up order status, check stock" value={goal} onChange={(e) => setGoal(e.target.value)} disabled={!isOwner || busy} />
         {!asCustomer && (
           <Input placeholder="API key (only if the API needs one) — stored encrypted" type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} disabled={!isOwner || busy} />

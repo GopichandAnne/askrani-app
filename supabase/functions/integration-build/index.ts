@@ -11,6 +11,7 @@ import { serviceClient } from "../_shared/supabase.ts";
 import { generateStructured } from "../_shared/gemini.ts";
 import { encrypt } from "../_shared/connections.ts";
 import { executeHttpTool } from "../_shared/httptool.ts";
+import { parse as parseYaml } from "jsr:@std/yaml@1";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -144,17 +145,32 @@ Deno.serve(async (req) => {
   // ── build ──
   const url = String(body.openapiUrl ?? "").trim();
   const goal = String(body.goal ?? "").trim() || "the useful lookups and actions for helping customers";
-  if (!/^https?:\/\//i.test(url)) return json({ error: "Give an OpenAPI/Swagger JSON URL." }, 400);
+  if (!/^https?:\/\//i.test(url)) return json({ error: "Give an OpenAPI/Swagger URL (JSON or YAML)." }, 400);
 
   let spec: Any;
+  let text = "";
   try {
     const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 12000);
-    const r = await fetch(url, { headers: { accept: "application/json" }, signal: ctrl.signal });
+    const r = await fetch(url, { headers: { accept: "application/json, application/yaml, text/yaml, */*" }, signal: ctrl.signal });
     clearTimeout(t);
     if (!r.ok) return json({ error: `Couldn't fetch the spec (HTTP ${r.status}).` }, 400);
-    spec = JSON.parse((await r.text()).slice(0, 800_000));
+    text = (await r.text()).slice(0, 1_200_000);
   } catch {
-    return json({ error: "Couldn't read that spec — make sure it's a JSON OpenAPI URL." }, 400);
+    return json({ error: "Couldn't fetch that spec — check the URL is reachable." }, 400);
+  }
+  // Accept JSON or YAML. Try JSON first (fast, and YAML is a JSON superset so a
+  // JSON body parses either way); fall back to YAML for .yaml/.yml specs.
+  try {
+    spec = JSON.parse(text);
+  } catch {
+    try {
+      spec = parseYaml(text);
+    } catch {
+      return json({ error: "Couldn't read that spec — make sure it's a valid OpenAPI/Swagger file (JSON or YAML)." }, 400);
+    }
+  }
+  if (!spec || typeof spec !== "object") {
+    return json({ error: "That didn't look like an OpenAPI spec — check the URL points to the spec file (JSON or YAML)." }, 400);
   }
 
   const { base: specBase, auth: schemes, ops } = compact(spec);
