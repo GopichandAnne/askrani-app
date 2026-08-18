@@ -6,9 +6,10 @@ import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { FlaskConical, Loader2, Trash2, Wand2 } from "lucide-react";
 
-export type ApiTool = { id: string; name: string; description: string; method: string; side_effect: boolean; auth?: { type?: string } | null };
+export type ApiTool = { id: string; name: string; description: string; method: string; side_effect: boolean; auth?: { type?: string; claim?: string } | null };
 type BuiltTool = ApiTool & { tested?: "ok" | "failed" | "skipped" };
 
 /**
@@ -23,6 +24,9 @@ export function ApiBuilder({ storeSlug, isOwner, tools }: { storeSlug: string; i
   const [goal, setGoal] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [asCustomer, setAsCustomer] = useState(false);
+  const [identityClaim, setIdentityClaim] = useState("token");
+  const [identityField, setIdentityField] = useState("");
+  const [identityIn, setIdentityIn] = useState("query");
   const [busy, setBusy] = useState(false);
   const [delId, setDelId] = useState<string | null>(null);
   const [testId, setTestId] = useState<string | null>(null);
@@ -33,7 +37,12 @@ export function ApiBuilder({ storeSlug, isOwner, tools }: { storeSlug: string; i
     setBusy(true);
     const supabase = createClient();
     const { data, error } = await supabase.functions.invoke("integration-build", {
-      body: { action: "build", storeSlug, openapiUrl: url.trim(), goal: goal.trim(), apiKey: asCustomer ? undefined : apiKey.trim() || undefined, forwardIdentity: asCustomer },
+      body: {
+        action: "build", storeSlug, openapiUrl: url.trim(), goal: goal.trim(),
+        apiKey: asCustomer ? undefined : apiKey.trim() || undefined,
+        forwardIdentity: asCustomer,
+        ...(asCustomer ? { identityClaim, identityField: identityField.trim() || undefined, identityIn } : {}),
+      },
     });
     setBusy(false);
     const err = (data as { error?: string } | null)?.error;
@@ -73,6 +82,7 @@ export function ApiBuilder({ storeSlug, isOwner, tools }: { storeSlug: string; i
       });
     }
     setUrl(""); setGoal(""); setApiKey(""); setAsCustomer(false);
+    setIdentityClaim("token"); setIdentityField(""); setIdentityIn("query");
     router.refresh();
   }
 
@@ -119,6 +129,44 @@ export function ApiBuilder({ storeSlug, isOwner, tools }: { storeSlug: string; i
             </span>
           </span>
         </label>
+        {asCustomer && (
+          <div className="space-y-2 rounded-lg border border-dashed p-2.5">
+            <p className="text-xs font-medium">What should Rani send to identify them?</p>
+            <Select
+              value={identityClaim}
+              onValueChange={(v) => {
+                setIdentityClaim(v);
+                if (v !== "token" && !identityField.trim()) setIdentityField(v === "email" ? "email" : v === "phone" ? "phone" : "user_id");
+              }}
+              disabled={!isOwner || busy}
+            >
+              <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="token">Their sign-in token — my API verifies it (recommended)</SelectItem>
+                <SelectItem value="email">Their email address</SelectItem>
+                <SelectItem value="phone">Their phone number</SelectItem>
+                <SelectItem value="sub">Their user ID</SelectItem>
+              </SelectContent>
+            </Select>
+            {identityClaim !== "token" && (
+              <div className="flex gap-2">
+                <Input placeholder="Field name the API expects, e.g. email" value={identityField} onChange={(e) => setIdentityField(e.target.value)} disabled={!isOwner || busy} />
+                <Select value={identityIn} onValueChange={setIdentityIn} disabled={!isOwner || busy}>
+                  <SelectTrigger className="h-9 w-28 shrink-0 text-sm"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="query">in URL</SelectItem>
+                    <SelectItem value="header">in header</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <p className="text-muted-foreground text-xs">
+              {identityClaim === "token"
+                ? "Sent as Authorization: Bearer <token>. Best when the API is yours and checks the token itself."
+                : "Sent to a trusted API that just needs to know which customer is asking — the value is the one you verified at sign-in, never something the model made up."}
+            </p>
+          </div>
+        )}
         <Button onClick={build} disabled={!isOwner || busy} className="w-full">
           {busy ? <Loader2 className="size-4 animate-spin" /> : <Wand2 className="size-4" />}
           Build tools from my API
@@ -135,7 +183,7 @@ export function ApiBuilder({ storeSlug, isOwner, tools }: { storeSlug: string; i
                 <div className="flex items-center gap-2">
                   <span className="truncate font-medium text-sm">{t.name}</span>
                   {t.side_effect && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">writes</span>}
-                  {t.auth?.type === "identity" && <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-medium text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">as customer</span>}
+                  {t.auth?.type === "identity" && <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-medium text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">as customer{t.auth.claim && t.auth.claim !== "token" ? ` · ${t.auth.claim}` : ""}</span>}
                 </div>
                 <p className="text-muted-foreground truncate text-xs">{t.description}</p>
               </div>

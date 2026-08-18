@@ -98,7 +98,7 @@ Deno.serve(async (req) => {
   } catch { /* ignore */ }
   if (!userId) return json({ error: "unauthorized" }, 401);
 
-  let body: { action?: string; storeSlug?: string; openapiUrl?: string; goal?: string; apiKey?: string; toolId?: string; sampleArgs?: Record<string, unknown>; forwardIdentity?: boolean };
+  let body: { action?: string; storeSlug?: string; openapiUrl?: string; goal?: string; apiKey?: string; toolId?: string; sampleArgs?: Record<string, unknown>; forwardIdentity?: boolean; identityClaim?: string; identityField?: string; identityIn?: string };
   try { body = await req.json(); } catch { return json({ error: "bad json" }, 400); }
   const slug = String(body.storeSlug ?? "").trim().toLowerCase();
   if (!slug) return json({ error: "storeSlug required" }, 400);
@@ -166,12 +166,22 @@ Deno.serve(async (req) => {
     try { base = new URL(base || "/", url).href.replace(/\/$/, ""); } catch { base = ""; }
   }
   // Delegated identity: the owner says "this is my own app — call it as the
-  // signed-in customer." We forward the visitor's verified token (Bearer) at
-  // runtime instead of any store credential; the model never sees it.
+  // signed-in customer." We forward the visitor's verified identity at runtime
+  // instead of any store credential; the model never sees it. `claim` picks WHAT
+  // to send: the raw sign-in token (Bearer — the API verifies it), or a verified
+  // email/phone/id (into a field a trusted API reads).
   const forwardIdentity = body.forwardIdentity === true;
-  const auth: Any = forwardIdentity
-    ? { type: "identity", location: "header", name: "Authorization", prefix: "Bearer ", claim: "token" }
-    : pickAuth(schemes);
+  const claim = ["token", "email", "phone", "sub"].includes(String(body.identityClaim)) ? String(body.identityClaim) : "token";
+  let identityAuth: Any;
+  if (claim === "token") {
+    identityAuth = { type: "identity", location: "header", name: "Authorization", prefix: "Bearer ", claim: "token" };
+  } else {
+    const loc = body.identityIn === "header" ? "header" : "query";
+    const defName = claim === "email" ? "email" : claim === "phone" ? "phone" : "user_id";
+    const name = (String(body.identityField ?? "").trim() || defName).slice(0, 60);
+    identityAuth = { type: "identity", location: loc, name, claim };
+  }
+  const auth: Any = forwardIdentity ? identityAuth : pickAuth(schemes);
 
   const opsText = ops.map((o) =>
     `${o.method} ${o.path} — ${o.summary}` +
