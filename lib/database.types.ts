@@ -823,6 +823,59 @@ export type Database = {
           },
         ]
       }
+      oauth_connection: {
+        Row: {
+          access_token: string
+          account_label: string | null
+          connected_by: string | null
+          created_at: string
+          expires_at: string | null
+          id: string
+          provider: string
+          refresh_token: string | null
+          scope: string | null
+          status: string
+          store_id: string
+          updated_at: string
+        }
+        Insert: {
+          access_token: string
+          account_label?: string | null
+          connected_by?: string | null
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          provider: string
+          refresh_token?: string | null
+          scope?: string | null
+          status?: string
+          store_id: string
+          updated_at?: string
+        }
+        Update: {
+          access_token?: string
+          account_label?: string | null
+          connected_by?: string | null
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          provider?: string
+          refresh_token?: string | null
+          scope?: string | null
+          status?: string
+          store_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "oauth_connection_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       request_types: {
         Row: {
           accepts_upload: boolean

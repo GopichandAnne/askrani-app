@@ -138,3 +138,9 @@ verify_jwt = false
 # shared INSIGHTS_OPS_SECRET so Insights can borrow Rani's OpenAI key).
 [functions.transcribe]
 verify_jwt = false
+
+# oauth-callback — the registered redirect URI for every provider (Google/Square/
+# HubSpot). Providers redirect the browser here with no JWT; security is the
+# HMAC-signed `state` minted by oauth-start. (oauth-start keeps verify_jwt ON.)
+[functions.oauth-callback]
+verify_jwt = false
