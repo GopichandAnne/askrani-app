@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FlaskConical, Loader2, Trash2, Wand2 } from "lucide-react";
 
-export type ApiTool = { id: string; name: string; description: string; method: string; side_effect: boolean };
+export type ApiTool = { id: string; name: string; description: string; method: string; side_effect: boolean; auth?: { type?: string } | null };
 type BuiltTool = ApiTool & { tested?: "ok" | "failed" | "skipped" };
 
 /**
@@ -22,6 +22,7 @@ export function ApiBuilder({ storeSlug, isOwner, tools }: { storeSlug: string; i
   const [url, setUrl] = useState("");
   const [goal, setGoal] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [asCustomer, setAsCustomer] = useState(false);
   const [busy, setBusy] = useState(false);
   const [delId, setDelId] = useState<string | null>(null);
   const [testId, setTestId] = useState<string | null>(null);
@@ -32,7 +33,7 @@ export function ApiBuilder({ storeSlug, isOwner, tools }: { storeSlug: string; i
     setBusy(true);
     const supabase = createClient();
     const { data, error } = await supabase.functions.invoke("integration-build", {
-      body: { action: "build", storeSlug, openapiUrl: url.trim(), goal: goal.trim(), apiKey: apiKey.trim() || undefined },
+      body: { action: "build", storeSlug, openapiUrl: url.trim(), goal: goal.trim(), apiKey: asCustomer ? undefined : apiKey.trim() || undefined, forwardIdentity: asCustomer },
     });
     setBusy(false);
     const err = (data as { error?: string } | null)?.error;
@@ -42,11 +43,23 @@ export function ApiBuilder({ storeSlug, isOwner, tools }: { storeSlug: string; i
     }
     const created = (data as { created?: BuiltTool[] }).created ?? [];
     const needKey = (data as { auth_needed?: boolean }).auth_needed;
+    const isIdentity = (data as { identity?: boolean }).identity;
+    const identityReady = (data as { identity_ready?: boolean }).identity_ready;
     const passed = created.filter((t) => t.tested === "ok").length;
     const failed = created.filter((t) => t.tested === "failed").length;
     const label = (t: BuiltTool) => `${t.name}${t.tested === "ok" ? " ✓" : t.tested === "failed" ? " ⚠" : ""}`;
 
-    if (needKey) {
+    if (isIdentity) {
+      if (!identityReady) {
+        toast.warning(`Added ${created.length} tool${created.length === 1 ? "" : "s"} — sign-in setup needed`, {
+          description: "These answer as the signed-in customer, but this store doesn't have embedded sign-in turned on yet. Set your Embed Secret and require sign-in, then they'll work on your site.",
+        });
+      } else {
+        toast.success(`Added ${created.length} tool${created.length === 1 ? "" : "s"} — answers as the signed-in customer`, {
+          description: created.map((t) => t.name).join(", "),
+        });
+      }
+    } else if (needKey) {
       toast.warning(`Added ${created.length} tool${created.length === 1 ? "" : "s"} — needs a key`, {
         description: "This API needs a key to answer. Paste it above and rebuild so I can test the connection.",
       });
@@ -59,7 +72,7 @@ export function ApiBuilder({ storeSlug, isOwner, tools }: { storeSlug: string; i
         description: passed > 0 ? `Tested live: ${created.map(label).join(", ")}` : created.map((t) => t.name).join(", "),
       });
     }
-    setUrl(""); setGoal(""); setApiKey("");
+    setUrl(""); setGoal(""); setApiKey(""); setAsCustomer(false);
     router.refresh();
   }
 
@@ -94,7 +107,18 @@ export function ApiBuilder({ storeSlug, isOwner, tools }: { storeSlug: string; i
       <div className="space-y-2 rounded-xl border p-4">
         <Input placeholder="https://api.yourservice.com/openapi.json" value={url} onChange={(e) => setUrl(e.target.value)} disabled={!isOwner || busy} />
         <Input placeholder="What should Rani do with it? e.g. look up order status, check stock" value={goal} onChange={(e) => setGoal(e.target.value)} disabled={!isOwner || busy} />
-        <Input placeholder="API key (only if the API needs one) — stored encrypted" type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} disabled={!isOwner || busy} />
+        {!asCustomer && (
+          <Input placeholder="API key (only if the API needs one) — stored encrypted" type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} disabled={!isOwner || busy} />
+        )}
+        <label className="flex items-start gap-2 rounded-lg bg-muted/50 p-2.5 text-sm">
+          <input type="checkbox" className="mt-0.5 size-4" checked={asCustomer} onChange={(e) => setAsCustomer(e.target.checked)} disabled={!isOwner || busy} />
+          <span>
+            <span className="font-medium">This is my own app — answer as the signed-in customer</span>
+            <span className="text-muted-foreground block text-xs">
+              Rani calls your API as whoever is logged in on your site (their orders, their account), using the sign-in they already have — no API key, and it never sees their password. Needs embedded sign-in turned on.
+            </span>
+          </span>
+        </label>
         <Button onClick={build} disabled={!isOwner || busy} className="w-full">
           {busy ? <Loader2 className="size-4 animate-spin" /> : <Wand2 className="size-4" />}
           Build tools from my API
@@ -111,6 +135,7 @@ export function ApiBuilder({ storeSlug, isOwner, tools }: { storeSlug: string; i
                 <div className="flex items-center gap-2">
                   <span className="truncate font-medium text-sm">{t.name}</span>
                   {t.side_effect && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">writes</span>}
+                  {t.auth?.type === "identity" && <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-medium text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">as customer</span>}
                 </div>
                 <p className="text-muted-foreground truncate text-xs">{t.description}</p>
               </div>

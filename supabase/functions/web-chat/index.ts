@@ -11,6 +11,7 @@
 import { serviceClient } from "../_shared/supabase.ts";
 import { getStoreBySlug } from "../_shared/config.ts";
 import { generateTurnReply } from "../_shared/conversation.ts";
+import type { Visitor } from "../_shared/httptool.ts";
 import { classifyTurn } from "../_shared/analytics.ts";
 import { splitBubbles } from "../_shared/prompt.ts";
 import { storeChatFile, storeChatImage } from "../_shared/chat-media.ts";
@@ -161,6 +162,7 @@ Deno.serve(async (req) => {
   }
 
   const identityToken = typeof body.identity_token === "string" ? body.identity_token : "";
+  let visitor: Visitor | undefined;
   if (identityToken && store.access_control && (store as { identity_secret?: string | null }).identity_secret) {
     const claim = await verifyIdentityToken((store as { identity_secret?: string | null }).identity_secret, identityToken);
     if (claim && (claim.email || claim.phone)) {
@@ -169,6 +171,13 @@ Deno.serve(async (req) => {
       let m = await findMemberByIdentity(db, store.id, claim.email, claim.phone);
       if (!m) m = await provisionMember(db, store.id, claim);
       if (m) await bindMemberSession(db, sessionId, store.id, m.id);
+      // Carry the VERIFIED identity into the turn so delegated-identity API tools
+      // can call the host's own API as this signed-in customer. We forward the raw
+      // token (the host signed it and can verify it) plus the verified claims.
+      const sub = claim.metadata && typeof claim.metadata === "object"
+        ? (claim.metadata as Record<string, unknown>).sub ?? (claim.metadata as Record<string, unknown>).id
+        : undefined;
+      visitor = { token: identityToken, email: claim.email ?? null, phone: claim.phone ?? null, sub: sub != null ? String(sub) : null };
     }
   }
 
@@ -227,6 +236,7 @@ Deno.serve(async (req) => {
     document: file && fileUrl ? { url: fileUrl, name: file.name, mime: file.mime } : undefined,
     activeListing,
     listingRetired,
+    visitor,
   });
   const responseTimeMs = Date.now() - startedAt;
   const finalReply = reply || "Sorry, I had a brief hiccup — could you send that again? 🙏";

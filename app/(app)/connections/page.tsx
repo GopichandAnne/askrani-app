@@ -33,7 +33,7 @@ export default async function ConnectionsPage() {
 
   const { data: toolRows } = await db
     .from("http_tool")
-    .select("id, name, description, method, side_effect")
+    .select("id, name, description, method, side_effect, auth")
     .eq("store_id", ctx.active.id)
     .order("created_at", { ascending: false });
   const customTools = (toolRows ?? []) as ApiTool[];

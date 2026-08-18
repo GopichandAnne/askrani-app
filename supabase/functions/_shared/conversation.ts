@@ -31,7 +31,7 @@ import { getStoreAccessToken } from "./config.ts";
 import { sendText } from "./wa.ts";
 import { loadStoreIntegrations } from "./integrations.ts";
 import { listConnectedProviders } from "./connections.ts";
-import { loadHttpTools } from "./httptool.ts";
+import { loadHttpTools, type Visitor } from "./httptool.ts";
 import { loadRequestTypes } from "./requests.ts";
 import { accessMode, identityContext, resolveMember } from "./members.ts";
 import {
@@ -58,6 +58,7 @@ export async function generateTurnReply(
     document?: { url: string; name: string; mime: string }; // a file they uploaded (résumé, etc.)
     activeListing?: string; // listing-scoped ("yard sign") token: lead with this listing, stay open
     listingRetired?: boolean; // the scanned listing is sold/off-market → pivot to similar
+    visitor?: Visitor; // verified signed-in visitor (embed SSO) — for delegated-identity API tools
   },
 ): Promise<TurnReply> {
   const config = await loadAgentConfig(db, store);
@@ -132,7 +133,7 @@ export async function generateTurnReply(
   const ui: UiDirectives = {};
   const toolset = buildToolset(
     db, store, opts.sessionId, config.ordersEnabled, hasProposal, config.catalogEnabled, today, integrations,
-    requestTypes, ui, config.timezone, connectedProviders, httpTools,
+    requestTypes, ui, config.timezone, connectedProviders, httpTools, opts.visitor,
   );
   const reply = await generateReply(systemInstruction, contents, toolset, {
     svc: db, storeId: store.id, kind: "bot_chat", ref: { sessionId: opts.sessionId },

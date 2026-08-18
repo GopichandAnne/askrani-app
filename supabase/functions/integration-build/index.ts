@@ -98,7 +98,7 @@ Deno.serve(async (req) => {
   } catch { /* ignore */ }
   if (!userId) return json({ error: "unauthorized" }, 401);
 
-  let body: { action?: string; storeSlug?: string; openapiUrl?: string; goal?: string; apiKey?: string; toolId?: string; sampleArgs?: Record<string, unknown> };
+  let body: { action?: string; storeSlug?: string; openapiUrl?: string; goal?: string; apiKey?: string; toolId?: string; sampleArgs?: Record<string, unknown>; forwardIdentity?: boolean };
   try { body = await req.json(); } catch { return json({ error: "bad json" }, 400); }
   const slug = String(body.storeSlug ?? "").trim().toLowerCase();
   if (!slug) return json({ error: "storeSlug required" }, 400);
@@ -133,6 +133,9 @@ Deno.serve(async (req) => {
     if (tool.side_effect) {
       return json({ ok: false, skipped: true, note: "This tool changes data, so a dry test won't run it. It'll be tried live (with the customer's OK) when the bot needs it." });
     }
+    if (tool.auth?.type === "identity") {
+      return json({ ok: false, skipped: true, note: "This tool answers as the signed-in customer, so it can only be tested from a live chat where someone is logged in — not from here." });
+    }
     const res = await executeHttpTool(db, store, tool, body.sampleArgs ?? {});
     const preview = res.ok ? JSON.stringify(res.result ?? "").slice(0, 300) : String(res.note ?? "The call failed.");
     return json({ ok: res.ok === true, preview });
@@ -162,7 +165,13 @@ Deno.serve(async (req) => {
   if (!/^https?:\/\//i.test(base)) {
     try { base = new URL(base || "/", url).href.replace(/\/$/, ""); } catch { base = ""; }
   }
-  const auth = pickAuth(schemes);
+  // Delegated identity: the owner says "this is my own app — call it as the
+  // signed-in customer." We forward the visitor's verified token (Bearer) at
+  // runtime instead of any store credential; the model never sees it.
+  const forwardIdentity = body.forwardIdentity === true;
+  const auth: Any = forwardIdentity
+    ? { type: "identity", location: "header", name: "Authorization", prefix: "Bearer ", claim: "token" }
+    : pickAuth(schemes);
 
   const opsText = ops.map((o) =>
     `${o.method} ${o.path} — ${o.summary}` +
@@ -208,17 +217,29 @@ Deno.serve(async (req) => {
   for (const r of rows) {
     const required: string[] = Array.isArray(r.params?.required) ? r.params.required : [];
     let tested: "ok" | "failed" | "skipped" = "skipped";
-    if (!r.side_effect && required.length === 0) {
+    // Identity tools need a live signed-in customer, so they can't be probed here.
+    if (!r.side_effect && required.length === 0 && r.auth?.type !== "identity") {
       const res = await executeHttpTool(db, store, r, {});
       tested = res.ok ? "ok" : "failed";
     }
     created.push({ name: r.name, description: r.description, method: r.method, side_effect: r.side_effect, tested });
   }
 
+  // If forwarding identity, the store needs embedded SSO configured (identity_secret
+  // + access_control) or the tools have no verified visitor to act as. Flag it so
+  // the panel can tell the owner what's still needed.
+  let identity_ready = true;
+  if (forwardIdentity) {
+    const { data: s } = await db.from("stores").select("identity_secret, access_control").eq("id", store.id).maybeSingle();
+    identity_ready = !!(s?.identity_secret && s?.access_control && s.access_control !== "open");
+  }
+
   return json({
     ok: true,
     created,
     auth_needed: auth.type === "apikey" && !apiKeyEnc,
+    identity: forwardIdentity,
+    identity_ready,
     auth,
   });
 });

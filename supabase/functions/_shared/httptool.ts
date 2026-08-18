@@ -20,10 +20,29 @@ export interface HttpTool {
   // deno-lint-ignore no-explicit-any
   params: any;
   request_map: { param: string; in: "path" | "query" | "body" }[];
-  auth: { type: "none" | "apikey" | "oauth"; location?: "header" | "query"; name?: string; prefix?: string; provider?: string };
+  // "identity" = forward the signed-in visitor's OWN identity (delegated identity)
+  // instead of a store credential. `claim` picks what to send: the raw verified
+  // token (default — for the host's own API to verify), or a verified email/phone/id.
+  auth: {
+    type: "none" | "apikey" | "oauth" | "identity";
+    location?: "header" | "query";
+    name?: string;
+    prefix?: string;
+    provider?: string;
+    claim?: "token" | "email" | "phone" | "sub";
+  };
   api_key: string | null;
   side_effect: boolean;
   timeout_ms: number;
+}
+
+/** The verified, signed-in visitor (from the embed's data-user-token). Never set
+ *  by the model — only ever populated from a server-verified identity token. */
+export interface Visitor {
+  token?: string; // the raw verified identity token, to forward to the host's own API
+  email?: string | null;
+  phone?: string | null;
+  sub?: string | null; // external user id, if the token carried one
 }
 
 const MAX_RESULT = 6000;
@@ -46,7 +65,7 @@ export function httpToolDeclaration(t: HttpTool): FunctionDeclaration {
 
 /** Run one generated tool. Never throws — a failure returns a soft note. */
 export async function executeHttpTool(
-  db: SupabaseClient, store: Store, t: HttpTool, args: Record<string, unknown>,
+  db: SupabaseClient, store: Store, t: HttpTool, args: Record<string, unknown>, visitor?: Visitor,
 ): Promise<Record<string, unknown>> {
   try {
     let path = t.path;
@@ -70,6 +89,18 @@ export async function executeHttpTool(
       const token = await getAccessToken(db, store.id, auth.provider as ProviderId);
       if (!token) return { ok: false, note: `${auth.provider} isn't connected — offer to check with the store` };
       headers["Authorization"] = `Bearer ${token}`;
+    } else if (auth.type === "identity") {
+      // Delegated identity: call AS the signed-in visitor. The value comes only
+      // from the server-verified identity token (never the model). Absent it (no
+      // sign-in, or on WhatsApp), degrade to a soft note instead of calling.
+      const claim = auth.claim ?? "token";
+      const value = claim === "email" ? visitor?.email
+        : claim === "phone" ? visitor?.phone
+        : claim === "sub" ? visitor?.sub
+        : visitor?.token;
+      if (!value) return { ok: false, note: "I can't tell who you're signed in as here — this needs you to be logged in on the site." };
+      if (auth.location === "query" && auth.name) query.set(auth.name, String(value));
+      else headers[auth.name || "Authorization"] = `${auth.prefix ?? "Bearer "}${value}`;
     }
 
     let url = t.base_url.replace(/\/$/, "") + (path.startsWith("/") ? path : `/${path}`);
