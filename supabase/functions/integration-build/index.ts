@@ -9,7 +9,7 @@
 
 import { serviceClient } from "../_shared/supabase.ts";
 import { generateStructured } from "../_shared/gemini.ts";
-import { encrypt } from "../_shared/connections.ts";
+import { encrypt, isProvider } from "../_shared/connections.ts";
 import { executeHttpTool } from "../_shared/httptool.ts";
 import { parse as parseYaml } from "jsr:@std/yaml@1";
 
@@ -99,7 +99,7 @@ Deno.serve(async (req) => {
   } catch { /* ignore */ }
   if (!userId) return json({ error: "unauthorized" }, 401);
 
-  let body: { action?: string; storeSlug?: string; openapiUrl?: string; goal?: string; apiKey?: string; toolId?: string; sampleArgs?: Record<string, unknown>; forwardIdentity?: boolean; identityClaim?: string; identityField?: string; identityIn?: string };
+  let body: { action?: string; storeSlug?: string; openapiUrl?: string; goal?: string; apiKey?: string; toolId?: string; sampleArgs?: Record<string, unknown>; forwardIdentity?: boolean; identityClaim?: string; identityField?: string; identityIn?: string; authProvider?: string };
   try { body = await req.json(); } catch { return json({ error: "bad json" }, 400); }
   const slug = String(body.storeSlug ?? "").trim().toLowerCase();
   if (!slug) return json({ error: "storeSlug required" }, 400);
@@ -197,7 +197,14 @@ Deno.serve(async (req) => {
     const name = (String(body.identityField ?? "").trim() || defName).slice(0, 60);
     identityAuth = { type: "identity", location: loc, name, claim };
   }
-  const auth: Any = forwardIdentity ? identityAuth : pickAuth(schemes);
+  // Or authenticate with one of the store's connected apps (OAuth broker): the
+  // tool calls carry that connection's token (auto-refreshed; model never sees it).
+  const oauthProvider = typeof body.authProvider === "string" && isProvider(body.authProvider) ? body.authProvider : null;
+  const auth: Any = forwardIdentity
+    ? identityAuth
+    : oauthProvider
+    ? { type: "oauth", provider: oauthProvider }
+    : pickAuth(schemes);
 
   const opsText = ops.map((o) =>
     `${o.method} ${o.path} — ${o.summary}` +
@@ -243,8 +250,9 @@ Deno.serve(async (req) => {
   for (const r of rows) {
     const required: string[] = Array.isArray(r.params?.required) ? r.params.required : [];
     let tested: "ok" | "failed" | "skipped" = "skipped";
-    // Identity tools need a live signed-in customer, so they can't be probed here.
-    if (!r.side_effect && required.length === 0 && r.auth?.type !== "identity") {
+    // Identity tools need a live signed-in customer; oauth tools need the store to
+    // have connected that app first — neither is a fair auto-probe here.
+    if (!r.side_effect && required.length === 0 && r.auth?.type !== "identity" && r.auth?.type !== "oauth") {
       const res = await executeHttpTool(db, store, r, {});
       tested = res.ok ? "ok" : "failed";
     }

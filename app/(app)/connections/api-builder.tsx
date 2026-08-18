@@ -9,8 +9,11 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { FlaskConical, Loader2, Trash2, Wand2 } from "lucide-react";
 
-export type ApiTool = { id: string; name: string; description: string; method: string; side_effect: boolean; auth?: { type?: string; claim?: string } | null };
+export type ApiTool = { id: string; name: string; description: string; method: string; side_effect: boolean; auth?: { type?: string; claim?: string; provider?: string } | null };
 type BuiltTool = ApiTool & { tested?: "ok" | "failed" | "skipped" };
+
+const PROVIDER_NAMES: Record<string, string> = { google: "Google", microsoft: "Microsoft", square: "Square", hubspot: "HubSpot", calendly: "Calendly" };
+const provName = (id?: string) => (id ? PROVIDER_NAMES[id] ?? id : "");
 
 /**
  * The builder brain, in the panel. The owner pastes an OpenAPI URL + what they
@@ -18,11 +21,12 @@ type BuiltTool = ApiTool & { tested?: "ok" | "failed" | "skipped" };
  * picks them up. Any API key is entered here and stored encrypted (never seen by
  * the model). This is the long-tail path — beyond the one-click OAuth providers.
  */
-export function ApiBuilder({ storeSlug, isOwner, tools }: { storeSlug: string; isOwner: boolean; tools: ApiTool[] }) {
+export function ApiBuilder({ storeSlug, isOwner, tools, connectedProviders = [] }: { storeSlug: string; isOwner: boolean; tools: ApiTool[]; connectedProviders?: string[] }) {
   const router = useRouter();
   const [url, setUrl] = useState("");
   const [goal, setGoal] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [authProvider, setAuthProvider] = useState("none");
   const [asCustomer, setAsCustomer] = useState(false);
   const [identityClaim, setIdentityClaim] = useState("token");
   const [identityField, setIdentityField] = useState("");
@@ -39,9 +43,10 @@ export function ApiBuilder({ storeSlug, isOwner, tools }: { storeSlug: string; i
     const { data, error } = await supabase.functions.invoke("integration-build", {
       body: {
         action: "build", storeSlug, openapiUrl: url.trim(), goal: goal.trim(),
-        apiKey: asCustomer ? undefined : apiKey.trim() || undefined,
+        apiKey: asCustomer || authProvider !== "none" ? undefined : apiKey.trim() || undefined,
         forwardIdentity: asCustomer,
         ...(asCustomer ? { identityClaim, identityField: identityField.trim() || undefined, identityIn } : {}),
+        ...(!asCustomer && authProvider !== "none" ? { authProvider } : {}),
       },
     });
     setBusy(false);
@@ -81,7 +86,7 @@ export function ApiBuilder({ storeSlug, isOwner, tools }: { storeSlug: string; i
         description: passed > 0 ? `Tested live: ${created.map(label).join(", ")}` : created.map((t) => t.name).join(", "),
       });
     }
-    setUrl(""); setGoal(""); setApiKey(""); setAsCustomer(false);
+    setUrl(""); setGoal(""); setApiKey(""); setAsCustomer(false); setAuthProvider("none");
     setIdentityClaim("token"); setIdentityField(""); setIdentityIn("query");
     router.refresh();
   }
@@ -117,11 +122,22 @@ export function ApiBuilder({ storeSlug, isOwner, tools }: { storeSlug: string; i
       <div className="space-y-2 rounded-xl border p-4">
         <Input placeholder="https://api.yourservice.com/openapi.json (or .yaml)" value={url} onChange={(e) => setUrl(e.target.value)} disabled={!isOwner || busy} />
         <Input placeholder="What should Rani do with it? e.g. look up order status, check stock" value={goal} onChange={(e) => setGoal(e.target.value)} disabled={!isOwner || busy} />
-        {!asCustomer && (
+        {connectedProviders.length > 0 && !asCustomer && (
+          <Select value={authProvider} onValueChange={setAuthProvider} disabled={!isOwner || busy}>
+            <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">No sign-in, or use an API key</SelectItem>
+              {connectedProviders.map((p) => (
+                <SelectItem key={p} value={p}>Authenticate with my connected {provName(p)}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        {!asCustomer && authProvider === "none" && (
           <Input placeholder="API key (only if the API needs one) — stored encrypted" type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} disabled={!isOwner || busy} />
         )}
         <label className="flex items-start gap-2 rounded-lg bg-muted/50 p-2.5 text-sm">
-          <input type="checkbox" className="mt-0.5 size-4" checked={asCustomer} onChange={(e) => setAsCustomer(e.target.checked)} disabled={!isOwner || busy} />
+          <input type="checkbox" className="mt-0.5 size-4" checked={asCustomer} onChange={(e) => setAsCustomer(e.target.checked)} disabled={!isOwner || busy || authProvider !== "none"} />
           <span>
             <span className="font-medium">This is my own app — answer as the signed-in customer</span>
             <span className="text-muted-foreground block text-xs">
@@ -184,6 +200,7 @@ export function ApiBuilder({ storeSlug, isOwner, tools }: { storeSlug: string; i
                   <span className="truncate font-medium text-sm">{t.name}</span>
                   {t.side_effect && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">writes</span>}
                   {t.auth?.type === "identity" && <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-medium text-sky-700 dark:bg-sky-900/40 dark:text-sky-300">as customer{t.auth.claim && t.auth.claim !== "token" ? ` · ${t.auth.claim}` : ""}</span>}
+                  {t.auth?.type === "oauth" && <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-medium text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">via {provName(t.auth.provider)}</span>}
                 </div>
                 <p className="text-muted-foreground truncate text-xs">{t.description}</p>
               </div>

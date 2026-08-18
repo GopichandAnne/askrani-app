@@ -12,7 +12,7 @@
 
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 
-export type ProviderId = "google" | "square" | "hubspot";
+export type ProviderId = "google" | "square" | "hubspot" | "microsoft" | "calendly";
 
 interface ProviderSpec {
   id: ProviderId;
@@ -94,10 +94,53 @@ export const PROVIDERS: Record<ProviderId, ProviderSpec> = {
       ? { url: `https://api.hubapi.com/oauth/v1/refresh-tokens/${encodeURIComponent(t.refreshToken)}`, init: { method: "DELETE" } }
       : null),
   },
+  microsoft: {
+    id: "microsoft", label: "Microsoft",
+    authorizeUrl: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+    tokenUrl: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+    // offline_access -> refresh token; Calendars.ReadWrite -> book/check Outlook calendar.
+    scope: "offline_access openid email Calendars.ReadWrite",
+    scopeSep: " ",
+    authParams: { prompt: "select_account" },
+    tokenStyle: "form",
+    test: {
+      url: "https://graph.microsoft.com/v1.0/me",
+      label: (j) => (typeof j.mail === "string" ? j.mail : typeof j.userPrincipalName === "string" ? j.userPrincipalName : null),
+    },
+    // The Microsoft identity platform has no simple token-revoke endpoint — omit.
+  },
+  calendly: {
+    id: "calendly", label: "Calendly",
+    authorizeUrl: "https://auth.calendly.com/oauth/authorize",
+    tokenUrl: "https://auth.calendly.com/oauth/token",
+    scope: "", // Calendly grants access per user; no scope param
+    scopeSep: " ",
+    authParams: {},
+    tokenStyle: "form",
+    test: {
+      url: "https://api.calendly.com/users/me",
+      label: (j) => {
+        const r = j.resource as { email?: string; name?: string } | undefined;
+        return r?.email ?? r?.name ?? null;
+      },
+    },
+    revoke: (t, c) => {
+      const token = t.refreshToken || t.accessToken;
+      if (!token) return null;
+      return {
+        url: "https://auth.calendly.com/oauth/revoke",
+        init: {
+          method: "POST",
+          headers: { "content-type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ token, client_id: c.clientId, client_secret: c.clientSecret }).toString(),
+        },
+      };
+    },
+  },
 };
 
 export function isProvider(x: string): x is ProviderId {
-  return x === "google" || x === "square" || x === "hubspot";
+  return x in PROVIDERS;
 }
 
 /** The owner-registered app credentials for a provider (env). Null if unset. */
@@ -196,6 +239,8 @@ export function buildAuthorizeUrl(id: ProviderId, clientId: string, state: strin
   u.searchParams.set("response_type", "code");
   u.searchParams.set("state", state);
   for (const [k, v] of Object.entries(p.authParams)) u.searchParams.set(k, v);
+  // Some providers (Calendly) grant access per user and take no scope param.
+  if (!p.scope) return u.toString();
   // scope is joined the provider's way (Square wants '+', which URLSearchParams
   // would double-encode) — append it manually.
   const scope = p.scope.split(" ").join(p.scopeSep);

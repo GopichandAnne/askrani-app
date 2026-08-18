@@ -51,7 +51,7 @@ export default async function ConnectionsPage() {
         isOwner={ctx.active.role === "owner"}
         connected={connected}
       />
-      <ApiBuilder storeSlug={ctx.active.slug} isOwner={ctx.active.role === "owner"} tools={customTools} />
+      <ApiBuilder storeSlug={ctx.active.slug} isOwner={ctx.active.role === "owner"} tools={customTools} connectedProviders={Object.keys(connected)} />
     </div>
   );
 }
