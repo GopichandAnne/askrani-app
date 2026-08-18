@@ -52,6 +52,8 @@ import {
 } from "./requests.ts";
 import { getAccessToken } from "./connections.ts";
 import { listBusy, freeSlots, isBusy, createEvent, zonedToUtc } from "./gcal.ts";
+import { findItems as sqFindItems, orderStatus as sqOrderStatus } from "./square.ts";
+import { findContact as hsFindContact, createLead as hsCreateLead } from "./hubspot.ts";
 
 // ── Gemini functionDeclaration shapes ───────────────────────────────────────
 // A JSON-Schema-ish node; `items`/`properties` may nest (e.g. an array of objects).
@@ -1293,6 +1295,113 @@ async function executeBookAppointment(
   }
 }
 
+// ── Square (attached only when the store has connected Square) ────────────────
+const SQUARE_FIND_ITEM_DECL: FunctionDeclaration = {
+  name: "square_find_item",
+  description:
+    "Look up a product's price and stock in the store's Square catalog. Use it when " +
+    "a customer asks about price or availability of a specific item. Pass a `query` " +
+    "(the item name). Returns matching items with price and, when tracked, stock on hand.",
+  parameters: { type: "object", properties: { query: { type: "string", description: "The product name to look up." } }, required: ["query"] },
+};
+const SQUARE_ORDER_STATUS_DECL: FunctionDeclaration = {
+  name: "square_order_status",
+  description:
+    "Check the status of a Square order by its order ID. Use it when a customer asks " +
+    "'where's my order' and gives an order id. Returns the order's state, total and " +
+    "fulfillment status. If nothing comes back, say you couldn't find that order.",
+  parameters: { type: "object", properties: { order_id: { type: "string", description: "The Square order id." } }, required: ["order_id"] },
+};
+
+async function executeSquareFindItem(db: SupabaseClient, store: Store, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const query = String(args.query ?? "").trim();
+  if (!query) return { ok: false, note: "empty query" };
+  const token = await getAccessToken(db, store.id, "square");
+  if (!token) return { ok: false, note: "Square isn't connected — offer to check with the store" };
+  try {
+    const items = await sqFindItems(token, query);
+    return items.length ? { ok: true, items } : { ok: true, items: [], note: "no matching item — offer to check with the store" };
+  } catch (e) {
+    console.error(`[tools] square_find_item: ${e instanceof Error ? e.message : e}`);
+    return { ok: false, note: "couldn't reach the catalog right now — offer to check with the store" };
+  }
+}
+async function executeSquareOrderStatus(db: SupabaseClient, store: Store, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const orderId = String(args.order_id ?? "").trim();
+  if (!orderId) return { ok: false, note: "need an order id" };
+  const token = await getAccessToken(db, store.id, "square");
+  if (!token) return { ok: false, note: "Square isn't connected — offer to check with the store" };
+  try {
+    const o = await sqOrderStatus(token, orderId);
+    return o ? { ok: true, order: o } : { ok: true, order: null, note: "no order with that id — don't invent a status" };
+  } catch (e) {
+    console.error(`[tools] square_order_status: ${e instanceof Error ? e.message : e}`);
+    return { ok: false, note: "couldn't look that up right now — offer to check with the store" };
+  }
+}
+
+// ── HubSpot (attached only when the store has connected HubSpot) ──────────────
+const HUBSPOT_SAVE_LEAD_DECL: FunctionDeclaration = {
+  name: "hubspot_save_lead",
+  description:
+    "Save the customer's details to the store's HubSpot CRM — call it AFTER they've " +
+    "shared their email (and ideally name/phone), e.g. for a quote, callback or enquiry. " +
+    "Pass their email, and name/phone/notes if known. Creates the contact, or updates " +
+    "the existing one with that email.",
+  parameters: {
+    type: "object",
+    properties: {
+      email: { type: "string", description: "The customer's email (required)." },
+      name: { type: "string", description: "Full name, if given." },
+      phone: { type: "string", description: "Phone, if given." },
+      notes: { type: "string", description: "What they want / context." },
+    },
+    required: ["email"],
+  },
+};
+const HUBSPOT_FIND_CONTACT_DECL: FunctionDeclaration = {
+  name: "hubspot_find_contact",
+  description:
+    "Look up whether an email is already a contact in the store's HubSpot. Use it to " +
+    "recognize a returning customer. Pass their `email`. Returns their name/company if found.",
+  parameters: { type: "object", properties: { email: { type: "string", description: "The email to look up." } }, required: ["email"] },
+};
+
+function splitName(full: string): { firstname?: string; lastname?: string } {
+  const parts = full.trim().split(/\s+/);
+  if (!parts[0]) return {};
+  return parts.length === 1 ? { firstname: parts[0] } : { firstname: parts[0], lastname: parts.slice(1).join(" ") };
+}
+async function executeHubspotSaveLead(db: SupabaseClient, store: Store, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const email = String(args.email ?? "").trim();
+  if (!/^\S+@\S+\.\S+$/.test(email)) return { ok: false, note: "need a valid email before saving the lead" };
+  const token = await getAccessToken(db, store.id, "hubspot");
+  if (!token) return { ok: false, note: "HubSpot isn't connected — capture the details another way" };
+  try {
+    const { firstname, lastname } = splitName(String(args.name ?? ""));
+    const r = await hsCreateLead(token, { email, firstname, lastname, phone: String(args.phone ?? "").trim() || undefined });
+    return r.ok
+      ? { ok: true, saved: true, existing: r.existing, note: r.existing ? "They were already in the CRM — updated." : "Saved them to the CRM." }
+      : { ok: false, note: "couldn't save to the CRM right now" };
+  } catch (e) {
+    console.error(`[tools] hubspot_save_lead: ${e instanceof Error ? e.message : e}`);
+    return { ok: false, note: "couldn't save to the CRM right now" };
+  }
+}
+async function executeHubspotFindContact(db: SupabaseClient, store: Store, args: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const email = String(args.email ?? "").trim();
+  if (!email) return { ok: false, note: "need an email" };
+  const token = await getAccessToken(db, store.id, "hubspot");
+  if (!token) return { ok: false, note: "HubSpot isn't connected" };
+  try {
+    const c = await hsFindContact(token, email);
+    return c ? { ok: true, contact: c } : { ok: true, contact: null, note: "not a contact yet" };
+  } catch (e) {
+    console.error(`[tools] hubspot_find_contact: ${e instanceof Error ? e.message : e}`);
+    return { ok: false, note: "couldn't look that up right now" };
+  }
+}
+
 /** Build the toolset bound to a store + session context. Cart/order tools are
  *  attached only when ordering is enabled for the store (Agent Setup). */
 export function buildToolset(
@@ -1320,6 +1429,10 @@ export function buildToolset(
     search_knowledge: (args) => executeSearchKnowledge(db, store, sessionId, args, today),
     check_calendar_availability: (args) => executeCheckAvailability(db, store, timezone, args),
     book_appointment: (args) => executeBookAppointment(db, store, timezone, args),
+    square_find_item: (args) => executeSquareFindItem(db, store, args),
+    square_order_status: (args) => executeSquareOrderStatus(db, store, args),
+    hubspot_save_lead: (args) => executeHubspotSaveLead(db, store, args),
+    hubspot_find_contact: (args) => executeHubspotFindContact(db, store, args),
     send_image: (args) => executeSendImage(db, store, sessionId, args),
     send_photos: (args) => executeSendPhotos(db, store, sessionId, args),
     send_photo_urls: (args) => executeSendPhotoUrls(db, store, sessionId, args),
@@ -1386,8 +1499,10 @@ export function buildToolset(
     SEND_PHOTO_URLS_DECL,
     ESCALATE_DECL,
   ];
-  // Google Calendar — only when the store has connected Google (via Connections).
+  // Connected-provider tools — attached only when that provider is connected.
   if (connected.includes("google")) declarations.push(CHECK_AVAILABILITY_DECL, BOOK_APPOINTMENT_DECL);
+  if (connected.includes("square")) declarations.push(SQUARE_FIND_ITEM_DECL, SQUARE_ORDER_STATUS_DECL);
+  if (connected.includes("hubspot")) declarations.push(HUBSPOT_SAVE_LEAD_DECL, HUBSPOT_FIND_CONTACT_DECL);
   // Generic request capture — offered only when the store has defined request
   // types (e.g. "Career interest", "Callback"). Nothing here is use-case-specific.
   if (requestTypes.length) declarations.push(fileRequestDeclaration(requestTypes));
