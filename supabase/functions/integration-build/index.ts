@@ -156,7 +156,12 @@ Deno.serve(async (req) => {
 
   const { base: specBase, auth: schemes, ops } = compact(spec);
   if (!ops.length) return json({ error: "No operations found in that spec." }, 400);
-  const base = specBase || (() => { try { const u = new URL(url); return `${u.origin}`; } catch { return ""; } })();
+  // servers[0].url is often RELATIVE (e.g. Petstore's "/api/v3") — resolve it
+  // against the spec's own URL so the base is absolute, else every call fails.
+  let base = specBase;
+  if (!/^https?:\/\//i.test(base)) {
+    try { base = new URL(base || "/", url).href.replace(/\/$/, ""); } catch { base = ""; }
+  }
   const auth = pickAuth(schemes);
 
   const opsText = ops.map((o) =>
