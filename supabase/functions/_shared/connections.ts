@@ -24,6 +24,12 @@ interface ProviderSpec {
   authParams: Record<string, string>;  // extra authorize params (e.g. Google offline access)
   tokenStyle: "form" | "json";         // token endpoint body encoding
   test: { url: string; label: (j: Record<string, unknown>) => string | null };
+  // How to tell the provider to forget the grant on Disconnect (best-effort).
+  // Returns the request to make, or null when there's nothing revocable.
+  revoke?: (
+    t: { accessToken: string; refreshToken: string | null },
+    c: { clientId: string; clientSecret: string },
+  ) => { url: string; init: RequestInit } | null;
 }
 
 export const PROVIDERS: Record<ProviderId, ProviderSpec> = {
@@ -36,6 +42,15 @@ export const PROVIDERS: Record<ProviderId, ProviderSpec> = {
     authParams: { access_type: "offline", prompt: "consent", include_granted_scopes: "true" },
     tokenStyle: "form",
     test: { url: "https://www.googleapis.com/oauth2/v3/userinfo", label: (j) => (typeof j.email === "string" ? j.email : null) },
+    // Revoking the refresh token (or access token) drops the whole grant.
+    revoke: (t) => {
+      const token = t.refreshToken || t.accessToken;
+      if (!token) return null;
+      return {
+        url: "https://oauth2.googleapis.com/revoke",
+        init: { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ token }).toString() },
+      };
+    },
   },
   square: {
     id: "square", label: "Square",
@@ -52,6 +67,18 @@ export const PROVIDERS: Record<ProviderId, ProviderSpec> = {
         return m?.business_name ?? null;
       },
     },
+    // Square revokes via its own endpoint, authed with the app secret as "Client <secret>".
+    revoke: (t, c) => {
+      if (!t.accessToken) return null;
+      return {
+        url: "https://connect.squareup.com/oauth2/revoke",
+        init: {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: `Client ${c.clientSecret}`, "Square-Version": "2023-10-18" },
+          body: JSON.stringify({ client_id: c.clientId, access_token: t.accessToken }),
+        },
+      };
+    },
   },
   hubspot: {
     id: "hubspot", label: "HubSpot",
@@ -62,6 +89,10 @@ export const PROVIDERS: Record<ProviderId, ProviderSpec> = {
     authParams: {},
     tokenStyle: "form",
     test: { url: "https://api.hubapi.com/account-info/v3/details", label: (j) => (j.portalId != null ? `Portal ${j.portalId}` : null) },
+    // HubSpot has no access-token revoke; deleting the refresh token drops the grant.
+    revoke: (t) => (t.refreshToken
+      ? { url: `https://api.hubapi.com/oauth/v1/refresh-tokens/${encodeURIComponent(t.refreshToken)}`, init: { method: "DELETE" } }
+      : null),
   },
 };
 
@@ -261,6 +292,32 @@ export async function getAccessToken(db: SupabaseClient, storeId: string, id: Pr
 }
 
 export async function disconnect(db: SupabaseClient, storeId: string, id: ProviderId): Promise<void> {
+  // Best-effort: tell the provider to forget the grant, so "Disconnect" in Rani
+  // actually revokes access upstream — not just deletes our stored token. Never
+  // let a revoke failure (already-expired token, network) block the local delete.
+  try {
+    const { data } = await db.from("oauth_connection")
+      .select("access_token, refresh_token").eq("store_id", storeId).eq("provider", id).maybeSingle();
+    const spec = PROVIDERS[id];
+    const client = providerClient(id);
+    if (data && spec.revoke && client) {
+      const accessToken = data.access_token ? await decrypt(data.access_token) : "";
+      const refreshToken = data.refresh_token ? await decrypt(data.refresh_token) : null;
+      const plan = spec.revoke({ accessToken, refreshToken }, client);
+      if (plan) {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 6000);
+        try {
+          const res = await fetch(plan.url, { ...plan.init, signal: ctrl.signal });
+          if (!res.ok) console.warn(`[connections] revoke ${id}: HTTP ${res.status}`);
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+    }
+  } catch (e) {
+    console.error(`[connections] revoke ${id}: ${e instanceof Error ? e.message : e}`);
+  }
   await db.from("oauth_connection").delete().eq("store_id", storeId).eq("provider", id);
 }
 
