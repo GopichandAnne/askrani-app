@@ -6,9 +6,10 @@ import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Loader2, Trash2, Wand2 } from "lucide-react";
+import { FlaskConical, Loader2, Trash2, Wand2 } from "lucide-react";
 
 export type ApiTool = { id: string; name: string; description: string; method: string; side_effect: boolean };
+type BuiltTool = ApiTool & { tested?: "ok" | "failed" | "skipped" };
 
 /**
  * The builder brain, in the panel. The owner pastes an OpenAPI URL + what they
@@ -23,6 +24,7 @@ export function ApiBuilder({ storeSlug, isOwner, tools }: { storeSlug: string; i
   const [apiKey, setApiKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [delId, setDelId] = useState<string | null>(null);
+  const [testId, setTestId] = useState<string | null>(null);
 
   async function build() {
     if (!isOwner) { toast.error("Only the store owner can add tools."); return; }
@@ -38,13 +40,39 @@ export function ApiBuilder({ storeSlug, isOwner, tools }: { storeSlug: string; i
       toast.error("Couldn't build tools", { description: err ?? "Check the URL is a JSON OpenAPI spec." });
       return;
     }
-    const created = (data as { created?: ApiTool[] }).created ?? [];
+    const created = (data as { created?: BuiltTool[] }).created ?? [];
     const needKey = (data as { auth_needed?: boolean }).auth_needed;
-    toast.success(`Added ${created.length} tool${created.length === 1 ? "" : "s"}`, {
-      description: needKey ? "This API needs a key — paste it above and rebuild so calls can authenticate." : created.map((t) => t.name).join(", "),
-    });
+    const passed = created.filter((t) => t.tested === "ok").length;
+    const failed = created.filter((t) => t.tested === "failed").length;
+    const label = (t: BuiltTool) => `${t.name}${t.tested === "ok" ? " ✓" : t.tested === "failed" ? " ⚠" : ""}`;
+
+    if (needKey) {
+      toast.warning(`Added ${created.length} tool${created.length === 1 ? "" : "s"} — needs a key`, {
+        description: "This API needs a key to answer. Paste it above and rebuild so I can test the connection.",
+      });
+    } else if (failed > 0) {
+      toast.warning(`Added ${created.length}, but ${failed} didn't answer`, {
+        description: `${created.map(label).join(", ")}. ⚠ = the test call failed — check the URL or key. ✓ = live and working.`,
+      });
+    } else {
+      toast.success(`Added ${created.length} tool${created.length === 1 ? "" : "s"}`, {
+        description: passed > 0 ? `Tested live: ${created.map(label).join(", ")}` : created.map((t) => t.name).join(", "),
+      });
+    }
     setUrl(""); setGoal(""); setApiKey("");
     router.refresh();
+  }
+
+  async function test(id: string) {
+    setTestId(id);
+    const supabase = createClient();
+    const { data, error } = await supabase.functions.invoke("integration-build", { body: { action: "test", storeSlug, toolId: id } });
+    setTestId(null);
+    if (error) { toast.error("Couldn't run the test"); return; }
+    const r = data as { ok?: boolean; skipped?: boolean; note?: string; preview?: string };
+    if (r.skipped) { toast.info("Not tested", { description: r.note }); return; }
+    if (r.ok) { toast.success("Works — the API answered", { description: r.preview ? `Got: ${r.preview}` : undefined }); return; }
+    toast.error("The test call failed", { description: r.preview ?? "Check the URL, the API key, or whether this call needs a value." });
   }
 
   async function remove(id: string) {
@@ -86,6 +114,11 @@ export function ApiBuilder({ storeSlug, isOwner, tools }: { storeSlug: string; i
                 </div>
                 <p className="text-muted-foreground truncate text-xs">{t.description}</p>
               </div>
+              {!t.side_effect && (
+                <Button variant="ghost" size="icon" disabled={!isOwner || testId === t.id} onClick={() => test(t.id)} aria-label="Test tool" title="Make a real test call">
+                  {testId === t.id ? <Loader2 className="size-4 animate-spin" /> : <FlaskConical className="size-4" />}
+                </Button>
+              )}
               <Button variant="ghost" size="icon" disabled={!isOwner || delId === t.id} onClick={() => remove(t.id)} aria-label="Remove tool">
                 {delId === t.id ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
               </Button>

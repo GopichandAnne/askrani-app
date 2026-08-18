@@ -10,6 +10,7 @@
 import { serviceClient } from "../_shared/supabase.ts";
 import { generateStructured } from "../_shared/gemini.ts";
 import { encrypt } from "../_shared/connections.ts";
+import { executeHttpTool } from "../_shared/httptool.ts";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -97,7 +98,7 @@ Deno.serve(async (req) => {
   } catch { /* ignore */ }
   if (!userId) return json({ error: "unauthorized" }, 401);
 
-  let body: { action?: string; storeSlug?: string; openapiUrl?: string; goal?: string; apiKey?: string; toolId?: string };
+  let body: { action?: string; storeSlug?: string; openapiUrl?: string; goal?: string; apiKey?: string; toolId?: string; sampleArgs?: Record<string, unknown> };
   try { body = await req.json(); } catch { return json({ error: "bad json" }, 400); }
   const slug = String(body.storeSlug ?? "").trim().toLowerCase();
   if (!slug) return json({ error: "storeSlug required" }, 400);
@@ -121,6 +122,20 @@ Deno.serve(async (req) => {
     if (!body.toolId) return json({ error: "toolId required" }, 400);
     await db.from("http_tool").delete().eq("store_id", store.id).eq("id", body.toolId);
     return json({ ok: true });
+  }
+  // ── test (dry-run) ── make ONE real call to prove the mapping + auth work.
+  // Never runs a write tool (side_effect) — those can only be tried by the bot,
+  // with the customer's confirmation. Read tools are safe to probe.
+  if (action === "test") {
+    if (!body.toolId) return json({ error: "toolId required" }, 400);
+    const { data: tool } = await db.from("http_tool").select("*").eq("store_id", store.id).eq("id", body.toolId).maybeSingle();
+    if (!tool) return json({ error: "unknown tool" }, 404);
+    if (tool.side_effect) {
+      return json({ ok: false, skipped: true, note: "This tool changes data, so a dry test won't run it. It'll be tried live (with the customer's OK) when the bot needs it." });
+    }
+    const res = await executeHttpTool(db, store, tool, body.sampleArgs ?? {});
+    const preview = res.ok ? JSON.stringify(res.result ?? "").slice(0, 300) : String(res.note ?? "The call failed.");
+    return json({ ok: res.ok === true, preview });
   }
 
   // ── build ──
@@ -180,9 +195,24 @@ Deno.serve(async (req) => {
   const { error } = await db.from("http_tool").upsert(rows, { onConflict: "store_id,name" });
   if (error) return json({ error: error.message }, 500);
 
+  // Dry-run the safe ones before declaring victory: any read-only tool that needs
+  // no required input, we actually call once to prove the base URL + auth + mapping
+  // work end-to-end. Writes and tools that need a value can't be probed blindly, so
+  // they're marked "untested" (the owner can Test them with a sample value).
+  const created: Any[] = [];
+  for (const r of rows) {
+    const required: string[] = Array.isArray(r.params?.required) ? r.params.required : [];
+    let tested: "ok" | "failed" | "skipped" = "skipped";
+    if (!r.side_effect && required.length === 0) {
+      const res = await executeHttpTool(db, store, r, {});
+      tested = res.ok ? "ok" : "failed";
+    }
+    created.push({ name: r.name, description: r.description, method: r.method, side_effect: r.side_effect, tested });
+  }
+
   return json({
     ok: true,
-    created: rows.map((r) => ({ name: r.name, description: r.description, method: r.method, side_effect: r.side_effect })),
+    created,
     auth_needed: auth.type === "apikey" && !apiKeyEnc,
     auth,
   });
