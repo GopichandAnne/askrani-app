@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { authCookieName } from "./cookie-name";
 
 /** Public path prefixes that do not require an authenticated session. */
 const PUBLIC_PREFIXES = ["/login", "/auth"];
@@ -21,12 +22,17 @@ function isPublic(pathname: string) {
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
+  // Pin the cookie name (PUBLIC-url-derived) so this middleware client — which
+  // dials the internal host — reads the same cookie the browser wrote.
+  const name = authCookieName();
+
   const supabase = createServerClient(
     // Direct host for this per-request server-side auth call — the custom domain
     // adds ~1.5s from Vercel. Browser keeps the custom domain. (SUPABASE_INTERNAL_URL)
     (process.env.SUPABASE_INTERNAL_URL || process.env.NEXT_PUBLIC_SUPABASE_URL)!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      ...(name ? { cookieOptions: { name } } : {}),
       cookies: {
         getAll() {
           return request.cookies.getAll();
