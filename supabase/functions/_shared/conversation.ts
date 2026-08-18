@@ -30,6 +30,7 @@ import { classifyTurn } from "./analytics.ts";
 import { getStoreAccessToken } from "./config.ts";
 import { sendText } from "./wa.ts";
 import { loadStoreIntegrations } from "./integrations.ts";
+import { listConnectedProviders } from "./connections.ts";
 import { loadRequestTypes } from "./requests.ts";
 import { accessMode, identityContext, resolveMember } from "./members.ts";
 import {
@@ -82,6 +83,9 @@ export async function generateTurnReply(
   // lift the request-mode no-price rule. Empty for stores with none → no change.
   const integrations = await loadStoreIntegrations(db, store.id);
   const requestTypes = await loadRequestTypes(db, store.id);
+  // Connected providers (OAuth broker) → attach the matching tools (e.g. Google
+  // Calendar's check-availability/book) only when that provider is connected.
+  const connectedProviders = await listConnectedProviders(db, store.id);
   const systemInstruction = buildSystemInstruction(config, { hasConnector: integrations.length > 0 });
   // Prefix the CURRENT message (volatile — not the cached prefix) with store-local
   // date/time + open/closed, and any pending priced proposal awaiting a decision.
@@ -125,7 +129,7 @@ export async function generateTurnReply(
   const ui: UiDirectives = {};
   const toolset = buildToolset(
     db, store, opts.sessionId, config.ordersEnabled, hasProposal, config.catalogEnabled, today, integrations,
-    requestTypes, ui,
+    requestTypes, ui, config.timezone, connectedProviders,
   );
   const reply = await generateReply(systemInstruction, contents, toolset, {
     svc: db, storeId: store.id, kind: "bot_chat", ref: { sessionId: opts.sessionId },

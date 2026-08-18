@@ -263,3 +263,10 @@ export async function getAccessToken(db: SupabaseClient, storeId: string, id: Pr
 export async function disconnect(db: SupabaseClient, storeId: string, id: ProviderId): Promise<void> {
   await db.from("oauth_connection").delete().eq("store_id", storeId).eq("provider", id);
 }
+
+/** Which providers a store has connected — so the bot only offers the matching
+ *  tools (e.g. calendar tools only when Google is connected). */
+export async function listConnectedProviders(db: SupabaseClient, storeId: string): Promise<string[]> {
+  const { data } = await db.from("oauth_connection").select("provider").eq("store_id", storeId).eq("status", "connected");
+  return (data ?? []).map((r: { provider: string }) => r.provider);
+}

@@ -50,6 +50,8 @@ import {
   fileRequestDeclaration,
   type RequestType,
 } from "./requests.ts";
+import { getAccessToken } from "./connections.ts";
+import { listBusy, freeSlots, isBusy, createEvent, zonedToUtc } from "./gcal.ts";
 
 // ── Gemini functionDeclaration shapes ───────────────────────────────────────
 // A JSON-Schema-ish node; `items`/`properties` may nest (e.g. an array of objects).
@@ -1191,6 +1193,106 @@ async function executeSubmitPost(
   return { ok: true, submitted: true, earns, note: res.note };
 }
 
+// ── Google Calendar (attached only when the store has connected Google) ───────
+const CHECK_AVAILABILITY_DECL: FunctionDeclaration = {
+  name: "check_calendar_availability",
+  description:
+    "Check the store's Google Calendar for open appointment times on a given day. " +
+    "Use it when a customer wants to book, asks 'when are you free?', or picks a day. " +
+    "Pass `date` as YYYY-MM-DD (work it out from the store's local date — e.g. " +
+    "'tomorrow', 'next Tuesday') and optionally `duration_minutes` (default 30). " +
+    "Returns open start times in the store's timezone — offer a few to the customer.",
+  parameters: {
+    type: "object",
+    properties: {
+      date: { type: "string", description: "The day to check, as YYYY-MM-DD." },
+      duration_minutes: { type: "number", description: "Appointment length in minutes (default 30)." },
+    },
+    required: ["date"],
+  },
+};
+const BOOK_APPOINTMENT_DECL: FunctionDeclaration = {
+  name: "book_appointment",
+  description:
+    "Book an appointment on the store's Google Calendar. This creates a REAL event — " +
+    "only call it AFTER the customer has confirmed the exact day and time. First use " +
+    "check_calendar_availability so you offer a free slot. Pass date (YYYY-MM-DD), time " +
+    "(HH:MM, 24h, store timezone), a short title, and the customer's name; email is " +
+    "optional (they'll get an invite).",
+  parameters: {
+    type: "object",
+    properties: {
+      date: { type: "string", description: "YYYY-MM-DD." },
+      time: { type: "string", description: "HH:MM in 24-hour, store-local time." },
+      duration_minutes: { type: "number", description: "Length in minutes (default 30)." },
+      title: { type: "string", description: "Short title, e.g. 'Haircut — Priya'." },
+      customer_name: { type: "string", description: "The customer's name." },
+      customer_email: { type: "string", description: "Optional — for a calendar invite." },
+      notes: { type: "string", description: "Optional details for the event." },
+    },
+    required: ["date", "time", "title", "customer_name"],
+  },
+};
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const TIME_RE = /^([01]?\d|2[0-3]):[0-5]\d$/;
+
+async function executeCheckAvailability(
+  db: SupabaseClient, store: Store, tz: string, args: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const date = String(args.date ?? "").trim();
+  if (!DATE_RE.test(date)) return { ok: false, note: "need the day as YYYY-MM-DD" };
+  const duration = Math.min(Math.max(Number(args.duration_minutes ?? 30), 15), 240);
+  const token = await getAccessToken(db, store.id, "google");
+  if (!token) return { ok: false, note: "the calendar isn't connected — offer to check with the store" };
+  try {
+    const [y, mo, d] = date.split("-").map(Number);
+    const dayStart = zonedToUtc(y, mo, d, 0, 0, tz);
+    const dayEnd = zonedToUtc(y, mo, d, 23, 59, tz);
+    const busy = await listBusy(token, dayStart.toISOString(), dayEnd.toISOString());
+    const slots = freeSlots(date, tz, busy, duration).slice(0, 12);
+    return slots.length
+      ? { ok: true, date, timezone: tz, available: slots, note: "Offer a couple of these times; then book_appointment once they pick and confirm." }
+      : { ok: true, date, timezone: tz, available: [], note: "No open times that day — suggest another day." };
+  } catch (e) {
+    console.error(`[tools] check_availability: ${e instanceof Error ? e.message : e}`);
+    return { ok: false, note: "couldn't read the calendar right now — offer to check with the store" };
+  }
+}
+
+async function executeBookAppointment(
+  db: SupabaseClient, store: Store, tz: string, args: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const date = String(args.date ?? "").trim();
+  const time = String(args.time ?? "").trim();
+  const title = String(args.title ?? "").trim();
+  const name = String(args.customer_name ?? "").trim();
+  if (!DATE_RE.test(date) || !TIME_RE.test(time)) return { ok: false, note: "need a valid date (YYYY-MM-DD) and time (HH:MM)" };
+  if (!title || !name) return { ok: false, note: "need a title and the customer's name" };
+  const duration = Math.min(Math.max(Number(args.duration_minutes ?? 30), 15), 240);
+  const email = String(args.customer_email ?? "").trim() || undefined;
+  const token = await getAccessToken(db, store.id, "google");
+  if (!token) return { ok: false, note: "the calendar isn't connected — offer to check with the store" };
+  try {
+    // Re-check the slot is still free at the moment of booking.
+    const [y, mo, d] = date.split("-").map(Number);
+    const dayStart = zonedToUtc(y, mo, d, 0, 0, tz);
+    const dayEnd = zonedToUtc(y, mo, d, 23, 59, tz);
+    const busy = await listBusy(token, dayStart.toISOString(), dayEnd.toISOString());
+    if (isBusy(date, time, duration, tz, busy)) {
+      return { ok: false, note: "that time was just taken — check availability again and offer another slot" };
+    }
+    const desc = [name && `Booked for ${name}`, email && email, args.notes && String(args.notes)].filter(Boolean).join("\n");
+    const res = await createEvent(token, { date, time, durationMin: duration, tz, summary: title, description: desc, email });
+    return res.ok
+      ? { ok: true, booked: true, when: `${date} ${time}`, timezone: tz, note: `Booked ${date} at ${time}. Confirm the time back to the customer.` }
+      : { ok: false, note: "couldn't book that — offer to try another time or check with the store" };
+  } catch (e) {
+    console.error(`[tools] book_appointment: ${e instanceof Error ? e.message : e}`);
+    return { ok: false, note: "couldn't book right now — offer to check with the store" };
+  }
+}
+
 /** Build the toolset bound to a store + session context. Cart/order tools are
  *  attached only when ordering is enabled for the store (Agent Setup). */
 export function buildToolset(
@@ -1204,6 +1306,8 @@ export function buildToolset(
   integrations: StoreIntegration[] = [],
   requestTypes: RequestType[] = [],
   ui: UiDirectives = {},
+  timezone = "UTC",
+  connected: string[] = [],
 ): Toolset {
   const executors: Record<string, ToolExecutor> = {
     search_products: (args) => executeSearchProducts(db, store, args),
@@ -1214,6 +1318,8 @@ export function buildToolset(
     redeem_credit: (args) => executeRedeemCredit(db, store, sessionId, args),
     submit_post_url: (args) => executeSubmitPost(db, store, sessionId, args),
     search_knowledge: (args) => executeSearchKnowledge(db, store, sessionId, args, today),
+    check_calendar_availability: (args) => executeCheckAvailability(db, store, timezone, args),
+    book_appointment: (args) => executeBookAppointment(db, store, timezone, args),
     send_image: (args) => executeSendImage(db, store, sessionId, args),
     send_photos: (args) => executeSendPhotos(db, store, sessionId, args),
     send_photo_urls: (args) => executeSendPhotoUrls(db, store, sessionId, args),
@@ -1280,6 +1386,8 @@ export function buildToolset(
     SEND_PHOTO_URLS_DECL,
     ESCALATE_DECL,
   ];
+  // Google Calendar — only when the store has connected Google (via Connections).
+  if (connected.includes("google")) declarations.push(CHECK_AVAILABILITY_DECL, BOOK_APPOINTMENT_DECL);
   // Generic request capture — offered only when the store has defined request
   // types (e.g. "Career interest", "Callback"). Nothing here is use-case-specific.
   if (requestTypes.length) declarations.push(fileRequestDeclaration(requestTypes));
