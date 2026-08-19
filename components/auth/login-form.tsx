@@ -14,6 +14,24 @@ const normPhone = (s: string) => {
   return d ? `+${d}` : "";
 };
 
+// Country dial codes for the phone field — defaults to US (+1) so most owners
+// never type a country code. Covers the US + main diaspora/expansion markets;
+// a pasted full "+.." number is still honored as-is.
+const DIAL_CODES = [
+  { dial: "+1", flag: "🇺🇸", name: "US / Canada" },
+  { dial: "+44", flag: "🇬🇧", name: "UK" },
+  { dial: "+91", flag: "🇮🇳", name: "India" },
+  { dial: "+61", flag: "🇦🇺", name: "Australia" },
+  { dial: "+971", flag: "🇦🇪", name: "UAE" },
+  { dial: "+52", flag: "🇲🇽", name: "Mexico" },
+  { dial: "+63", flag: "🇵🇭", name: "Philippines" },
+  { dial: "+65", flag: "🇸🇬", name: "Singapore" },
+  { dial: "+49", flag: "🇩🇪", name: "Germany" },
+  { dial: "+33", flag: "🇫🇷", name: "France" },
+  { dial: "+81", flag: "🇯🇵", name: "Japan" },
+  { dial: "+55", flag: "🇧🇷", name: "Brazil" },
+];
+
 function GoogleIcon() {
   return (
     <svg viewBox="0 0 24 24" className="size-4" aria-hidden="true">
@@ -52,12 +70,21 @@ export function LoginForm() {
   const [pwLoading, setPwLoading] = useState(false);
   const [sent, setSent] = useState(false);
   const [phone, setPhone] = useState("");
+  const [dial, setDial] = useState("+1");
   const [phoneCode, setPhoneCode] = useState("");
   const [phoneStep, setPhoneStep] = useState<"phone" | "code">("phone");
   const [phoneLoading, setPhoneLoading] = useState(false);
 
   const callbackUrl = (path: string) =>
     `${window.location.origin}/auth/callback?next=${encodeURIComponent(path)}`;
+
+  // Combine the selected dial code with the local number; a pasted full "+.."
+  // number is used verbatim. Both send + verify must produce the same string.
+  const fullPhone = () => {
+    const raw = phone.trim();
+    const nat = raw.replace(/\D/g, "");
+    return raw.startsWith("+") ? normPhone(raw) : nat ? `${dial}${nat}` : "";
+  };
 
   async function signInWithGoogle() {
     setGoogleLoading(true);
@@ -113,9 +140,9 @@ export function LoginForm() {
   }
 
   async function sendPhoneOtp() {
-    const p = normPhone(phone);
-    if (p.length < 9) {
-      toast.error("Enter your phone with country code, e.g. +1 512 555 0142.");
+    const p = fullPhone();
+    if (p.replace(/\D/g, "").length < 7) {
+      toast.error("Enter your phone number, e.g. 512 555 0142.");
       return;
     }
     setPhoneLoading(true);
@@ -131,7 +158,7 @@ export function LoginForm() {
   }
 
   async function verifyPhoneOtp() {
-    const p = normPhone(phone);
+    const p = fullPhone();
     setPhoneLoading(true);
     const supabase = createClient();
     const { error } = await supabase.auth.verifyOtp({ phone: p, token: phoneCode.trim(), type: "sms" });
@@ -274,15 +301,29 @@ export function LoginForm() {
       {phoneStep === "phone" ? (
         <div className="space-y-2">
           <Label htmlFor="phone">Phone</Label>
-          <Input
-            id="phone"
-            type="tel"
-            inputMode="tel"
-            autoComplete="tel"
-            placeholder="+1 512 555 0142"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-          />
+          <div className="flex gap-2">
+            <select
+              aria-label="Country code"
+              value={dial}
+              onChange={(e) => setDial(e.target.value)}
+              className="border-input bg-transparent focus-visible:ring-ring h-9 shrink-0 rounded-md border px-2 text-sm shadow-sm outline-none focus-visible:ring-1"
+            >
+              {DIAL_CODES.map((c) => (
+                <option key={c.name} value={c.dial}>
+                  {c.flag} {c.dial}
+                </option>
+              ))}
+            </select>
+            <Input
+              id="phone"
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              placeholder="512 555 0142"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+            />
+          </div>
           <Button type="button" variant="outline" className="w-full" onClick={sendPhoneOtp} disabled={phoneLoading}>
             {phoneLoading && <Loader2 className="size-4 animate-spin" />}
             Text me a code
