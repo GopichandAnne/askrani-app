@@ -8,29 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, Mail } from "lucide-react";
-
-const normPhone = (s: string) => {
-  const d = s.replace(/\D/g, "");
-  return d ? `+${d}` : "";
-};
-
-// Country dial codes for the phone field — defaults to US (+1) so most owners
-// never type a country code. Covers the US + main diaspora/expansion markets;
-// a pasted full "+.." number is still honored as-is.
-const DIAL_CODES = [
-  { dial: "+1", flag: "🇺🇸", name: "US / Canada" },
-  { dial: "+44", flag: "🇬🇧", name: "UK" },
-  { dial: "+91", flag: "🇮🇳", name: "India" },
-  { dial: "+61", flag: "🇦🇺", name: "Australia" },
-  { dial: "+971", flag: "🇦🇪", name: "UAE" },
-  { dial: "+52", flag: "🇲🇽", name: "Mexico" },
-  { dial: "+63", flag: "🇵🇭", name: "Philippines" },
-  { dial: "+65", flag: "🇸🇬", name: "Singapore" },
-  { dial: "+49", flag: "🇩🇪", name: "Germany" },
-  { dial: "+33", flag: "🇫🇷", name: "France" },
-  { dial: "+81", flag: "🇯🇵", name: "Japan" },
-  { dial: "+55", flag: "🇧🇷", name: "Brazil" },
-];
+import { DIAL_CODES, combineDial } from "@/lib/phone";
 
 function GoogleIcon() {
   return (
@@ -80,11 +58,7 @@ export function LoginForm() {
 
   // Combine the selected dial code with the local number; a pasted full "+.."
   // number is used verbatim. Both send + verify must produce the same string.
-  const fullPhone = () => {
-    const raw = phone.trim();
-    const nat = raw.replace(/\D/g, "");
-    return raw.startsWith("+") ? normPhone(raw) : nat ? `${dial}${nat}` : "";
-  };
+  const fullPhone = () => combineDial(dial, phone);
 
   async function signInWithGoogle() {
     setGoogleLoading(true);

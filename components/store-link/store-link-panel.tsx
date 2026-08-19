@@ -31,6 +31,7 @@ import {
 import { Check, Clock, Copy, Download, ImagePlus, Loader2, MessageCircle, QrCode, RefreshCw, Save, Sparkles, Trash2 } from "lucide-react";
 import { ListingQrs } from "@/components/store-link/listing-qrs";
 import { TableQrs } from "@/components/store-link/table-qrs";
+import { DIAL_CODES, combineDial, splitDial } from "@/lib/phone";
 
 const TIMEOUTS: [number, string][] = [
   [15, "15 minutes"],
@@ -59,6 +60,7 @@ export function StoreLinkPanel({
   const [waNumber, setWaNumber] = useState<string | null>(null);
   const [waRedirect, setWaRedirect] = useState(false);
   const [waInput, setWaInput] = useState("");
+  const [waDial, setWaDial] = useState("+1");
   const [sessionMinutes, setSessionMins] = useState(30);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -86,7 +88,7 @@ export function StoreLinkPanel({
         setActive(res.active);
         setPaused(res.paused);
         setWaNumber(res.waNumber);
-        setWaInput(res.waNumber ?? "");
+        { const { dial, local } = splitDial(res.waNumber); setWaDial(dial); setWaInput(local); }
         setWaRedirect(res.waRedirect);
         setSessionMins(res.sessionMinutes);
         setLogoUrl(res.logoUrl);
@@ -130,11 +132,11 @@ export function StoreLinkPanel({
 
   async function saveWaNumber() {
     setBusy(true);
-    const res = await setWhatsappNumber(storeId, waInput);
+    const res = await setWhatsappNumber(storeId, combineDial(waDial, waInput));
     setBusy(false);
     if (res.ok) {
       setWaNumber(res.waNumber);
-      setWaInput(res.waNumber ?? "");
+      { const { dial, local } = splitDial(res.waNumber); setWaDial(dial); setWaInput(local); }
       if (!res.waNumber) setWaRedirect(false);
       toast.success(res.waNumber ? "WhatsApp number saved" : "WhatsApp number cleared");
     } else {
@@ -329,14 +331,26 @@ export function StoreLinkPanel({
           <p className="text-sm font-medium">WhatsApp</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <select
+            aria-label="Country code"
+            value={waDial}
+            onChange={(e) => setWaDial(e.target.value)}
+            className="border-input bg-transparent focus-visible:ring-ring h-9 shrink-0 rounded-md border px-2 text-sm shadow-sm outline-none focus-visible:ring-1"
+          >
+            {DIAL_CODES.map((c) => (
+              <option key={c.name} value={c.dial}>
+                {c.flag} {c.dial}
+              </option>
+            ))}
+          </select>
           <Input
             value={waInput}
             onChange={(e) => setWaInput(e.target.value)}
-            placeholder="+1 555 123 4567"
+            placeholder="555 123 4567"
             inputMode="tel"
-            className="h-9 max-w-[200px]"
+            className="h-9 max-w-[160px]"
           />
-          <Button size="sm" variant="outline" onClick={saveWaNumber} disabled={busy || waInput.trim() === (waNumber ?? "")}>
+          <Button size="sm" variant="outline" onClick={saveWaNumber} disabled={busy || combineDial(waDial, waInput) === (waNumber ?? "")}>
             Save number
           </Button>
         </div>

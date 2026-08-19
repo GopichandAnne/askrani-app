@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, Plus, Trash2, Users } from "lucide-react";
+import { DIAL_CODES, combineDial } from "@/lib/phone";
 
 type Topic = { key: string; label: string };
 
@@ -24,6 +25,7 @@ export function RespondersSection({
 }) {
   const [rows, setRows] = useState<Responder[]>(initial);
   const [phone, setPhone] = useState("");
+  const [dial, setDial] = useState("+1");
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [adding, startAdd] = useTransition();
@@ -31,7 +33,7 @@ export function RespondersSection({
   function add() {
     if (!phone.trim() && !email.trim()) return;
     startAdd(async () => {
-      const res = await addResponder({ phone, email, name });
+      const res = await addResponder({ phone: combineDial(dial, phone), email, name });
       if (res.ok) {
         setRows((prev) => {
           const i = prev.findIndex((r) => r.id === res.responder.id);
@@ -113,8 +115,22 @@ export function RespondersSection({
 
       <div className="flex flex-wrap items-end gap-2">
         <div className="space-y-1">
-          <Label htmlFor="resp-phone" className="text-xs">WhatsApp (country code)</Label>
-          <Input id="resp-phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="15125551234" inputMode="tel" className="w-40" />
+          <Label htmlFor="resp-phone" className="text-xs">WhatsApp</Label>
+          <div className="flex gap-1.5">
+            <select
+              aria-label="Country code"
+              value={dial}
+              onChange={(e) => setDial(e.target.value)}
+              className="border-input bg-transparent focus-visible:ring-ring h-9 shrink-0 rounded-md border px-1.5 text-sm shadow-sm outline-none focus-visible:ring-1"
+            >
+              {DIAL_CODES.map((c) => (
+                <option key={c.name} value={c.dial}>
+                  {c.flag} {c.dial}
+                </option>
+              ))}
+            </select>
+            <Input id="resp-phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="512 555 1234" inputMode="tel" className="w-32" />
+          </div>
         </div>
         <div className="space-y-1">
           <Label htmlFor="resp-email" className="text-xs">Email</Label>
