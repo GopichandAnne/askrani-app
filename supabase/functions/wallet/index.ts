@@ -19,6 +19,9 @@
 //        record-only, like the chatbot). Recorded as usage_event kind
 //        'insights:<reason>' via the same atomic meter_record RPC.
 //   • grant  { credits, reason, ref? }          → add top-up credits (refunds/promos)
+//   • resolve_store { email }                    → slug of the store this verified
+//        owner email owns (or null). No ?store=. Powers the Insights auto-link
+//        (email→store) so both apps run on one wallet; see 0084 RPC.
 
 import { serviceClient } from "../_shared/supabase.ts";
 
@@ -68,6 +71,18 @@ Deno.serve(async (req) => {
 
   const slug = String(body.store ?? url.searchParams.get("store") ?? "").trim().toLowerCase();
   const action = String(body.action ?? url.searchParams.get("action") ?? "balance").trim();
+
+  // resolve_store — email→store join for the Insights auto-link ("one account, one
+  // wallet"). Given a verified owner email, returns the slug they own (or null).
+  // Needs no ?store= (it's discovering the store), so handle before the slug gate.
+  if (action === "resolve_store") {
+    const email = String(body.email ?? url.searchParams.get("email") ?? "").trim().toLowerCase();
+    if (!email) return json({ error: "email required" }, 400);
+    const { data, error } = await serviceClient().rpc("store_slug_for_owner_email", { p_email: email });
+    if (error) return json({ ok: false, error: error.message }, 500);
+    return json({ ok: true, store: (data as string | null) ?? null });
+  }
+
   if (!slug) return json({ error: "store required" }, 400);
 
   const db = serviceClient();
