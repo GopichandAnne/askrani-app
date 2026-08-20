@@ -280,7 +280,7 @@ export function LoginForm() {
               aria-label="Country code"
               value={dial}
               onChange={(e) => setDial(e.target.value)}
-              className="border-input bg-transparent focus-visible:ring-ring h-9 shrink-0 rounded-md border px-2 text-sm shadow-sm outline-none focus-visible:ring-1"
+              className="border-input bg-transparent focus-visible:ring-ring h-9 w-24 shrink-0 rounded-md border px-2 text-sm shadow-sm outline-none focus-visible:ring-1"
             >
               {DIAL_CODES.map((c) => (
                 <option key={c.name} value={c.dial}>
@@ -296,6 +296,7 @@ export function LoginForm() {
               placeholder="512 555 0142"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
+              className="min-w-0 flex-1"
             />
           </div>
           <Button type="button" variant="outline" className="w-full" onClick={sendPhoneOtp} disabled={phoneLoading}>
