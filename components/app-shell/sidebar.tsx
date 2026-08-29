@@ -10,12 +10,14 @@ import { getNavCounts } from "@/app/(app)/actions";
 import { useStore } from "@/components/store/store-provider";
 import { Badge } from "@/components/ui/badge";
 import { vocabFor } from "@/lib/vertical-vocab";
+import { profileFor, homeHrefFor } from "@/lib/console-profile";
 
 export function Sidebar() {
   const pathname = usePathname();
   const { active, isPlatformAdmin } = useStore();
   const isOwner = active.role === "owner" || isPlatformAdmin;
   const vocab = vocabFor(active.businessType);
+  const profile = profileFor(active.businessType);
 
   // "Needs attention" counts (open questions, new requests). Refresh on
   // navigation + store switch (so answering something updates it) + every 60s.
@@ -34,7 +36,7 @@ export function Sidebar() {
   return (
     <aside className="bg-card hidden w-60 shrink-0 flex-col border-r md:flex">
       <div className="flex h-14 items-center px-5">
-        <Link href="/orders" aria-label="Ask Rani home">
+        <Link href={homeHrefFor(profile)} aria-label="Ask Rani home">
           <Wordmark />
         </Link>
       </div>
@@ -45,8 +47,9 @@ export function Sidebar() {
           if (item.platformAdminOnly && !isPlatformAdmin) return null;
           if (item.businessTypes && !item.businessTypes.includes(active.businessType ?? "")) return null;
           if (item.entitlement === "insights" && !active.insightsEnabled) return null;
+          if (item.profiles && !item.profiles.includes(profile)) return null;
           const Icon = item.icon;
-          const label = item.vocabKey ? vocab[item.vocabKey] : item.label;
+          const label = item.labelByProfile?.[profile] ?? (item.vocabKey ? vocab[item.vocabKey] : item.label);
           const isActive =
             pathname === item.href || pathname.startsWith(`${item.href}/`);
           // Divider label above the first platform-admin item.

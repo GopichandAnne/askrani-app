@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getActiveStore } from "@/lib/store/active-store";
 import { createClient } from "@/lib/supabase/server";
+import { profileFor, homeHrefFor } from "@/lib/console-profile";
 import { StoreLinkPanel } from "@/components/store-link/store-link-panel";
 
 export const metadata: Metadata = { title: "Web chat link · Ask Rani" };
@@ -14,7 +15,7 @@ export default async function LinkPage() {
   // Owner-only screen (nav is owner-gated too; enforce here as well).
   const supabase = await createClient();
   const { data: isOwner } = await supabase.rpc("user_is_owner", { p_store_id: store.id });
-  if (!isOwner && !ctx.isPlatformAdmin) redirect("/orders");
+  if (!isOwner && !ctx.isPlatformAdmin) redirect(homeHrefFor(profileFor(store.businessType)));
 
   return (
     <div className="mx-auto max-w-2xl space-y-5 p-6">
