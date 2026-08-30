@@ -51,8 +51,28 @@ const PRODUCTS: Partial<Vocab> = {
   checklistCatalogDesc: "Import your product list, or add a few Q&As.",
 };
 
+/**
+ * Software / product ("embed on my site") vocabulary. Catalog is an opt-in
+ * module for these accounts; when they use it it's "Products", and the first-run
+ * step points at docs rather than a catalogue.
+ */
+const SAAS: Partial<Vocab> = {
+  itemSingular: "product",
+  itemPlural: "products",
+  catalogNav: "Products",
+  catalogTitle: "Products",
+  addCta: "Add product",
+  importCta: "Import products",
+  checklistCatalogLabel: "Connect your docs & knowledge",
+  checklistCatalogDesc: "Point Rani at your docs or help centre, or add a few Q&As — it answers from them.",
+};
+
 /** Per-business-type overrides, merged onto DEFAULT. Keys are stores.business_type. */
 const BY_TYPE: Record<string, Partial<Vocab>> = {
+  // ── Software / product / website (embed on their own site) ──
+  saas: { ...SAAS },
+  product: { ...SAAS },
+  software: { ...SAAS },
   // ── Bespoke: verticals where "products/Catalog" is the wrong word ──
   restaurant: {
     itemSingular: "dish",

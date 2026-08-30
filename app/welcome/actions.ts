@@ -69,6 +69,16 @@ export async function createMyStore(input: {
   const displayName = input.businessName.trim();
   if (!displayName) return { ok: false, error: "Business or organization name is required." };
 
+  // Signup-door intent (set by middleware from ?type=…) wins the business type, so
+  // a visitor who came through the SaaS/product door lands in the SaaS console
+  // regardless of what the onboarding interview classified them as.
+  const cookieStore = await cookies();
+  const intent = cookieStore.get("ar_intent_type")?.value?.toLowerCase();
+  const businessType =
+    intent && ["saas", "product", "software"].includes(intent)
+      ? intent
+      : input.businessType?.trim() || null;
+
   const db = createAdminClient();
 
   // Derive a unique slug (auto-suffix on collision so self-serve never dead-ends).
@@ -85,7 +95,7 @@ export async function createMyStore(input: {
     .insert({
       slug,
       store_display_name: displayName,
-      business_type: input.businessType?.trim() || null,
+      business_type: businessType,
       active: true,
       whatsapp_status: "inactive",
     })
@@ -106,7 +116,7 @@ export async function createMyStore(input: {
   // Seed the agent from the business-type preset, then let the Setup Copilot's
   // synthesized config override the persona + business knowledge so the bot is
   // on-brand AND business-aware from the very first customer message.
-  const merged: Partial<Record<AgentKey, string>> = { ...presetConfig(input.businessType, displayName) };
+  const merged: Partial<Record<AgentKey, string>> = { ...presetConfig(businessType, displayName) };
   const a = input.agent;
   if (a?.personality) {
     merged.personality = a.greeting
@@ -141,7 +151,8 @@ export async function createMyStore(input: {
     try { await db.auth.admin.updateUserById(ctx.user.id, { email }); } catch { /* already in use / non-fatal */ }
   }
 
-  // Make it the active store so they land straight in it.
-  (await cookies()).set(ACTIVE_STORE_COOKIE, store.slug, { path: "/", sameSite: "lax" });
+  // Make it the active store so they land straight in it; the door intent is spent.
+  cookieStore.set(ACTIVE_STORE_COOKIE, store.slug, { path: "/", sameSite: "lax" });
+  if (intent) cookieStore.set("ar_intent_type", "", { path: "/", maxAge: 0 });
   return { ok: true, slug: store.slug };
 }
