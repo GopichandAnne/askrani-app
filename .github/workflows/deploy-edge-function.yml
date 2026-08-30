@@ -1,0 +1,28 @@
+name: Deploy edge function
+
+# UI-guided deploy: no local CLI needed. Run it from the repo's Actions tab
+# (Actions → "Deploy edge function" → Run workflow), pick the function, and
+# GitHub deploys it to Supabase. Requires two repo secrets (Settings → Secrets
+# and variables → Actions):
+#   SUPABASE_ACCESS_TOKEN  — from Supabase → Account → Access Tokens
+#   SUPABASE_PROJECT_REF   — ctdczunzetcftcadbrot
+on:
+  workflow_dispatch:
+    inputs:
+      function:
+        description: "Edge function to deploy"
+        required: true
+        default: "web-chat"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+      - name: Deploy ${{ github.event.inputs.function }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: supabase functions deploy ${{ github.event.inputs.function }} --project-ref ${{ secrets.SUPABASE_PROJECT_REF }}
