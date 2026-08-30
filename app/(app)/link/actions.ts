@@ -36,6 +36,12 @@ function newToken(): string {
   return "tok_" + crypto.randomUUID().replace(/-/g, "").slice(0, 16);
 }
 
+/** A publishable widget key. Not a secret — it rides in client HTML like the
+ *  QR token does — so it's a plain prefixed store_tokens row (listing_ref null). */
+function newPublishableKey(): string {
+  return "pk_live_" + crypto.randomUUID().replace(/-/g, "");
+}
+
 /** Current link token for a store (latest); creates one if none exists yet. */
 export async function getStoreLink(storeId: string): Promise<LinkResult> {
   await requireStoreAccess(storeId);
@@ -47,6 +53,7 @@ export async function getStoreLink(storeId: string): Promise<LinkResult> {
       .select("token, active")
       .eq("store_id", storeId)
       .is("listing_ref", null) // the primary web QR — listing tokens are managed separately
+      .not("token", "like", "pk_live_%") // …and publishable keys have their own panel
       .order("created_at", { ascending: false })
       .limit(1),
     db
@@ -248,6 +255,7 @@ export async function setLinkActive(storeId: string, active: boolean): Promise<T
     .select("id, token")
     .eq("store_id", storeId)
     .is("listing_ref", null)
+    .not("token", "like", "pk_live_%")
     .order("created_at", { ascending: false })
     .limit(1);
   if (!existing || existing.length === 0) return { ok: false, error: "No link to update." };
@@ -268,13 +276,70 @@ export async function regenerateLink(storeId: string): Promise<TokenResult> {
     .update({ active: false })
     .eq("store_id", storeId)
     .eq("active", true)
-    .is("listing_ref", null);
+    .is("listing_ref", null)
+    .not("token", "like", "pk_live_%"); // never retire the publishable key here
   const token = newToken();
   const { error } = await db
     .from("store_tokens")
     .insert({ store_id: storeId, token, label: "primary QR", active: true });
   if (error) return { ok: false, error: error.message };
   return { ok: true, token, active: true };
+}
+
+// ── Publishable key (developer embed) ───────────────────────────────────────
+// One value a developer pastes into `data-key` on the embed snippet. Resolves to
+// this store server-side (resolve_store_by_key); publishable, not a secret.
+
+export type PublishableKeyResult =
+  | { ok: true; key: string; slug: string }
+  | { ok: false; error: string };
+
+async function storeSlug(db: ReturnType<typeof createAdminClient>, storeId: string): Promise<string> {
+  const { data } = await db.from("stores").select("slug").eq("id", storeId).single();
+  return data?.slug ?? "";
+}
+
+/** The store's current publishable key; mints one on first use. */
+export async function getPublishableKey(storeId: string): Promise<PublishableKeyResult> {
+  await requireStoreAccess(storeId);
+  const db = createAdminClient();
+  const slug = await storeSlug(db, storeId);
+
+  const { data: existing } = await db
+    .from("store_tokens")
+    .select("token")
+    .eq("store_id", storeId)
+    .eq("active", true)
+    .like("token", "pk_live_%")
+    .order("created_at", { ascending: false })
+    .limit(1);
+  if (existing && existing.length > 0) return { ok: true, key: existing[0].token, slug };
+
+  const key = newPublishableKey();
+  const { error } = await db
+    .from("store_tokens")
+    .insert({ store_id: storeId, token: key, label: "Publishable key", active: true });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, key, slug };
+}
+
+/** Retire every prior publishable key and issue a fresh one (use if a key leaks). */
+export async function rotatePublishableKey(storeId: string): Promise<PublishableKeyResult> {
+  await requireStoreAccess(storeId);
+  const db = createAdminClient();
+  const slug = await storeSlug(db, storeId);
+
+  await db
+    .from("store_tokens")
+    .update({ active: false })
+    .eq("store_id", storeId)
+    .like("token", "pk_live_%");
+  const key = newPublishableKey();
+  const { error } = await db
+    .from("store_tokens")
+    .insert({ store_id: storeId, token: key, label: "Publishable key", active: true });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, key, slug };
 }
 
 // ── Listing-scoped tokens ("smart yard signs") ──────────────────────────────

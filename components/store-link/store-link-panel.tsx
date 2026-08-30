@@ -6,6 +6,8 @@ import { toast } from "sonner";
 import {
   generateChips,
   getStoreLink,
+  getPublishableKey,
+  rotatePublishableKey,
   removeStoreLogo,
   saveChips,
   setLinkActive,
@@ -66,6 +68,8 @@ export function StoreLinkPanel({
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [copiedEmbed, setCopiedEmbed] = useState(false);
+  const [pubKey, setPubKey] = useState<string | null>(null);
+  const [rotatingKey, setRotatingKey] = useState(false);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [chips, setChips] = useState("");
   const [businessType, setBusinessType] = useState<string | null>(null);
@@ -75,9 +79,13 @@ export function StoreLinkPanel({
   const logoInputRef = useRef<HTMLInputElement>(null);
 
   const url = token ? `${SITE}/s/${storeSlug}?t=${token}` : "";
-  const embedSnippet = token
-    ? `<script src="${SITE}/embed.js" data-slug="${storeSlug}" data-token="${token}" async></script>`
-    : "";
+  // One-value publishable key snippet (the developer-friendly form). Falls back to
+  // the slug+token form only while the key is still loading.
+  const embedSnippet = pubKey
+    ? `<script src="${SITE}/embed.js" data-key="${pubKey}" async></script>`
+    : token
+      ? `<script src="${SITE}/embed.js" data-slug="${storeSlug}" data-token="${token}" async></script>`
+      : "";
 
   useEffect(() => {
     let alive = true;
@@ -103,6 +111,34 @@ export function StoreLinkPanel({
       alive = false;
     };
   }, [storeId]);
+
+  useEffect(() => {
+    let alive = true;
+    getPublishableKey(storeId).then((res) => {
+      if (alive && res.ok) setPubKey(res.key);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [storeId]);
+
+  async function rotateKey() {
+    if (
+      !confirm(
+        "Rotate the publishable key? The old key stops working immediately and any site using it must be updated.",
+      )
+    )
+      return;
+    setRotatingKey(true);
+    const res = await rotatePublishableKey(storeId);
+    setRotatingKey(false);
+    if (res.ok) {
+      setPubKey(res.key);
+      toast.success("New publishable key issued");
+    } else {
+      toast.error("Couldn't rotate key", { description: res.error });
+    }
+  }
 
   async function toggle(next: boolean) {
     setBusy(true);
@@ -476,8 +512,9 @@ export function StoreLinkPanel({
         </Button>
       </div>
 
-      {/* Embed on a website — a floating chat widget powered by the same web chat. */}
-      <div className={active ? "space-y-2 border-t pt-4" : "pointer-events-none space-y-2 border-t pt-4 opacity-50"}>
+      {/* Embed on a website — a floating chat widget powered by the same web chat.
+          Uses the publishable key, which is independent of the QR link toggle. */}
+      <div className="space-y-2 border-t pt-4">
         <p className="text-sm font-medium">Embed on your website</p>
         <p className="text-muted-foreground text-xs">
           Paste this before <code className="bg-muted rounded px-1">&lt;/body&gt;</code> on any page.
@@ -486,10 +523,22 @@ export function StoreLinkPanel({
         <code className="bg-muted block overflow-x-auto whitespace-pre rounded px-2 py-1.5 text-xs">
           {embedSnippet || "…"}
         </code>
-        <Button size="sm" variant="outline" onClick={copyEmbed} disabled={!embedSnippet}>
-          {copiedEmbed ? <Check className="size-4" /> : <Copy className="size-4" />}
-          {copiedEmbed ? "Copied" : "Copy embed code"}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="outline" onClick={copyEmbed} disabled={!embedSnippet}>
+            {copiedEmbed ? <Check className="size-4" /> : <Copy className="size-4" />}
+            {copiedEmbed ? "Copied" : "Copy embed code"}
+          </Button>
+          {pubKey && (
+            <Button size="sm" variant="ghost" onClick={rotateKey} disabled={rotatingKey}>
+              {rotatingKey ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+              Rotate key
+            </Button>
+          )}
+        </div>
+        <p className="text-muted-foreground text-[11px]">
+          <code className="bg-muted rounded px-1">data-key</code> is a publishable key — safe to include in
+          your page source. Rotate it if it ever leaks.
+        </p>
       </div>
 
       {businessType === "realtor" && <ListingQrs storeId={storeId} storeSlug={storeSlug} />}
