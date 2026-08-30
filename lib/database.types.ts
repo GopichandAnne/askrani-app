@@ -1883,6 +1883,126 @@ export type Database = {
           },
         ]
       }
+      wallet: {
+        Row: {
+          created_at: string
+          plan: string
+          plan_credits: number
+          status: string
+          store_id: string
+          topup_credits: number
+          total_cost_usd: number
+          total_spent: number
+          trial_granted: boolean
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          plan?: string
+          plan_credits?: number
+          status?: string
+          store_id: string
+          topup_credits?: number
+          total_cost_usd?: number
+          total_spent?: number
+          trial_granted?: boolean
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          plan?: string
+          plan_credits?: number
+          status?: string
+          store_id?: string
+          topup_credits?: number
+          total_cost_usd?: number
+          total_spent?: number
+          trial_granted?: boolean
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wallet_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: true
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      wallet_ledger: {
+        Row: {
+          bucket: string
+          cost_usd: number | null
+          delta: number
+          id: number
+          reason: string
+          ref: Json | null
+          store_id: string
+          ts: string
+        }
+        Insert: {
+          bucket: string
+          cost_usd?: number | null
+          delta: number
+          id?: number
+          reason: string
+          ref?: Json | null
+          store_id: string
+          ts?: string
+        }
+        Update: {
+          bucket?: string
+          cost_usd?: number | null
+          delta?: number
+          id?: number
+          reason?: string
+          ref?: Json | null
+          store_id?: string
+          ts?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wallet_ledger_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      billing_events: {
+        Row: {
+          created_at: string
+          credits: number | null
+          event_id: string
+          kind: string | null
+          store_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          credits?: number | null
+          event_id: string
+          kind?: string | null
+          store_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          credits?: number | null
+          event_id?: string
+          kind?: string | null
+          store_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "billing_events_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       answer_proofs: {
         Row: {
           answer_text: string | null
@@ -2442,6 +2562,16 @@ export type Database = {
       validate_store_token: {
         Args: { p_slug: string; p_token: string }
         Returns: Json
+      }
+      wallet_topup: {
+        Args: {
+          p_store_id: string
+          p_credits: number
+          p_reason: string
+          p_event_id: string
+          p_ref: Json
+        }
+        Returns: boolean
       }
     }
     Enums: {
