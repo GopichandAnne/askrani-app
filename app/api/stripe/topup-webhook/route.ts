@@ -57,7 +57,10 @@ export async function POST(req: Request) {
     metadata?: Record<string, string>;
     id?: string;
   };
-  if (session.mode !== "payment" || session.payment_status !== "paid") return new Response("ignored", { status: 200 });
+  // A 100%-off coupon (or any zero-total) completes as "no_payment_required", not
+  // "paid" — still a valid purchase that should grant credits.
+  const settled = session.payment_status === "paid" || session.payment_status === "no_payment_required";
+  if (session.mode !== "payment" || !settled) return new Response("ignored", { status: 200 });
 
   const storeId = session.metadata?.storeId || session.client_reference_id || "";
   const credits = parseInt(session.metadata?.credits ?? "", 10);
