@@ -16,6 +16,7 @@ export type LinkResult =
       logoUrl: string | null;
       chips: string;
       businessType: string | null;
+      whiteLabel: boolean;
     }
   | { ok: false; error: string };
 
@@ -47,7 +48,7 @@ export async function getStoreLink(storeId: string): Promise<LinkResult> {
   await requireStoreAccess(storeId);
   const db = createAdminClient();
 
-  const [{ data: existing }, { data: store }, { data: chipsRow }] = await Promise.all([
+  const [{ data: existing }, { data: store }, { data: chipsRow }, { data: wlRow }] = await Promise.all([
     db
       .from("store_tokens")
       .select("token, active")
@@ -67,6 +68,12 @@ export async function getStoreLink(storeId: string): Promise<LinkResult> {
       .eq("store_id", storeId)
       .eq("key", "suggestion_chips")
       .maybeSingle(),
+    db
+      .from("agent_config")
+      .select("value")
+      .eq("store_id", storeId)
+      .eq("key", "white_label")
+      .maybeSingle(),
   ]);
   const paused = !!store?.web_chat_paused;
   const waNumber = store?.whatsapp_display_number ?? null;
@@ -75,6 +82,7 @@ export async function getStoreLink(storeId: string): Promise<LinkResult> {
   const logoUrl = store?.logo_url ?? null;
   const chips = chipsRow?.value ?? "";
   const businessType = store?.business_type ?? null;
+  const whiteLabel = (wlRow?.value ?? "").trim().toLowerCase() === "true";
 
   if (existing && existing.length > 0) {
     return {
@@ -88,6 +96,7 @@ export async function getStoreLink(storeId: string): Promise<LinkResult> {
       logoUrl,
       chips,
       businessType,
+      whiteLabel,
     };
   }
 
@@ -96,7 +105,7 @@ export async function getStoreLink(storeId: string): Promise<LinkResult> {
     .from("store_tokens")
     .insert({ store_id: storeId, token, label: "primary QR", active: true });
   if (error) return { ok: false, error: error.message };
-  return { ok: true, token, active: true, paused, waNumber, waRedirect, sessionMinutes, logoUrl, chips, businessType };
+  return { ok: true, token, active: true, paused, waNumber, waRedirect, sessionMinutes, logoUrl, chips, businessType, whiteLabel };
 }
 
 /** AI-compose starter question tiles from the store's own prompts + KB. */
@@ -340,6 +349,20 @@ export async function rotatePublishableKey(storeId: string): Promise<Publishable
     .insert({ store_id: storeId, token: key, label: "Publishable key", active: true });
   if (error) return { ok: false, error: error.message };
   return { ok: true, key, slug };
+}
+
+/** Remove (or restore) the "Powered by Ask Rani" attribution in the chat header. */
+export async function setWhiteLabel(
+  storeId: string,
+  on: boolean,
+): Promise<{ ok: true; whiteLabel: boolean } | { ok: false; error: string }> {
+  await requireStoreAccess(storeId);
+  const db = createAdminClient();
+  const { error } = await db
+    .from("agent_config")
+    .upsert({ store_id: storeId, key: "white_label", value: on ? "true" : "false" }, { onConflict: "store_id,key" });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, whiteLabel: on };
 }
 
 // ── Listing-scoped tokens ("smart yard signs") ──────────────────────────────

@@ -17,6 +17,7 @@ import {
   setWhatsappNumber,
   setWhatsappRedirect,
   setSessionMinutes,
+  setWhiteLabel,
 } from "@/app/(app)/link/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -70,6 +71,7 @@ export function StoreLinkPanel({
   const [copiedEmbed, setCopiedEmbed] = useState(false);
   const [pubKey, setPubKey] = useState<string | null>(null);
   const [rotatingKey, setRotatingKey] = useState(false);
+  const [whiteLabel, setWhiteLabelState] = useState(false);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [chips, setChips] = useState("");
   const [businessType, setBusinessType] = useState<string | null>(null);
@@ -102,6 +104,7 @@ export function StoreLinkPanel({
         setLogoUrl(res.logoUrl);
         setChips(res.chips);
         setBusinessType(res.businessType);
+        setWhiteLabelState(res.whiteLabel);
       } else {
         toast.error("Couldn't load link", { description: res.error });
       }
@@ -137,6 +140,17 @@ export function StoreLinkPanel({
       toast.success("New publishable key issued");
     } else {
       toast.error("Couldn't rotate key", { description: res.error });
+    }
+  }
+
+  async function toggleWhiteLabel(next: boolean) {
+    setWhiteLabelState(next); // optimistic
+    const res = await setWhiteLabel(storeId, next);
+    if (!res.ok) {
+      setWhiteLabelState(!next);
+      toast.error("Couldn't update", { description: res.error });
+    } else {
+      toast.success(next ? "Attribution removed" : "Attribution restored");
     }
   }
 
@@ -539,6 +553,12 @@ export function StoreLinkPanel({
           <code className="bg-muted rounded px-1">data-key</code> is a publishable key — safe to include in
           your page source. Rotate it if it ever leaks.
         </p>
+        <label className="flex items-center justify-between gap-3 border-t pt-3">
+          <span className="text-muted-foreground text-xs">
+            White-label — remove <span className="font-medium">&ldquo;Powered by Ask Rani&rdquo;</span> from the chat header
+          </span>
+          <Switch checked={whiteLabel} onCheckedChange={toggleWhiteLabel} />
+        </label>
       </div>
 
       {businessType === "realtor" && <ListingQrs storeId={storeId} storeSlug={storeSlug} />}
