@@ -40,6 +40,8 @@ export function WelcomeChat({ email }: { email: string | null }) {
   const [provisioning, setProvisioning] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const started = useRef(false);
+  // Hold the crawl result so its Q&A pairs can seed the KB at provision time.
+  const detectedRef = useRef<Detected | null>(null);
 
   const supabase = createClient();
 
@@ -75,6 +77,7 @@ export function WelcomeChat({ email }: { email: string | null }) {
     if (detect?.query && !afterDetect) {
       setDetecting(true);
       const found = await runDetect(detect);
+      if (found) detectedRef.current = found;
       setDetecting(false);
       await turn(withReply, found ?? { found: false }, true);
       return;
@@ -86,6 +89,17 @@ export function WelcomeChat({ email }: { email: string | null }) {
       setChips(Array.isArray(data.chips) ? data.chips : []);
       setBusy(false);
     }
+  }
+
+  // Pull the {q,a} pairs out of the crawl result (local `knowledge.faqs` or
+  // online/B2B `b2b.faqs`) to seed the KB. Shape-tolerant.
+  function detectedFaqs(): { q: string; a: string }[] {
+    const d = detectedRef.current as unknown as {
+      knowledge?: { faqs?: { q?: string; a?: string }[] };
+      b2b?: { faqs?: { q?: string; a?: string }[] };
+    } | null;
+    const raw = d?.knowledge?.faqs ?? d?.b2b?.faqs ?? [];
+    return raw.map((f) => ({ q: String(f?.q ?? ""), a: String(f?.a ?? "") })).filter((f) => f.q && f.a);
   }
 
   async function provision(config: Config) {
@@ -102,6 +116,7 @@ export function WelcomeChat({ email }: { email: string | null }) {
         suggestionChips: Array.isArray(config.suggestionChips) ? config.suggestionChips : undefined,
       },
       captureTypes: Array.isArray(config.captureTypes) ? config.captureTypes : undefined,
+      faqs: detectedFaqs(),
     });
     if (!res.ok) {
       setProvisioning(false);

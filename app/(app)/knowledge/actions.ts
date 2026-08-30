@@ -293,6 +293,23 @@ export async function ingestDocument(
   return { ok: true, message: `Indexed "${t}" (${chunks} ${chunks === 1 ? "chunk" : "chunks"}).` };
 }
 
+/** Crawl a single URL (a docs / help-center page) into the KB (owners only). */
+export async function ingestUrl(url: string): Promise<RefreshResult> {
+  const u = (url ?? "").trim();
+  if (!/^https?:\/\//i.test(u)) return { ok: false, error: "Enter a full URL, including https://" };
+
+  const supabase = await createClient();
+  const gate = await requireActiveOwner(supabase);
+  if (!gate.ok) return gate;
+
+  const res = await callBotAdmin({ action: "ingest_url", store_slug: gate.slug, url: u });
+  if (!res.ok) return { ok: false, error: res.error };
+  revalidatePath("/knowledge");
+  const chunks = Number(res.data.chunks ?? 0);
+  const title = String(res.data.title ?? u);
+  return { ok: true, message: `Added "${title}" (${chunks} ${chunks === 1 ? "chunk" : "chunks"}).` };
+}
+
 /** Remove a KB document and its chunks (owners only). */
 export async function deleteDocument(title: string): Promise<SimpleResult> {
   const supabase = await createClient();

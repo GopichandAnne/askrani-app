@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { computeSaasHealth } from "@/lib/dashboard/saas-health";
 import type { ConvRow } from "@/lib/dashboard/metrics";
 import { SaasHealthView } from "@/components/dashboard/saas-health";
+import { SetupChecklist } from "@/components/setup/setup-checklist";
 
 export const metadata: Metadata = { title: "Assistant health · Ask Rani" };
 
@@ -31,5 +32,10 @@ export default async function HealthPage() {
   ]);
 
   const health = computeSaasHealth((convsRes.data ?? []) as ConvRow[], leadsRes.count ?? 0);
-  return <SaasHealthView health={health} storeName={store.name} />;
+  return (
+    <>
+      <SetupChecklist />
+      <SaasHealthView health={health} storeName={store.name} />
+    </>
+  );
 }

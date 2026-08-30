@@ -145,6 +145,33 @@ Deno.serve(async (req) => {
         const reindex = await reindexKnowledge(db, store.id, Number(body.max_rows ?? 200));
         return json({ store: store.slug, title, chunks, ...reindex });
       }
+      case "ingest_url": {
+        // Fetch a docs/help page, strip it to text, and add it to the KB — the
+        // same primitives as ingest_document, just with the fetch in front.
+        const url = String(body.url ?? "").trim();
+        if (!/^https?:\/\//i.test(url)) return json({ error: "A valid http(s) URL is required" }, 400);
+        let html = "";
+        try {
+          const r = await fetch(url, { headers: { "user-agent": "AskRani-KB/1.0 (+https://askrani.ai)", accept: "text/html" } });
+          if (!r.ok) return json({ error: `Couldn't fetch that URL (HTTP ${r.status}).` }, 200);
+          html = (await r.text()).slice(0, 500_000);
+        } catch (e) {
+          return json({ error: `Couldn't fetch that URL: ${e instanceof Error ? e.message : e}` }, 200);
+        }
+        const pageTitle = (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "").replace(/\s+/g, " ").trim();
+        const text = html
+          .replace(/<script[\s\S]*?<\/script>/gi, " ")
+          .replace(/<style[\s\S]*?<\/style>/gi, " ")
+          .replace(/<[^>]+>/g, " ")
+          .replace(/&nbsp;/gi, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+        if (text.length < 40) return json({ error: "That page had no readable text (it may be rendered by JavaScript). Try pasting the content instead." }, 200);
+        const title = `${pageTitle ? pageTitle + " — " : ""}${url}`.slice(0, 200);
+        const { chunks } = await ingestDocument(db, store.id, title, text);
+        const reindex = await reindexKnowledge(db, store.id, Number(body.max_rows ?? 200));
+        return json({ store: store.slug, title, url, chunks, ...reindex });
+      }
       case "extract_catalogue": {
         // Extract products from a URL, pasted text, or a pdf/image file — Gemini
         // normalises them. Preview only (no writes). A real deploy could swap in a

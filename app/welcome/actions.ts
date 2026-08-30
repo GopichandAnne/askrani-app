@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { getSessionContext } from "@/lib/auth/session";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { presetConfig } from "@/lib/business-presets";
+import { callBotAdmin } from "@/lib/knowledge/bot-admin";
 import { ACTIVE_STORE_COOKIE } from "@/lib/store/active-store";
 import type { Database } from "@/lib/database.types";
 
@@ -62,6 +63,10 @@ export async function createMyStore(input: {
   /** Online/B2B only — lead types to capture (demo/quote/support/careers). Seeds
    *  request_types so the bot captures leads from day one (P3). */
   captureTypes?: string[];
+  /** Q&A pairs Rani detected by crawling the business's site during onboarding.
+   *  Seeded into the KB so the assistant answers from real content on day one
+   *  (instead of an empty knowledge base). */
+  faqs?: { q: string; a: string }[];
 }): Promise<CreateResult> {
   const ctx = await getSessionContext();
   if (!ctx) return { ok: false, error: "You're not signed in." };
@@ -142,6 +147,34 @@ export async function createMyStore(input: {
   if (reqRows.length) {
     const { error: reqErr } = await db.from("request_types").upsert(reqRows, { onConflict: "store_id,key", ignoreDuplicates: true });
     if (reqErr) console.error("[welcome] seed request types:", reqErr.message);
+  }
+
+  // Seed the KB from the site Rani crawled during onboarding, so the assistant
+  // isn't answering from an empty knowledge base on day one. Write the detected
+  // Q&A pairs as saved_qa, then index them (saved_qa is NOT auto-synced to the
+  // retrievable knowledge_index — sync_saved_qa does the embed pass).
+  const faqs = (input.faqs ?? [])
+    .map((f) => ({ q: (f?.q ?? "").trim(), a: (f?.a ?? "").trim() }))
+    .filter((f) => f.q && f.a)
+    .slice(0, 20);
+  if (faqs.length) {
+    const qaRows = faqs.map((f) => ({
+      store_id: store.id,
+      question: f.q,
+      answer: f.a,
+      active: true,
+      created_by: ctx.user.id,
+      source_session: "onboarding",
+    }));
+    const { error: qaErr } = await db.from("saved_qa").insert(qaRows);
+    if (qaErr) console.error("[welcome] seed saved_qa:", qaErr.message);
+    else {
+      try {
+        await callBotAdmin({ action: "sync_saved_qa", store_slug: store.slug });
+      } catch (e) {
+        console.error("[welcome] index saved_qa:", (e as Error).message);
+      }
+    }
   }
 
   // Attach an email to the account (best-effort) so the umbrella can link by email

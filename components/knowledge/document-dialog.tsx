@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { ingestDocument, ingestFile } from "@/app/(app)/knowledge/actions";
+import { ingestDocument, ingestFile, ingestUrl } from "@/app/(app)/knowledge/actions";
 import {
   Dialog,
   DialogContent,
@@ -33,6 +33,7 @@ export function DocumentDialog({
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [text, setText] = useState("");
+  const [url, setUrl] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [validFrom, setValidFrom] = useState("");
   const [validUntil, setValidUntil] = useState("");
@@ -42,6 +43,7 @@ export function DocumentDialog({
     if (o) {
       setTitle("");
       setText("");
+      setUrl("");
       setFile(null);
       setValidFrom("");
       setValidUntil("");
@@ -49,22 +51,28 @@ export function DocumentDialog({
     setOpen(o);
   }
 
+  // Three ways to add: a file, a URL to crawl, or pasted text. Priority: file > url > text.
+  const mode: "file" | "url" | "text" = file ? "file" : url.trim() ? "url" : "text";
+  const canSubmit = mode === "url" ? !!url.trim() : !!title.trim() && (mode === "file" || !!text.trim());
+
   function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!title.trim() || (!file && !text.trim())) return;
+    if (!canSubmit) return;
     if (validFrom && validUntil && validUntil < validFrom) {
       toast.error("Expiry date can't be before the effective date.");
       return;
     }
     startTransition(async () => {
       let res;
-      if (file) {
+      if (mode === "file" && file) {
         const fd = new FormData();
         fd.set("title", title);
         fd.set("file", file);
         if (validFrom) fd.set("valid_from", validFrom);
         if (validUntil) fd.set("valid_until", validUntil);
         res = await ingestFile(fd);
+      } else if (mode === "url") {
+        res = await ingestUrl(url);
       } else {
         res = await ingestDocument(title, text, validFrom || null, validUntil || null);
       }
@@ -85,8 +93,8 @@ export function DocumentDialog({
         <DialogHeader>
           <DialogTitle>Add document</DialogTitle>
           <DialogDescription>
-            Upload a file (PDF, image, menu photo, CSV, text) or paste text. Rani
-            reads it (transcribing PDFs and images) and searches it by meaning.
+            Upload a file (PDF, image, CSV, text), fetch a docs/help-center URL, or paste
+            text. Rani reads it (transcribing PDFs and images) and searches it by meaning.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-3">
@@ -96,7 +104,6 @@ export function DocumentDialog({
               id="doc-title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              required
               autoFocus
               placeholder="e.g. Menu / Delivery & Returns Policy"
             />
@@ -112,6 +119,20 @@ export function DocumentDialog({
             <p className="text-muted-foreground text-xs">Excel (.xlsx), CSV, PDF, image (menu/flyer photo), or text — up to 20 MB.</p>
           </div>
           {!file && (
+            <div className="space-y-1.5">
+              <Label htmlFor="doc-url">…or fetch from a URL</Label>
+              <Input
+                id="doc-url"
+                type="url"
+                inputMode="url"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="https://docs.yoursite.com/getting-started"
+              />
+              <p className="text-muted-foreground text-xs">We read that page and add it to the KB — point it at your docs / help-center pages, one at a time.</p>
+            </div>
+          )}
+          {!file && !url.trim() && (
             <div className="space-y-1.5">
               <Label htmlFor="doc-text">…or paste text</Label>
               <Textarea
@@ -147,9 +168,9 @@ export function DocumentDialog({
             </p>
           </div>
           <DialogFooter>
-            <Button type="submit" disabled={pending || !title.trim() || (!file && !text.trim())}>
+            <Button type="submit" disabled={pending || !canSubmit}>
               {pending && <Loader2 className="size-4 animate-spin" />}
-              {file ? "Upload & index" : "Index document"}
+              {mode === "file" ? "Upload & index" : mode === "url" ? "Fetch & index" : "Index document"}
             </Button>
           </DialogFooter>
         </form>
