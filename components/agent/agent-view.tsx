@@ -5,7 +5,6 @@ import { toast } from "sonner";
 import { saveAgentConfig, type Charge, type Responder } from "@/app/(app)/agent/actions";
 import { VoiceCard } from "@/components/agent/voice-card";
 import { StreakCard } from "@/components/agent/streak-card";
-import { BusinessTypeCard } from "@/components/agent/business-type-card";
 import { RespondersSection } from "./responders-section";
 import { ChargesSection } from "./charges-section";
 import { Button } from "@/components/ui/button";
@@ -35,14 +34,12 @@ export function AgentView({
   topics,
   charges,
   storeName,
-  businessType,
 }: {
   initialConfig: Record<string, string>;
   initialResponders: Responder[];
   topics: { key: string; label: string }[];
   charges: Charge[];
   storeName: string;
-  businessType: string | null;
 }) {
   const [values, setValues] = useState<Record<string, string>>(initialConfig);
   const [saving, startSave] = useTransition();
@@ -90,9 +87,6 @@ export function AgentView({
         (never invent a price, always confirm before placing an order) are always
         enforced on top of what you write.
       </p>
-
-      {/* Business type — drives the console's vertical vocabulary */}
-      <BusinessTypeCard initial={businessType} />
 
       {/* Ordering toggle */}
       <div className="bg-card flex items-start justify-between gap-4 rounded-lg border p-4">
