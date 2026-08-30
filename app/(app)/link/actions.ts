@@ -17,6 +17,7 @@ export type LinkResult =
       chips: string;
       businessType: string | null;
       whiteLabel: boolean;
+      answersPublished: boolean;
     }
   | { ok: false; error: string };
 
@@ -48,7 +49,7 @@ export async function getStoreLink(storeId: string): Promise<LinkResult> {
   await requireStoreAccess(storeId);
   const db = createAdminClient();
 
-  const [{ data: existing }, { data: store }, { data: chipsRow }, { data: wlRow }] = await Promise.all([
+  const [{ data: existing }, { data: store }, { data: chipsRow }, { data: wlRow }, { data: apRow }] = await Promise.all([
     db
       .from("store_tokens")
       .select("token, active")
@@ -74,6 +75,12 @@ export async function getStoreLink(storeId: string): Promise<LinkResult> {
       .eq("store_id", storeId)
       .eq("key", "white_label")
       .maybeSingle(),
+    db
+      .from("agent_config")
+      .select("value")
+      .eq("store_id", storeId)
+      .eq("key", "answers_published")
+      .maybeSingle(),
   ]);
   const paused = !!store?.web_chat_paused;
   const waNumber = store?.whatsapp_display_number ?? null;
@@ -83,6 +90,7 @@ export async function getStoreLink(storeId: string): Promise<LinkResult> {
   const chips = chipsRow?.value ?? "";
   const businessType = store?.business_type ?? null;
   const whiteLabel = (wlRow?.value ?? "").trim().toLowerCase() === "true";
+  const answersPublished = (apRow?.value ?? "").trim().toLowerCase() === "true";
 
   if (existing && existing.length > 0) {
     return {
@@ -97,6 +105,7 @@ export async function getStoreLink(storeId: string): Promise<LinkResult> {
       chips,
       businessType,
       whiteLabel,
+      answersPublished,
     };
   }
 
@@ -105,7 +114,7 @@ export async function getStoreLink(storeId: string): Promise<LinkResult> {
     .from("store_tokens")
     .insert({ store_id: storeId, token, label: "primary QR", active: true });
   if (error) return { ok: false, error: error.message };
-  return { ok: true, token, active: true, paused, waNumber, waRedirect, sessionMinutes, logoUrl, chips, businessType, whiteLabel };
+  return { ok: true, token, active: true, paused, waNumber, waRedirect, sessionMinutes, logoUrl, chips, businessType, whiteLabel, answersPublished };
 }
 
 /** AI-compose starter question tiles from the store's own prompts + KB. */
@@ -349,6 +358,50 @@ export async function rotatePublishableKey(storeId: string): Promise<Publishable
     .insert({ store_id: storeId, token: key, label: "Publishable key", active: true });
   if (error) return { ok: false, error: error.message };
   return { ok: true, key, slug };
+}
+
+/** The public site that hosts the crawlable Answers pages (askrani.ai). */
+const ANSWERS_SITE = (process.env.ANSWERS_SITE_URL || "https://askrani.ai").replace(/\/$/, "");
+
+/** Nudge IndexNow so Bing (→ ChatGPT Search / Copilot / Perplexity) discovers a
+ *  freshly published Answers page in minutes instead of days. Best-effort. */
+async function pingIndexNow(slug: string): Promise<void> {
+  const key = process.env.INDEXNOW_KEY;
+  if (!key) return;
+  const host = (() => { try { return new URL(ANSWERS_SITE).host; } catch { return "askrani.ai"; } })();
+  try {
+    await fetch("https://api.indexnow.org/indexnow", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        host,
+        key,
+        keyLocation: `${ANSWERS_SITE}/indexnow-key.txt`,
+        urlList: [`${ANSWERS_SITE}/a/${slug}`],
+      }),
+    });
+  } catch {
+    /* best-effort — publish must not fail on a ping */
+  }
+}
+
+/** Publish (or unpublish) the store's public, crawlable Answers page. On publish,
+ *  ping IndexNow so answer engines pick it up fast. */
+export async function setAnswersPublished(
+  storeId: string,
+  on: boolean,
+): Promise<{ ok: true; answersPublished: boolean; url: string | null } | { ok: false; error: string }> {
+  await requireStoreAccess(storeId);
+  const db = createAdminClient();
+  const { error } = await db
+    .from("agent_config")
+    .upsert({ store_id: storeId, key: "answers_published", value: on ? "true" : "false" }, { onConflict: "store_id,key" });
+  if (error) return { ok: false, error: error.message };
+
+  const { data: s } = await db.from("stores").select("slug").eq("id", storeId).single();
+  const slug = s?.slug ?? null;
+  if (on && slug) await pingIndexNow(slug);
+  return { ok: true, answersPublished: on, url: slug ? `${ANSWERS_SITE}/a/${slug}` : null };
 }
 
 /** Remove (or restore) the "Powered by Ask Rani" attribution in the chat header. */

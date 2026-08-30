@@ -2426,6 +2426,7 @@ export type Database = {
         | "streak_bonus_cents"
         | "streak_cap_cents"
         | "white_label"
+        | "answers_published"
       attribution_type:
         | "link_click"
         | "chat_started"
@@ -2621,6 +2622,7 @@ export const Constants = {
         "streak_bonus_cents",
         "streak_cap_cents",
         "white_label",
+        "answers_published",
       ],
       attribution_type: [
         "link_click",

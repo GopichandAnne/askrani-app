@@ -18,6 +18,7 @@ import {
   setWhatsappRedirect,
   setSessionMinutes,
   setWhiteLabel,
+  setAnswersPublished,
 } from "@/app/(app)/link/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -72,6 +73,8 @@ export function StoreLinkPanel({
   const [pubKey, setPubKey] = useState<string | null>(null);
   const [rotatingKey, setRotatingKey] = useState(false);
   const [whiteLabel, setWhiteLabelState] = useState(false);
+  const [answersPublished, setAnswersPublishedState] = useState(false);
+  const [answersBusy, setAnswersBusy] = useState(false);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [chips, setChips] = useState("");
   const [businessType, setBusinessType] = useState<string | null>(null);
@@ -105,6 +108,7 @@ export function StoreLinkPanel({
         setChips(res.chips);
         setBusinessType(res.businessType);
         setWhiteLabelState(res.whiteLabel);
+        setAnswersPublishedState(res.answersPublished);
       } else {
         toast.error("Couldn't load link", { description: res.error });
       }
@@ -140,6 +144,19 @@ export function StoreLinkPanel({
       toast.success("New publishable key issued");
     } else {
       toast.error("Couldn't rotate key", { description: res.error });
+    }
+  }
+
+  async function toggleAnswers(next: boolean) {
+    setAnswersBusy(true);
+    setAnswersPublishedState(next); // optimistic
+    const res = await setAnswersPublished(storeId, next);
+    setAnswersBusy(false);
+    if (!res.ok) {
+      setAnswersPublishedState(!next);
+      toast.error("Couldn't update", { description: res.error });
+    } else {
+      toast.success(next ? "Answers page published — submitting to search & AI" : "Answers page unpublished");
     }
   }
 
@@ -559,6 +576,25 @@ export function StoreLinkPanel({
           </span>
           <Switch checked={whiteLabel} onCheckedChange={toggleWhiteLabel} />
         </label>
+        <div className="border-t pt-3">
+          <label className="flex items-center justify-between gap-3">
+            <span className="text-muted-foreground text-xs">
+              <span className="text-foreground font-medium">Public Answers page</span> — a crawlable page of your Q&amp;A so Google &amp; AI (ChatGPT, Perplexity) can answer about you
+            </span>
+            <Switch checked={answersPublished} onCheckedChange={toggleAnswers} disabled={answersBusy} />
+          </label>
+          {answersPublished && (
+            <a
+              href={`${SITE}/a/${storeSlug}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2 inline-flex items-center gap-1 text-xs font-medium hover:underline"
+              style={{ color: "#0d9488" }}
+            >
+              View your Answers page → {SITE.replace(/^https?:\/\//, "")}/a/{storeSlug}
+            </a>
+          )}
+        </div>
       </div>
 
       {businessType === "realtor" && <ListingQrs storeId={storeId} storeSlug={storeSlug} />}
