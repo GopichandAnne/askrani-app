@@ -31,25 +31,26 @@ function verifySignature(payload: string, header: string, secret: string): boole
 
 export async function POST(req: Request) {
   const secret = process.env.STRIPE_TOPUP_WEBHOOK_SECRET;
-  if (!secret) return new Response("not configured", { status: 503 });
-
   const sig = req.headers.get("stripe-signature") ?? "";
   const payload = await req.text();
-  if (!verifySignature(payload, sig, secret)) return new Response("bad signature", { status: 400 });
 
-  let event: {
-    id?: string;
-    type?: string;
-    data?: { object?: Record<string, unknown> };
-  };
+  // Descriptive bodies so the Stripe delivery "Response" tab explains every outcome.
+  if (!secret) return new Response("skip: STRIPE_TOPUP_WEBHOOK_SECRET not set on askrani-app", { status: 503 });
+  if (!sig) return new Response("skip: no stripe-signature header", { status: 400 });
+  if (!verifySignature(payload, sig, secret)) {
+    return new Response("skip: signature mismatch — secret must match THIS endpoint and mode", { status: 400 });
+  }
+
+  let event: { id?: string; type?: string; data?: { object?: Record<string, unknown> } };
   try {
     event = JSON.parse(payload);
   } catch {
-    return new Response("bad json", { status: 400 });
+    return new Response("skip: bad json", { status: 400 });
   }
 
-  // Only paid one-time checkouts credit the wallet.
-  if (event.type !== "checkout.session.completed") return new Response("ignored", { status: 200 });
+  if (event.type !== "checkout.session.completed") {
+    return new Response(`skip: type=${event.type}`, { status: 200 });
+  }
   const session = (event.data?.object ?? {}) as {
     mode?: string;
     payment_status?: string;
@@ -60,26 +61,28 @@ export async function POST(req: Request) {
   // A 100%-off coupon (or any zero-total) completes as "no_payment_required", not
   // "paid" — still a valid purchase that should grant credits.
   const settled = session.payment_status === "paid" || session.payment_status === "no_payment_required";
-  if (session.mode !== "payment" || !settled) return new Response("ignored", { status: 200 });
+  if (session.mode !== "payment" || !settled) {
+    return new Response(`skip: mode=${session.mode} payment_status=${session.payment_status}`, { status: 200 });
+  }
 
   const storeId = session.metadata?.storeId || session.client_reference_id || "";
-  const credits = parseInt(session.metadata?.credits ?? "", 10);
+  const creditsRaw = session.metadata?.credits ?? "";
+  const credits = parseInt(creditsRaw, 10);
   if (!storeId || !Number.isFinite(credits) || credits <= 0 || !event.id) {
-    return new Response("no target", { status: 200 });
+    return new Response(`skip: storeId=${storeId || "MISSING"} credits=${creditsRaw || "MISSING"}`, { status: 200 });
   }
 
-  try {
-    const db = createAdminClient();
-    await db.rpc("wallet_topup", {
-      p_store_id: storeId,
-      p_credits: credits,
-      p_reason: "topup_purchase",
-      p_event_id: event.id,
-      p_ref: { session: session.id ?? null, key: session.metadata?.key ?? null },
-    });
-  } catch (e) {
-    // Let Stripe retry on a transient failure.
-    return new Response(`error: ${(e as Error).message}`, { status: 500 });
-  }
-  return new Response("ok", { status: 200 });
+  const db = createAdminClient();
+  const { data, error } = await db.rpc("wallet_topup", {
+    p_store_id: storeId,
+    p_credits: credits,
+    p_reason: "topup_purchase",
+    p_event_id: event.id,
+    p_ref: { session: session.id ?? null, key: session.metadata?.key ?? null },
+  });
+  if (error) return new Response(`error: wallet_topup — ${error.message}`, { status: 500 });
+  return new Response(
+    data === false ? "ok: duplicate (already credited)" : `ok: credited ${credits} to ${storeId}`,
+    { status: 200 },
+  );
 }
