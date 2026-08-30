@@ -2,8 +2,10 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { authCookieName } from "./cookie-name";
 
-/** Public path prefixes that do not require an authenticated session. */
-const PUBLIC_PREFIXES = ["/login", "/auth"];
+/** Public path prefixes that do not require an authenticated session. The Stripe
+ *  top-up webhook is called by Stripe (no user cookie) and is secured by its own
+ *  signature check — it must not be redirected to /login. */
+const PUBLIC_PREFIXES = ["/login", "/auth", "/api/stripe/topup-webhook"];
 
 function isPublic(pathname: string) {
   return PUBLIC_PREFIXES.some(
