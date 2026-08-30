@@ -1883,6 +1883,53 @@ export type Database = {
           },
         ]
       }
+      answer_proofs: {
+        Row: {
+          answer_text: string | null
+          answered: boolean
+          checked_at: string
+          citations: Json
+          cited: boolean
+          engine: string
+          id: string
+          phase: string
+          question: string
+          store_id: string
+        }
+        Insert: {
+          answer_text?: string | null
+          answered?: boolean
+          checked_at?: string
+          citations?: Json
+          cited?: boolean
+          engine?: string
+          id?: string
+          phase: string
+          question: string
+          store_id: string
+        }
+        Update: {
+          answer_text?: string | null
+          answered?: boolean
+          checked_at?: string
+          citations?: Json
+          cited?: boolean
+          engine?: string
+          id?: string
+          phase?: string
+          question?: string
+          store_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "answer_proofs_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       store_tokens: {
         Row: {
           active: boolean

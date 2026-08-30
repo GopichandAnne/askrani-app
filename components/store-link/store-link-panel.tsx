@@ -33,6 +33,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Check, Clock, Copy, Download, ImagePlus, Loader2, MessageCircle, QrCode, RefreshCw, Save, Sparkles, Trash2 } from "lucide-react";
+import { ProofPanel } from "@/components/store-link/proof-panel";
 import { ListingQrs } from "@/components/store-link/listing-qrs";
 import { TableQrs } from "@/components/store-link/table-qrs";
 import { DIAL_CODES, combineDial, splitDial } from "@/lib/phone";
@@ -595,6 +596,7 @@ export function StoreLinkPanel({
             </a>
           )}
         </div>
+        {answersPublished && <ProofPanel storeId={storeId} />}
       </div>
 
       {businessType === "realtor" && <ListingQrs storeId={storeId} storeSlug={storeSlug} />}
