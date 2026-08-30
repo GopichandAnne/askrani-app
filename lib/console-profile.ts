@@ -16,7 +16,8 @@ export function profileFor(businessType?: string | null): ConsoleProfile {
   return businessType && SAAS_TYPES.has(businessType.toLowerCase()) ? "saas" : "local";
 }
 
-/** The home surface for a profile (Orders is hidden for SaaS). */
+/** The home surface for a profile. SaaS opens to Assistant health; a local
+ *  business opens to Orders. */
 export function homeHrefFor(profile: ConsoleProfile): string {
-  return profile === "saas" ? "/conversations" : "/orders";
+  return profile === "saas" ? "/health" : "/orders";
 }

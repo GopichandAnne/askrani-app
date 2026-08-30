@@ -42,7 +42,7 @@ export function lastNDays(n: number): string[] {
 }
 
 /** Filter rows to the window covered by `days`. */
-function inWindow<T extends { timestamp: string | null; created_at: string }>(
+export function inWindow<T extends { timestamp: string | null; created_at: string }>(
   rows: T[],
   days: string[],
 ): T[] {
@@ -200,6 +200,16 @@ export function topRequested(convs: ConvRow[], limit = 8) {
 
 export function topMissing(convs: ConvRow[], limit = 8) {
   return topItemsBy(convs, (a) => toStrings(a.missing_items), limit);
+}
+
+/** Conversations where Rani hit a gap (named something it couldn't answer). Used
+ *  for the self-serve rate on the SaaS Assistant-Health home. */
+export function gapConversationCount(convs: ConvRow[]): number {
+  let n = 0;
+  for (const row of convs) {
+    if (toStrings(parseA(row.analytics_json).missing_items).length > 0) n++;
+  }
+  return n;
 }
 
 /** Everything the dashboard needs, computed over the last DASHBOARD_DAYS. */
