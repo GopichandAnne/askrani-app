@@ -126,6 +126,31 @@ export async function recordUsage(
   }
 }
 
+/**
+ * Grace-then-stop credit gate. DORMANT unless CREDITS_ENFORCED=true, so today's
+ * record-only stores (whose balances are allowed to run negative) are unaffected
+ * until billing is deliberately switched on. When enabled, the bot keeps answering
+ * until the balance falls below -CREDITS_GRACE, then stops. FAIL-OPEN on any error
+ * or missing wallet — a billing read must never break a live bot.
+ */
+export async function creditGateOpen(svc: SupabaseClient, storeId: string): Promise<boolean> {
+  if ((Deno.env.get("CREDITS_ENFORCED") ?? "").toLowerCase() !== "true") return true;
+  const grace = numEnv("CREDITS_GRACE", 500);
+  try {
+    const { data } = await svc
+      .from("wallet")
+      .select("plan_credits, topup_credits")
+      .eq("store_id", storeId)
+      .maybeSingle();
+    if (!data) return true; // no wallet row → never block
+    // NB: balances can be negative (record-only overrun) — don't clamp with num().
+    const balance = (Number(data.plan_credits) || 0) + (Number(data.topup_credits) || 0);
+    return balance > -grace;
+  } catch {
+    return true; // fail-open
+  }
+}
+
 function num(v: unknown): number {
   const n = typeof v === "number" ? v : parseInt(String(v ?? ""), 10);
   return Number.isFinite(n) && n > 0 ? n : 0;

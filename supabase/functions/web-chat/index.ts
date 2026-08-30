@@ -13,6 +13,7 @@ import { getStoreBySlug } from "../_shared/config.ts";
 import { generateTurnReply } from "../_shared/conversation.ts";
 import type { Visitor } from "../_shared/httptool.ts";
 import { classifyTurn } from "../_shared/analytics.ts";
+import { creditGateOpen } from "../_shared/meter.ts";
 import { splitBubbles } from "../_shared/prompt.ts";
 import { storeChatFile, storeChatImage } from "../_shared/chat-media.ts";
 import {
@@ -127,6 +128,18 @@ Deno.serve(async (req) => {
       reply:
         "🌙 Rani is taking a break right now and will be back soon. In the meantime, please ask a store associate for help. Thanks for your patience!",
       paused: true,
+    });
+  }
+
+  // Credit gate (grace-then-stop). DORMANT unless CREDITS_ENFORCED=true, so
+  // record-only stores are unaffected until billing is switched on. When on, the
+  // bot answers through a grace buffer past zero, then stops until the owner tops
+  // up. Fail-open inside the helper — never blocks on a billing read error.
+  if (!(await creditGateOpen(db, store.id))) {
+    return json({
+      reply:
+        "🙏 This assistant is temporarily unavailable right now. Please check back shortly, or reach out to the business directly.",
+      unavailable: true,
     });
   }
 
