@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { getActiveStore } from "@/lib/store/active-store";
 import { createClient } from "@/lib/supabase/server";
 import { profileFor, homeHrefFor } from "@/lib/console-profile";
-import { getWallet, getLedger, getBillingConfig } from "./actions";
+import { getWallet, getLedger, getBillingConfig, getCreditsEnforced } from "./actions";
 import { BillingView } from "@/components/billing/billing-view";
 
 export const metadata: Metadata = { title: "Credits & billing · Ask Rani" };
@@ -17,11 +17,21 @@ export default async function BillingPage() {
   const { data: isOwner } = await supabase.rpc("user_is_owner", { p_store_id: store.id });
   if (!isOwner && !ctx.isPlatformAdmin) redirect(homeHrefFor(profileFor(store.businessType)));
 
-  const [wallet, ledger, config] = await Promise.all([
+  const [wallet, ledger, config, enforced] = await Promise.all([
     getWallet(store.id),
     getLedger(store.id),
     getBillingConfig(),
+    getCreditsEnforced(store.id),
   ]);
 
-  return <BillingView storeId={store.id} wallet={wallet} ledger={ledger} config={config} />;
+  return (
+    <BillingView
+      storeId={store.id}
+      wallet={wallet}
+      ledger={ledger}
+      config={config}
+      isPlatformAdmin={!!ctx.isPlatformAdmin}
+      enforced={enforced}
+    />
+  );
 }

@@ -60,6 +60,33 @@ export async function getLedger(storeId: string): Promise<LedgerRow[]> {
   }));
 }
 
+/** Whether grace-then-stop enforcement is enrolled for this store (per-store
+ *  opt-in; only bites when CREDITS_ENFORCED=true and the wallet is past grace). */
+export async function getCreditsEnforced(storeId: string): Promise<boolean> {
+  await requireStoreAccess(storeId);
+  const db = createAdminClient();
+  const { data } = await db
+    .from("agent_config")
+    .select("value")
+    .eq("store_id", storeId)
+    .eq("key", "credits_enforced")
+    .maybeSingle();
+  return String(data?.value ?? "").toLowerCase() === "true";
+}
+
+export async function setCreditsEnforced(
+  storeId: string,
+  on: boolean,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  await requireStoreAccess(storeId);
+  const db = createAdminClient();
+  const { error } = await db
+    .from("agent_config")
+    .upsert({ store_id: storeId, key: "credits_enforced", value: on ? "true" : "false" }, { onConflict: "store_id,key" });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
 export type BillingConfig = {
   configured: boolean;
   packs: { key: string; label: string; credits: number; priceUsd: number }[];

@@ -2604,6 +2604,7 @@ export type Database = {
         | "streak_cap_cents"
         | "white_label"
         | "answers_published"
+        | "credits_enforced"
       attribution_type:
         | "link_click"
         | "chat_started"
@@ -2800,6 +2801,7 @@ export const Constants = {
         "streak_cap_cents",
         "white_label",
         "answers_published",
+        "credits_enforced",
       ],
       attribution_type: [
         "link_click",

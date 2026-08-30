@@ -127,16 +127,30 @@ export async function recordUsage(
 }
 
 /**
- * Grace-then-stop credit gate. DORMANT unless CREDITS_ENFORCED=true, so today's
- * record-only stores (whose balances are allowed to run negative) are unaffected
- * until billing is deliberately switched on. When enabled, the bot keeps answering
- * until the balance falls below -CREDITS_GRACE, then stops. FAIL-OPEN on any error
- * or missing wallet — a billing read must never break a live bot.
+ * Grace-then-stop credit gate, with a SAFE per-store rollout.
+ *   CREDITS_ENFORCED unset/other  → nobody enforced (master switch off).
+ *   CREDITS_ENFORCED=true         → enforce ONLY stores that opted in
+ *                                   (agent_config 'credits_enforced' = 'true').
+ *   CREDITS_ENFORCED=all          → enforce every store.
+ * When a store is enforced, the bot keeps answering until the balance falls below
+ * -CREDITS_GRACE, then stops. FAIL-OPEN on any error or missing wallet — a billing
+ * read must never break a live bot.
  */
 export async function creditGateOpen(svc: SupabaseClient, storeId: string): Promise<boolean> {
-  if ((Deno.env.get("CREDITS_ENFORCED") ?? "").toLowerCase() !== "true") return true;
+  const mode = (Deno.env.get("CREDITS_ENFORCED") ?? "").toLowerCase();
+  if (mode !== "true" && mode !== "all") return true; // master switch off
   const grace = numEnv("CREDITS_GRACE", 500);
   try {
+    // "true" = per-store opt-in (safe rollout); "all" = every store.
+    if (mode === "true") {
+      const { data: cfg } = await svc
+        .from("agent_config")
+        .select("value")
+        .eq("store_id", storeId)
+        .eq("key", "credits_enforced")
+        .maybeSingle();
+      if (String(cfg?.value ?? "").toLowerCase() !== "true") return true; // store not enrolled
+    }
     const { data } = await svc
       .from("wallet")
       .select("plan_credits, topup_credits")

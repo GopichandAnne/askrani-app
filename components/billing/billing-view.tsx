@@ -3,9 +3,11 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { Coins, Loader2, TrendingUp } from "lucide-react";
 import {
   createTopupCheckout,
+  setCreditsEnforced,
   type BillingConfig,
   type LedgerRow,
   type WalletView,
@@ -20,13 +22,29 @@ export function BillingView({
   wallet,
   ledger,
   config,
+  isPlatformAdmin = false,
+  enforced = false,
 }: {
   storeId: string;
   wallet: WalletView;
   ledger: LedgerRow[];
   config: BillingConfig;
+  isPlatformAdmin?: boolean;
+  enforced?: boolean;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
+  const [enforce, setEnforce] = useState(enforced);
+
+  async function toggleEnforce(next: boolean) {
+    setEnforce(next); // optimistic
+    const res = await setCreditsEnforced(storeId, next);
+    if (!res.ok) {
+      setEnforce(!next);
+      toast.error("Couldn't update", { description: res.error });
+    } else {
+      toast.success(next ? "Enforcement enrolled for this store" : "Enforcement removed");
+    }
+  }
 
   // Toast the outcome after returning from Stripe.
   useEffect(() => {
@@ -135,6 +153,20 @@ export function BillingView({
           </ul>
         )}
       </div>
+
+      {isPlatformAdmin && (
+        <div className="bg-card rounded-xl border p-5">
+          <label className="flex items-center justify-between gap-3">
+            <span>
+              <span className="block text-sm font-medium">Enforce credits on this store</span>
+              <span className="text-muted-foreground text-xs">
+                Admin · grace-then-stop. Only bites when the platform master switch (<code className="bg-muted rounded px-1">CREDITS_ENFORCED</code>) is on and the balance runs past the grace buffer.
+              </span>
+            </span>
+            <Switch checked={enforce} onCheckedChange={toggleEnforce} />
+          </label>
+        </div>
+      )}
     </div>
   );
 }
