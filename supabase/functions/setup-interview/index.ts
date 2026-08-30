@@ -119,7 +119,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
 
-  let body: { messages?: { role?: string; text?: string }[]; email?: string; detected?: Record<string, unknown> | null };
+  let body: { messages?: { role?: string; text?: string }[]; email?: string; detected?: Record<string, unknown> | null; site?: string };
   try { body = await req.json(); } catch { return json({ error: "bad json" }, 400); }
 
   const messages = Array.isArray(body.messages) ? body.messages : [];
@@ -128,8 +128,14 @@ Deno.serve(async (req) => {
     : messages.map((m) => `${m.role === "owner" ? "Owner" : "Rani"}: ${String(m.text ?? "")}`).join("\n");
   const known = body.email ? `\n\n[The owner's account email is already ${body.email} — don't ask for it again.]` : "";
   const detected = body.detected !== undefined ? formatDetected(body.detected) : "";
+  // Grader hand-off: the owner came from our website grader, so we already have
+  // their site — treat them as online and detect from it instead of asking again.
+  const site = typeof body.site === "string" ? body.site.trim() : "";
+  const siteHint = site
+    ? `\n\n[The owner arrived from our website grader for their site: ${site}. They're an ONLINE / software / product company. Ask their business name first; then run detect (kind "online", query "${site}") — do NOT ask them for their website, we already have it.]`
+    : "";
 
-  const out = await generateStructured(SYS, `${transcript}${known}${detected}\n\nWrite Rani's next turn as JSON.`);
+  const out = await generateStructured(SYS, `${transcript}${known}${siteHint}${detected}\n\nWrite Rani's next turn as JSON.`);
   if (!out || typeof out.reply !== "string") {
     return json({ reply: "Sorry, I didn't catch that — could you say it once more?", chips: [], done: false });
   }

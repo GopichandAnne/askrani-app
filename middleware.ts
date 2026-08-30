@@ -12,6 +12,12 @@ export async function middleware(request: NextRequest) {
   if (type && INTENT_TYPES.has(type)) {
     response.cookies.set("ar_intent_type", type, { path: "/", maxAge: 3600, sameSite: "lax" });
   }
+  // Grader hand-off: the site the visitor just had graded, so onboarding can
+  // auto-set-up from it instead of asking for the website again.
+  const site = request.nextUrl.searchParams.get("site");
+  if (site && site.includes(".") && site.length <= 300) {
+    response.cookies.set("ar_intent_site", site, { path: "/", maxAge: 3600, sameSite: "lax" });
+  }
   return response;
 }
 

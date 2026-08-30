@@ -1,3 +1,4 @@
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { getSessionContext } from "@/lib/auth/session";
@@ -17,6 +18,8 @@ export default async function WelcomePage() {
   if (!ctx) redirect("/login");
   if (ctx.stores.length > 0) redirect("/");
 
+  const initialSite = (await cookies()).get("ar_intent_site")?.value || undefined;
+
   return (
     <div className="flex min-h-dvh items-center justify-center p-6">
       <Card className="w-full max-w-lg">
@@ -28,7 +31,7 @@ export default async function WelcomePage() {
           </div>
         </CardHeader>
         <CardContent>
-          <WelcomeChat email={ctx.user.email} />
+          <WelcomeChat email={ctx.user.email} initialSite={initialSite} />
         </CardContent>
       </Card>
     </div>

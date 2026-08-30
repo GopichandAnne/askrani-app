@@ -187,5 +187,6 @@ export async function createMyStore(input: {
   // Make it the active store so they land straight in it; the door intent is spent.
   cookieStore.set(ACTIVE_STORE_COOKIE, store.slug, { path: "/", sameSite: "lax" });
   if (intent) cookieStore.set("ar_intent_type", "", { path: "/", maxAge: 0 });
+  cookieStore.set("ar_intent_site", "", { path: "/", maxAge: 0 });
   return { ok: true, slug: store.slug };
 }

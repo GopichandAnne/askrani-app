@@ -31,7 +31,7 @@ type Detected = Record<string, unknown> | null;
  * plain question at a time (their language, tap-able chips, or voice); when it has
  * enough it writes the whole config and provisions the store. No forms, no prompts.
  */
-export function WelcomeChat({ email }: { email: string | null }) {
+export function WelcomeChat({ email, initialSite }: { email: string | null; initialSite?: string }) {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [chips, setChips] = useState<string[]>([]);
   const [input, setInput] = useState("");
@@ -60,7 +60,7 @@ export function WelcomeChat({ email }: { email: string | null }) {
   async function turn(next: Msg[], detected?: Detected, afterDetect = false) {
     setBusy(true);
     setChips([]);
-    const { data, error } = await supabase.functions.invoke("setup-interview", { body: { messages: next, email, detected } });
+    const { data, error } = await supabase.functions.invoke("setup-interview", { body: { messages: next, email, detected, site: initialSite } });
     if (error || !data?.reply) {
       setBusy(false);
       setDetecting(false);
