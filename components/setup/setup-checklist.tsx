@@ -17,13 +17,13 @@ export async function SetupChecklist() {
   const { data: isOwner } = await supabase.rpc("user_is_owner", { p_store_id: store.id });
   if (!isOwner) return null;
 
-  const [cfg, prod, know, tok, resp, pk, ansPub] = await Promise.all([
+  const [cfg, prod, know, tok, resp, embedSeen, ansPub] = await Promise.all([
     supabase.from("agent_config").select("key,value").eq("store_id", store.id).in("key", ["personality", "store_prompt"]),
     supabase.from("products").select("id", { count: "exact", head: true }).eq("store_id", store.id),
     supabase.from("knowledge_index").select("id", { count: "exact", head: true }).eq("store_id", store.id),
     supabase.from("store_tokens").select("id", { count: "exact", head: true }).eq("store_id", store.id),
     supabase.from("store_responders").select("id", { count: "exact", head: true }).eq("store_slug", store.slug),
-    supabase.from("store_tokens").select("id", { count: "exact", head: true }).eq("store_id", store.id).like("token", "pk_live_%").eq("active", true),
+    supabase.from("stores").select("last_embed_at").eq("id", store.id).maybeSingle(),
     supabase.from("agent_config").select("value").eq("store_id", store.id).eq("key", "answers_published").maybeSingle(),
   ]);
 
@@ -35,7 +35,7 @@ export async function SetupChecklist() {
       ? [
           { done: described, label: "Set up your assistant", desc: "Tell Rani about your product and how to sound.", href: "/agent" },
           { done: hasKnowledge, label: "Connect your docs", desc: "Point Rani at your docs or help centre so it answers from them.", href: "/knowledge" },
-          { done: (pk.count ?? 0) > 0, label: "Install Rani on your site", desc: "Copy your embed snippet and add it to your site.", href: "/link" },
+          { done: !!embedSeen.data?.last_embed_at, label: "Install Rani on your site", desc: "Copy your embed snippet and add it to your site — this ticks once Rani loads there.", href: "/link" },
           { done: String(ansPub.data?.value ?? "").toLowerCase() === "true", label: "Publish your Answers page", desc: "A crawlable page so Google & AI can answer about you.", href: "/link" },
         ]
       : [

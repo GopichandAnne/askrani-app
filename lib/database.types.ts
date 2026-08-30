@@ -2113,6 +2113,7 @@ export type Database = {
           insights_enabled: boolean
           location_folder_id: string | null
           logo_url: string | null
+          last_embed_at: string | null
           pricing_file_id: string | null
           pricing_folder_id: string | null
           product_source: string | null
@@ -2146,6 +2147,7 @@ export type Database = {
           insights_enabled?: boolean
           location_folder_id?: string | null
           logo_url?: string | null
+          last_embed_at?: string | null
           pricing_file_id?: string | null
           pricing_folder_id?: string | null
           product_source?: string | null
@@ -2179,6 +2181,7 @@ export type Database = {
           insights_enabled?: boolean
           location_folder_id?: string | null
           logo_url?: string | null
+          last_embed_at?: string | null
           pricing_file_id?: string | null
           pricing_folder_id?: string | null
           product_source?: string | null
