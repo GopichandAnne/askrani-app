@@ -12,6 +12,7 @@ import {
   Plug,
   PlugZap,
   QrCode,
+  Settings,
   Utensils,
   Megaphone,
   BadgeCheck,
@@ -72,6 +73,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: BarChart3, available: true, ownerOnly: true },
   { label: "Insights", href: "/insights", icon: Telescope, available: true, ownerOnly: true, entitlement: "insights" },
   { label: "Credits", href: "/billing", icon: Coins, available: true, ownerOnly: true },
+  { label: "Settings", href: "/settings", icon: Settings, available: true, ownerOnly: true },
   // ── Platform admin (super admin) — store-agnostic ──
   { label: "Stores", href: "/admin/stores", icon: Building2, available: true, platformAdminOnly: true },
   { label: "Waitlist", href: "/admin/waitlist", icon: ClipboardList, available: true, platformAdminOnly: true },
