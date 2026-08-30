@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getActiveStore } from "@/lib/store/active-store";
+import { getActiveStore, getStoreCapabilities } from "@/lib/store/active-store";
 import { StoreProvider } from "@/components/store/store-provider";
 import { Sidebar } from "@/components/app-shell/sidebar";
 import { StoreSwitcher } from "@/components/app-shell/store-switcher";
@@ -19,12 +19,15 @@ export default async function AppLayout({
     redirect("/welcome");
   }
 
+  const capabilities = await getStoreCapabilities(ctx.active.id);
+
   return (
     <StoreProvider
       value={{
         stores: ctx.stores,
         active: ctx.active,
         isPlatformAdmin: ctx.isPlatformAdmin,
+        capabilities,
       }}
     >
       <div className="bg-background flex h-dvh overflow-hidden">

@@ -43,17 +43,20 @@ export type NavItem = {
   profiles?: ConsoleProfile[];
   /** optional per-profile label override (e.g. "Web Chat" → "Embed & install" for saas). */
   labelByProfile?: Partial<Record<ConsoleProfile, string>>;
+  /** an opt-in module: shown for capability-driven profiles (saas) only when the
+   *  store has this agent_config flag on. Local profiles always show it. */
+  capability?: "orders" | "catalog";
 };
 
 /** Information architecture for the panel (built in order across phases). */
 export const NAV_ITEMS: NavItem[] = [
   { label: "Ask Rani", href: "/assistant", icon: Sparkles, available: true },
-  { label: "Orders", href: "/orders", icon: ShoppingCart, available: true, profiles: ["local"] },
+  { label: "Orders", href: "/orders", icon: ShoppingCart, available: true, capability: "orders" },
   { label: "Redemptions", href: "/redemptions", icon: Ticket, available: true, profiles: ["local"] },
   { label: "Post reviews", href: "/reviews", icon: BadgeCheck, available: true, profiles: ["local"] },
   { label: "Campaigns", href: "/campaigns", icon: Megaphone, available: true, ownerOnly: true, profiles: ["local"] },
   { label: "Conversations", href: "/conversations", icon: MessagesSquare, available: true },
-  { label: "Catalog", href: "/inventory", icon: Package, available: true, vocabKey: "catalogNav", profiles: ["local"] },
+  { label: "Catalog", href: "/inventory", icon: Package, available: true, vocabKey: "catalogNav", capability: "catalog" },
   { label: "Diner", href: "/diner", icon: Utensils, available: true, ownerOnly: true, businessTypes: ["restaurant"], profiles: ["local"] },
   { label: "Agent", href: "/agent", icon: Bot, available: true, ownerOnly: true },
   { label: "Knowledge", href: "/knowledge", icon: BookOpen, available: true, ownerOnly: false },

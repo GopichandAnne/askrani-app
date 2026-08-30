@@ -1,7 +1,28 @@
 import { cookies } from "next/headers";
 import { getSessionContext, type StoreAccess } from "@/lib/auth/session";
+import { createClient } from "@/lib/supabase/server";
 
 export const ACTIVE_STORE_COOKIE = "ar_store";
+
+/** Opt-in module flags for a store (from agent_config). Used to show/hide the
+ *  optional console modules (Catalog, Orders) for capability-driven profiles
+ *  like SaaS — a product turns them on only if their operations need them. */
+export type StoreCapabilities = { orders: boolean; catalog: boolean };
+
+export async function getStoreCapabilities(storeId: string): Promise<StoreCapabilities> {
+  try {
+    const supabase = await createClient();
+    const { data } = await supabase
+      .from("agent_config")
+      .select("key, value")
+      .eq("store_id", storeId)
+      .in("key", ["orders_enabled", "catalog_enabled"]);
+    const on = (k: string) => (data ?? []).some((r) => r.key === k && r.value === "true");
+    return { orders: on("orders_enabled"), catalog: on("catalog_enabled") };
+  } catch {
+    return { orders: false, catalog: false };
+  }
+}
 
 export type ActiveStoreContext = {
   user: { id: string; email: string | null };

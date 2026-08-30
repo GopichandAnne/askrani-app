@@ -2,11 +2,14 @@
 
 import { createContext, useContext } from "react";
 import type { StoreAccess } from "@/lib/auth/session";
+import type { StoreCapabilities } from "@/lib/store/active-store";
 
 type StoreContextValue = {
   stores: StoreAccess[];
   active: StoreAccess;
   isPlatformAdmin: boolean;
+  /** Opt-in modules (Catalog, Orders) for the active store. */
+  capabilities: StoreCapabilities;
 };
 
 const StoreContext = createContext<StoreContextValue | null>(null);

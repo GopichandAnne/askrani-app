@@ -14,7 +14,7 @@ import { profileFor, homeHrefFor } from "@/lib/console-profile";
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { active, isPlatformAdmin } = useStore();
+  const { active, isPlatformAdmin, capabilities } = useStore();
   const isOwner = active.role === "owner" || isPlatformAdmin;
   const vocab = vocabFor(active.businessType);
   const profile = profileFor(active.businessType);
@@ -48,6 +48,9 @@ export function Sidebar() {
           if (item.businessTypes && !item.businessTypes.includes(active.businessType ?? "")) return null;
           if (item.entitlement === "insights" && !active.insightsEnabled) return null;
           if (item.profiles && !item.profiles.includes(profile)) return null;
+          // Opt-in modules (Catalog, Orders): SaaS shows them only when enabled;
+          // local businesses always show them (unchanged).
+          if (item.capability && profile === "saas" && !capabilities[item.capability]) return null;
           const Icon = item.icon;
           const label = item.labelByProfile?.[profile] ?? (item.vocabKey ? vocab[item.vocabKey] : item.label);
           const isActive =
