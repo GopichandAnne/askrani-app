@@ -85,7 +85,8 @@ export function ProofPanel({ storeId }: { storeId: string }) {
     }
   }
 
-  const groups = group(rows);
+  const gapGroups = group(rows.filter((r) => r.kind === "gap"));
+  const ctxRows = rows.filter((r) => r.kind === "context").slice(0, 4); // latest discovery check
   const hasBefore = rows.some((r) => r.phase === "before");
 
   return (
@@ -120,33 +121,57 @@ export function ProofPanel({ storeId }: { storeId: string }) {
       {loading ? (
         <p className="text-muted-foreground mt-3 text-xs">Loading…</p>
       ) : (
-        groups.length > 0 && (
-          <div className="mt-4 space-y-3">
-            {groups.map((g) => {
-              const pickedUp = !!g.after?.answered && !!g.after?.cited && !(g.before?.answered && g.before?.cited);
-              return (
-                <div
-                  key={g.question}
-                  className="rounded-lg border p-3"
-                  style={pickedUp ? { borderColor: "#5eead4", background: "#f4fefb" } : undefined}
-                >
-                  <div className="mb-2 flex items-start justify-between gap-2">
-                    <p className="text-sm font-medium">{g.question}</p>
-                    {pickedUp && (
-                      <span className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ color: "#0d9488", background: "#d7f8f0" }}>
-                        <Sparkles className="size-3" /> Picked up
-                      </span>
-                    )}
+        <>
+          {gapGroups.length > 0 && (
+            <div className="mt-4 space-y-3">
+              <p className="text-muted-foreground text-xs font-semibold uppercase tracking-wide">Answers about you (asked by name)</p>
+              {gapGroups.map((g) => {
+                const pickedUp = !!g.after?.answered && !!g.after?.cited && !(g.before?.answered && g.before?.cited);
+                return (
+                  <div
+                    key={g.question}
+                    className="rounded-lg border p-3"
+                    style={pickedUp ? { borderColor: "#5eead4", background: "#f4fefb" } : undefined}
+                  >
+                    <div className="mb-2 flex items-start justify-between gap-2">
+                      <p className="text-sm font-medium">{g.question}</p>
+                      {pickedUp && (
+                        <span className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ color: "#0d9488", background: "#d7f8f0" }}>
+                          <Sparkles className="size-3" /> Picked up
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-3 sm:flex-row">
+                      <Side title="Before" row={g.before} />
+                      <Side title="After" row={g.after} />
+                    </div>
                   </div>
-                  <div className="flex flex-col gap-3 sm:flex-row">
-                    <Side title="Before" row={g.before} />
-                    <Side title="After" row={g.after} />
+                );
+              })}
+            </div>
+          )}
+
+          {ctxRows.length > 0 && (
+            <div className="mt-5 space-y-2">
+              <div>
+                <p className="text-muted-foreground text-xs font-semibold uppercase tracking-wide">Discovery — found without your name</p>
+                <p className="text-muted-foreground text-xs">
+                  The hard, high-value test: does the engine recommend you when someone just describes their need?{" "}
+                  <b>{ctxRows.filter((r) => r.answered).length} of {ctxRows.length}</b> mentioned you this check.
+                </p>
+              </div>
+              {ctxRows.map((r, i) => (
+                <div key={i} className="rounded-lg border p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-sm">{r.question}</p>
+                    <Flag on={r.answered} label={r.answered ? "mentioned you" : "not mentioned"} />
                   </div>
+                  {r.answer_text && <p className="text-muted-foreground mt-1 line-clamp-2 text-xs">{r.answer_text}</p>}
                 </div>
-              );
-            })}
-          </div>
-        )
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
   );

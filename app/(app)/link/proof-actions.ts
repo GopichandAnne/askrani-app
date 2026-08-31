@@ -8,6 +8,7 @@ const ANSWERS_SITE = (process.env.ANSWERS_SITE_URL || "https://askrani.ai").repl
 
 export type ProofRow = {
   question: string;
+  kind: "gap" | "context";
   engine: string;
   phase: "before" | "after";
   answered: boolean;
@@ -37,12 +38,13 @@ function engineConfigured(): boolean {
 async function readProofs(db: Db, storeId: string): Promise<ProofRow[]> {
   const { data } = await db
     .from("answer_proofs")
-    .select("question, engine, phase, answered, cited, answer_text, citations, checked_at")
+    .select("question, kind, engine, phase, answered, cited, answer_text, citations, checked_at")
     .eq("store_id", storeId)
     .order("checked_at", { ascending: false })
     .limit(80);
   return (data ?? []).map((r) => ({
     question: r.question as string,
+    kind: (r.kind as "gap" | "context") ?? "gap",
     engine: (r.engine as string) ?? "perplexity",
     phase: (r.phase as "before" | "after") ?? "after",
     answered: !!r.answered,
@@ -107,13 +109,14 @@ export async function runProofCheck(storeId: string, phase: "before" | "after"):
     }
 
     const results: {
-      question: string; engine?: string; answer?: string; citations?: string[]; answered?: boolean; citedOwn?: boolean;
+      question: string; kind?: string; engine?: string; answer?: string; citations?: string[]; answered?: boolean; citedOwn?: boolean;
     }[] = Array.isArray(data.results) ? data.results : [];
     if (results.length) {
       await db.from("answer_proofs").insert(
         results.map((r) => ({
           store_id: storeId,
           question: r.question,
+          kind: r.kind === "context" ? "context" : "gap",
           engine: r.engine ?? "perplexity",
           phase,
           answered: !!r.answered,

@@ -2012,6 +2012,7 @@ export type Database = {
           cited: boolean
           engine: string
           id: string
+          kind: string
           phase: string
           question: string
           store_id: string
@@ -2024,6 +2025,7 @@ export type Database = {
           cited?: boolean
           engine?: string
           id?: string
+          kind?: string
           phase: string
           question: string
           store_id: string
@@ -2036,6 +2038,7 @@ export type Database = {
           cited?: boolean
           engine?: string
           id?: string
+          kind?: string
           phase?: string
           question?: string
           store_id?: string
