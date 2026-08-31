@@ -2010,6 +2010,7 @@ export type Database = {
           checked_at: string
           citations: Json
           cited: boolean
+          competitors: Json
           engine: string
           id: string
           kind: string
@@ -2023,6 +2024,7 @@ export type Database = {
           checked_at?: string
           citations?: Json
           cited?: boolean
+          competitors?: Json
           engine?: string
           id?: string
           kind?: string
@@ -2036,6 +2038,7 @@ export type Database = {
           checked_at?: string
           citations?: Json
           cited?: boolean
+          competitors?: Json
           engine?: string
           id?: string
           kind?: string

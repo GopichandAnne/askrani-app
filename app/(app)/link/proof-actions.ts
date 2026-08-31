@@ -15,6 +15,7 @@ export type ProofRow = {
   cited: boolean;
   answer_text: string | null;
   citations: string[];
+  competitors: string[];
   checked_at: string;
 };
 
@@ -38,7 +39,7 @@ function engineConfigured(): boolean {
 async function readProofs(db: Db, storeId: string): Promise<ProofRow[]> {
   const { data } = await db
     .from("answer_proofs")
-    .select("question, kind, engine, phase, answered, cited, answer_text, citations, checked_at")
+    .select("question, kind, engine, phase, answered, cited, answer_text, citations, competitors, checked_at")
     .eq("store_id", storeId)
     .order("checked_at", { ascending: false })
     .limit(80);
@@ -51,6 +52,7 @@ async function readProofs(db: Db, storeId: string): Promise<ProofRow[]> {
     cited: !!r.cited,
     answer_text: (r.answer_text as string | null) ?? null,
     citations: Array.isArray(r.citations) ? (r.citations as string[]) : [],
+    competitors: Array.isArray(r.competitors) ? (r.competitors as string[]) : [],
     checked_at: r.checked_at as string,
   }));
 }
@@ -109,7 +111,7 @@ export async function runProofCheck(storeId: string, phase: "before" | "after"):
     }
 
     const results: {
-      question: string; kind?: string; engine?: string; answer?: string; citations?: string[]; answered?: boolean; citedOwn?: boolean;
+      question: string; kind?: string; engine?: string; answer?: string; citations?: string[]; answered?: boolean; citedOwn?: boolean; competitors?: string[];
     }[] = Array.isArray(data.results) ? data.results : [];
     if (results.length) {
       await db.from("answer_proofs").insert(
@@ -123,6 +125,7 @@ export async function runProofCheck(storeId: string, phase: "before" | "after"):
           cited: !!r.citedOwn,
           answer_text: r.answer ?? null,
           citations: r.citations ?? [],
+          competitors: Array.isArray(r.competitors) ? r.competitors : [],
         })),
       );
     }

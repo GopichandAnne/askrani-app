@@ -86,7 +86,19 @@ export function ProofPanel({ storeId }: { storeId: string }) {
   }
 
   const gapGroups = group(rows.filter((r) => r.kind === "gap"));
-  const ctxRows = rows.filter((r) => r.kind === "context").slice(0, 4); // latest discovery check
+  const ctxAll = rows.filter((r) => r.kind === "context");
+  const ctxRows = ctxAll.slice(0, 4); // latest discovery check (newest-first)
+  const competitors = [...new Set(ctxRows.flatMap((r) => r.competitors ?? []))].slice(0, 8);
+  // Discovery-rate history: group context rows into checks (by minute).
+  const checkMap = new Map<string, { total: number; hit: number; ts: string }>();
+  for (const r of ctxAll) {
+    const key = r.checked_at.slice(0, 16);
+    const g = checkMap.get(key) ?? { total: 0, hit: 0, ts: r.checked_at };
+    g.total++;
+    if (r.answered) g.hit++;
+    checkMap.set(key, g);
+  }
+  const checks = [...checkMap.values()].sort((a, b) => b.ts.localeCompare(a.ts)).slice(0, 6);
   const hasBefore = rows.some((r) => r.phase === "before");
 
   return (
@@ -159,6 +171,21 @@ export function ProofPanel({ storeId }: { storeId: string }) {
                   The hard, high-value test: does the engine recommend you when someone just describes their need?{" "}
                   <b>{ctxRows.filter((r) => r.answered).length} of {ctxRows.length}</b> mentioned you this check.
                 </p>
+                {checks.length >= 2 && (
+                  <p className="text-muted-foreground mt-1 text-xs">
+                    Trend: {checks.map((c) => `${c.hit}/${c.total}`).reverse().join(" → ")}
+                  </p>
+                )}
+                {competitors.length > 0 && (
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <span className="text-muted-foreground text-xs">Who&apos;s winning these intents:</span>
+                    {competitors.map((c) => (
+                      <span key={c} className="rounded-full px-2 py-0.5 text-[11px]" style={{ color: "#b06a2e", background: "#fff2e6" }}>
+                        {c}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
               {ctxRows.map((r, i) => (
                 <div key={i} className="rounded-lg border p-3">
