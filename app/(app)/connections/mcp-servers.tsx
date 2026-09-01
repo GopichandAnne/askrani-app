@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Loader2, Plug, Plus, RefreshCw, Trash2, Zap } from "lucide-react";
+import { MCP_CATALOG, type McpCatalogEntry } from "./mcp-catalog";
 
 export type McpServerRow = { id: string; name: string; url: string; auth: { type?: string; provider?: string } | null; enabled: boolean };
 export type McpToolRow = { id: string; server_id: string; name: string; remote_name: string; description: string; side_effect: boolean; enabled: boolean };
@@ -41,8 +42,28 @@ export function McpServers({
   const [provider, setProvider] = useState(connectedProviders[0] ?? "");
   const [identityClaim, setIdentityClaim] = useState("token");
   const [busy, setBusy] = useState(false);
+  const [addingId, setAddingId] = useState<string | null>(null);
 
   if (!isOwner) return null;
+
+  const connectedUrls = new Set(servers.map((s) => s.url));
+
+  async function connectFromCatalog(entry: McpCatalogEntry) {
+    // No-auth servers connect in one click; auth ones pre-fill the manual form.
+    if (entry.authType !== "none") {
+      setName(entry.name);
+      setUrl(entry.url);
+      setAuthType(entry.authType);
+      toast.info(`Finish connecting ${entry.name}`, { description: "Add the auth below, then Connect." });
+      return;
+    }
+    setAddingId(entry.id);
+    const { data, error } = await supabase.functions.invoke("mcp", { body: { action: "connect", storeSlug, name: entry.name, url: entry.url, authType: "none" } });
+    setAddingId(null);
+    if (error || data?.error) { toast.error(`Couldn't connect ${entry.name}`, { description: data?.error ?? error?.message }); return; }
+    toast.success(`Connected ${entry.name}`, { description: `${data.tools?.length ?? 0} tool(s) — Rani can use them now.` });
+    void refresh();
+  }
 
   async function refresh() {
     const { data } = await supabase.functions.invoke("mcp", { body: { action: "list", storeSlug } });
@@ -104,6 +125,30 @@ export function McpServers({
         them by context in chat. Store-level auth only; the model never sees your key.
       </p>
 
+      {MCP_CATALOG.some((e) => !connectedUrls.has(e.url)) && (
+        <div className="mb-4">
+          <p className="text-muted-foreground mb-2 text-xs font-medium uppercase tracking-wide">Popular servers — one click</p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {MCP_CATALOG.filter((e) => !connectedUrls.has(e.url)).map((e) => (
+              <div key={e.id} className="bg-card flex items-start gap-3 rounded-lg border p-3">
+                <div className="min-w-0 flex-1">
+                  <p className="flex items-center gap-2 text-sm font-medium">
+                    {e.name}
+                    <span className="text-muted-foreground bg-muted rounded px-1.5 py-0.5 text-[10px] font-normal">{e.category}</span>
+                  </p>
+                  <p className="text-muted-foreground mt-0.5 text-xs">{e.description}</p>
+                </div>
+                <Button variant="outline" size="sm" className="shrink-0" disabled={addingId === e.id} onClick={() => connectFromCatalog(e)}>
+                  {addingId === e.id ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+                  {addingId === e.id ? "Adding…" : "Connect"}
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <p className="text-muted-foreground mb-2 text-xs font-medium uppercase tracking-wide">Or add any server</p>
       <form onSubmit={addServer} className="bg-card space-y-3 rounded-lg border p-4">
         <div className="grid gap-3 sm:grid-cols-2">
           <Input placeholder="Name (e.g. Linear, GitHub)" value={name} onChange={(e) => setName(e.target.value)} />
