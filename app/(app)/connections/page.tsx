@@ -4,6 +4,7 @@ import { getActiveStore } from "@/lib/store/active-store";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ConnectionsClient, type ConnStatus } from "./connections-client";
 import { ApiBuilder, type ApiTool } from "./api-builder";
+import { McpServers, type McpServerRow, type McpToolRow } from "./mcp-servers";
 
 export const metadata: Metadata = { title: "Connections · Ask Rani" };
 export const dynamic = "force-dynamic";
@@ -38,6 +39,11 @@ export default async function ConnectionsPage() {
     .order("created_at", { ascending: false });
   const customTools = (toolRows ?? []) as ApiTool[];
 
+  const [{ data: mcpServerRows }, { data: mcpToolRows }] = await Promise.all([
+    db.from("mcp_server").select("id, name, url, auth, enabled").eq("store_id", ctx.active.id).order("created_at", { ascending: false }),
+    db.from("mcp_tool").select("id, server_id, name, remote_name, description, side_effect, enabled").eq("store_id", ctx.active.id).order("remote_name"),
+  ]);
+
   return (
     <div className="mx-auto max-w-2xl p-4">
       <div className="mb-5">
@@ -52,6 +58,13 @@ export default async function ConnectionsPage() {
         connected={connected}
       />
       <ApiBuilder storeSlug={ctx.active.slug} isOwner={ctx.active.role === "owner"} tools={customTools} connectedProviders={Object.keys(connected)} />
+      <McpServers
+        storeSlug={ctx.active.slug}
+        isOwner={ctx.active.role === "owner"}
+        initialServers={(mcpServerRows ?? []) as McpServerRow[]}
+        initialTools={(mcpToolRows ?? []) as McpToolRow[]}
+        connectedProviders={Object.keys(connected)}
+      />
     </div>
   );
 }

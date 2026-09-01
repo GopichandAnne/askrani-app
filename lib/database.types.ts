@@ -888,6 +888,78 @@ export type Database = {
           },
         ]
       }
+      mcp_server: {
+        Row: {
+          api_key: string | null
+          auth: Json
+          created_at: string
+          enabled: boolean
+          id: string
+          name: string
+          store_id: string
+          url: string
+        }
+        Insert: {
+          api_key?: string | null
+          auth?: Json
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          name: string
+          store_id: string
+          url: string
+        }
+        Update: {
+          api_key?: string | null
+          auth?: Json
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          name?: string
+          store_id?: string
+          url?: string
+        }
+        Relationships: []
+      }
+      mcp_tool: {
+        Row: {
+          created_at: string
+          description: string
+          enabled: boolean
+          id: string
+          input_schema: Json
+          name: string
+          remote_name: string
+          server_id: string
+          side_effect: boolean
+          store_id: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string
+          enabled?: boolean
+          id?: string
+          input_schema?: Json
+          name: string
+          remote_name: string
+          server_id: string
+          side_effect?: boolean
+          store_id: string
+        }
+        Update: {
+          created_at?: string
+          description?: string
+          enabled?: boolean
+          id?: string
+          input_schema?: Json
+          name?: string
+          remote_name?: string
+          server_id?: string
+          side_effect?: boolean
+          store_id?: string
+        }
+        Relationships: []
+      }
       oauth_connection: {
         Row: {
           access_token: string

@@ -59,6 +59,7 @@ import { findItems as sqFindItems, orderStatus as sqOrderStatus } from "./square
 import { findContact as hsFindContact, createLead as hsCreateLead } from "./hubspot.ts";
 import { me as calMe, listEventTypes as calEventTypes, availableTimes as calAvailableTimes } from "./calendly.ts";
 import { executeHttpTool, httpToolDeclaration, type HttpTool, type Visitor } from "./httptool.ts";
+import { executeMcpTool, mcpToolDeclaration, type McpTool } from "./mcp.ts";
 
 // ── Gemini functionDeclaration shapes ───────────────────────────────────────
 // A JSON-Schema-ish node; `items`/`properties` may nest (e.g. an array of objects).
@@ -1524,6 +1525,7 @@ export function buildToolset(
   connected: string[] = [],
   httpTools: HttpTool[] = [],
   visitor?: Visitor,
+  mcpTools: McpTool[] = [],
 ): Toolset {
   // One calendar tool pair serves whichever calendar the store connected — prefer
   // Google if both are on. (Most stores connect just one.)
@@ -1644,6 +1646,13 @@ export function buildToolset(
     if (executors[t.name]) continue; // never override a built-in or connector tool
     executors[t.name] = (args) => executeHttpTool(db, store, t, args, visitor);
     declarations.push(httpToolDeclaration(t));
+  }
+  // MCP tools — discovered from the owner's connected MCP servers. Rani picks
+  // them by context like any other tool; execution proxies to the server.
+  for (const t of mcpTools) {
+    if (executors[t.name]) continue; // never override a built-in / connector / http tool
+    executors[t.name] = (args) => executeMcpTool(db, store, t, args);
+    declarations.push(mcpToolDeclaration(t));
   }
   return {
     declarations,

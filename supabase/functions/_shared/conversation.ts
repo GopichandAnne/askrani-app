@@ -32,6 +32,7 @@ import { sendText } from "./wa.ts";
 import { loadStoreIntegrations } from "./integrations.ts";
 import { listConnectedProviders } from "./connections.ts";
 import { loadHttpTools, type Visitor } from "./httptool.ts";
+import { loadMcpTools } from "./mcp.ts";
 import { loadRequestTypes } from "./requests.ts";
 import { accessMode, identityContext, resolveMember } from "./members.ts";
 import {
@@ -90,6 +91,8 @@ export async function generateTurnReply(
   const connectedProviders = await listConnectedProviders(db, store.id);
   // Builder-generated API tools (from an OpenAPI spec via integration-build).
   const httpTools = await loadHttpTools(db, store.id);
+  // Tools discovered from the owner's connected MCP servers.
+  const mcpTools = await loadMcpTools(db, store.id);
   const systemInstruction = buildSystemInstruction(config, { hasConnector: integrations.length > 0 });
   // Prefix the CURRENT message (volatile — not the cached prefix) with store-local
   // date/time + open/closed, and any pending priced proposal awaiting a decision.
@@ -133,7 +136,7 @@ export async function generateTurnReply(
   const ui: UiDirectives = {};
   const toolset = buildToolset(
     db, store, opts.sessionId, config.ordersEnabled, hasProposal, config.catalogEnabled, today, integrations,
-    requestTypes, ui, config.timezone, connectedProviders, httpTools, opts.visitor,
+    requestTypes, ui, config.timezone, connectedProviders, httpTools, opts.visitor, mcpTools,
   );
   const reply = await generateReply(systemInstruction, contents, toolset, {
     svc: db, storeId: store.id, kind: "bot_chat", ref: { sessionId: opts.sessionId },
