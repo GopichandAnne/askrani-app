@@ -17,7 +17,7 @@ import { Loader2, Plug, Plus, RefreshCw, Trash2, Zap } from "lucide-react";
 import { MCP_CATALOG, type McpCatalogEntry } from "./mcp-catalog";
 
 export type McpServerRow = { id: string; name: string; url: string; auth: { type?: string; provider?: string } | null; enabled: boolean };
-export type McpToolRow = { id: string; server_id: string; name: string; remote_name: string; description: string; side_effect: boolean; enabled: boolean };
+export type McpToolRow = { id: string; server_id: string; name: string; remote_name: string; description: string; side_effect: boolean; enabled: boolean; action_policy?: string };
 
 export function McpServers({
   storeSlug,
@@ -93,6 +93,14 @@ export function McpServers({
   async function toggleTool(id: string, enabled: boolean) {
     setTools((prev) => prev.map((t) => (t.id === id ? { ...t, enabled } : t)));
     await supabase.functions.invoke("mcp", { body: { action: "toggle_tool", storeSlug, toolId: id, enabled } });
+  }
+
+  async function setToolPolicy(id: string, hold: boolean) {
+    const next = hold ? "hold" : "auto";
+    setTools((prev) => prev.map((t) => (t.id === id ? { ...t, action_policy: next } : t)));
+    const { error } = await supabase.functions.invoke("mcp", { body: { action: "set_tool_policy", storeSlug, toolId: id, policy: next } });
+    if (error) { toast.error("Couldn't update"); return; }
+    toast.success(hold ? "Held for a person" : "Auto — Rani can run this");
   }
 
   async function toggleServer(id: string, enabled: boolean) {
@@ -232,6 +240,16 @@ export function McpServers({
                           </p>
                           {t.description && <p className="text-muted-foreground truncate text-xs">{t.description}</p>}
                         </div>
+                        {t.side_effect && (
+                          <Button
+                            variant={t.action_policy === "hold" ? "secondary" : "ghost"}
+                            size="sm"
+                            onClick={() => setToolPolicy(t.id, t.action_policy !== "hold")}
+                            title={t.action_policy === "hold" ? "Held — Rani flags this for a person. Click to allow." : "Auto — Rani can run this. Click to require a person."}
+                          >
+                            {t.action_policy === "hold" ? "🔒 Hold" : "Auto"}
+                          </Button>
+                        )}
                         <Switch checked={t.enabled} onCheckedChange={(c) => toggleTool(t.id, c)} aria-label={`Enable ${t.remote_name}`} />
                       </div>
                     ))}

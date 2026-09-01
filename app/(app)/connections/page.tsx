@@ -34,14 +34,14 @@ export default async function ConnectionsPage() {
 
   const { data: toolRows } = await db
     .from("http_tool")
-    .select("id, name, description, method, side_effect, auth")
+    .select("id, name, description, method, side_effect, auth, action_policy")
     .eq("store_id", ctx.active.id)
     .order("created_at", { ascending: false });
   const customTools = (toolRows ?? []) as ApiTool[];
 
   const [{ data: mcpServerRows }, { data: mcpToolRows }] = await Promise.all([
     db.from("mcp_server").select("id, name, url, auth, enabled").eq("store_id", ctx.active.id).order("created_at", { ascending: false }),
-    db.from("mcp_tool").select("id, server_id, name, remote_name, description, side_effect, enabled").eq("store_id", ctx.active.id).order("remote_name"),
+    db.from("mcp_tool").select("id, server_id, name, remote_name, description, side_effect, enabled, action_policy").eq("store_id", ctx.active.id).order("remote_name"),
   ]);
 
   return (

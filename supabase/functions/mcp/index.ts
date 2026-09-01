@@ -68,7 +68,7 @@ Deno.serve(async (req) => {
   } catch { /* ignore */ }
   if (!userId) return json({ error: "unauthorized" }, 401);
 
-  let body: { action?: string; storeSlug?: string; name?: string; url?: string; authType?: string; apiKey?: string; authProvider?: string; identityClaim?: string; identityField?: string; serverId?: string; toolId?: string; enabled?: boolean };
+  let body: { action?: string; storeSlug?: string; name?: string; url?: string; authType?: string; apiKey?: string; authProvider?: string; identityClaim?: string; identityField?: string; serverId?: string; toolId?: string; enabled?: boolean; policy?: string };
   try { body = await req.json(); } catch { return json({ error: "bad json" }, 400); }
   const slug = String(body.storeSlug ?? "").trim().toLowerCase();
   if (!slug) return json({ error: "storeSlug required" }, 400);
@@ -87,7 +87,7 @@ Deno.serve(async (req) => {
   if (action === "list") {
     const [{ data: servers }, { data: tools }] = await Promise.all([
       db.from("mcp_server").select("id, name, url, auth, enabled, created_at").eq("store_id", store.id).order("created_at", { ascending: false }),
-      db.from("mcp_tool").select("id, server_id, name, remote_name, description, side_effect, enabled").eq("store_id", store.id).order("remote_name"),
+      db.from("mcp_tool").select("id, server_id, name, remote_name, description, side_effect, enabled, action_policy").eq("store_id", store.id).order("remote_name"),
     ]);
     return json({ servers: servers ?? [], tools: tools ?? [] });
   }
@@ -96,6 +96,13 @@ Deno.serve(async (req) => {
     if (!body.toolId) return json({ error: "toolId required" }, 400);
     await db.from("mcp_tool").update({ enabled: body.enabled === true }).eq("store_id", store.id).eq("id", body.toolId);
     return json({ ok: true });
+  }
+
+  if (action === "set_tool_policy") {
+    if (!body.toolId) return json({ error: "toolId required" }, 400);
+    const policy = body.policy === "hold" ? "hold" : "auto";
+    await db.from("mcp_tool").update({ action_policy: policy }).eq("store_id", store.id).eq("id", body.toolId);
+    return json({ ok: true, policy });
   }
 
   if (action === "toggle_server") {

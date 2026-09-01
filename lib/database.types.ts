@@ -843,6 +843,7 @@ export type Database = {
           side_effect: boolean
           store_id: string
           timeout_ms: number
+          action_policy: string
         }
         Insert: {
           api_key?: string | null
@@ -860,6 +861,7 @@ export type Database = {
           side_effect?: boolean
           store_id: string
           timeout_ms?: number
+          action_policy?: string
         }
         Update: {
           api_key?: string | null
@@ -969,6 +971,7 @@ export type Database = {
           server_id: string
           side_effect: boolean
           store_id: string
+          action_policy: string
         }
         Insert: {
           created_at?: string
@@ -981,6 +984,7 @@ export type Database = {
           server_id: string
           side_effect?: boolean
           store_id: string
+          action_policy?: string
         }
         Update: {
           created_at?: string
@@ -993,6 +997,7 @@ export type Database = {
           server_id?: string
           side_effect?: boolean
           store_id?: string
+          action_policy?: string
         }
         Relationships: []
       }

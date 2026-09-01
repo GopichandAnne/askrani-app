@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { FlaskConical, Loader2, Trash2, Wand2 } from "lucide-react";
 
-export type ApiTool = { id: string; name: string; description: string; method: string; side_effect: boolean; auth?: { type?: string; claim?: string; provider?: string } | null };
+export type ApiTool = { id: string; name: string; description: string; method: string; side_effect: boolean; auth?: { type?: string; claim?: string; provider?: string } | null; action_policy?: string };
 type BuiltTool = ApiTool & { tested?: "ok" | "failed" | "skipped" };
 
 const PROVIDER_NAMES: Record<string, string> = { google: "Google", microsoft: "Microsoft", square: "Square", hubspot: "HubSpot", calendly: "Calendly" };
@@ -34,6 +34,18 @@ export function ApiBuilder({ storeSlug, isOwner, tools, connectedProviders = [] 
   const [busy, setBusy] = useState(false);
   const [delId, setDelId] = useState<string | null>(null);
   const [testId, setTestId] = useState<string | null>(null);
+  const [policies, setPolicies] = useState<Record<string, string>>(() =>
+    Object.fromEntries(tools.map((t) => [t.id, t.action_policy ?? "auto"])),
+  );
+
+  async function setPolicy(id: string, hold: boolean) {
+    const next = hold ? "hold" : "auto";
+    setPolicies((p) => ({ ...p, [id]: next }));
+    const supabase = createClient();
+    const { error } = await supabase.functions.invoke("integration-build", { body: { action: "set_policy", storeSlug, toolId: id, policy: next } });
+    if (error) { setPolicies((p) => ({ ...p, [id]: hold ? "auto" : "hold" })); toast.error("Couldn't update"); return; }
+    toast.success(hold ? "Held for a person — Rani won't run this itself" : "Auto — Rani can run this");
+  }
 
   async function build() {
     if (!isOwner) { toast.error("Only the store owner can add tools."); return; }
@@ -204,6 +216,17 @@ export function ApiBuilder({ storeSlug, isOwner, tools, connectedProviders = [] 
                 </div>
                 <p className="text-muted-foreground truncate text-xs">{t.description}</p>
               </div>
+              {t.side_effect && (
+                <Button
+                  variant={policies[t.id] === "hold" ? "secondary" : "ghost"}
+                  size="sm"
+                  disabled={!isOwner}
+                  onClick={() => setPolicy(t.id, policies[t.id] !== "hold")}
+                  title={policies[t.id] === "hold" ? "Held — Rani flags this for a person instead of running it. Click to allow." : "Auto — Rani can run this after the customer confirms. Click to require a person."}
+                >
+                  {policies[t.id] === "hold" ? "🔒 Hold" : "Auto"}
+                </Button>
+              )}
               {!t.side_effect && (
                 <Button variant="ghost" size="icon" disabled={!isOwner || testId === t.id} onClick={() => test(t.id)} aria-label="Test tool" title="Make a real test call">
                   {testId === t.id ? <Loader2 className="size-4 animate-spin" /> : <FlaskConical className="size-4" />}

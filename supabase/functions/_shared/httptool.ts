@@ -34,6 +34,8 @@ export interface HttpTool {
   api_key: string | null;
   side_effect: boolean;
   timeout_ms: number;
+  // Preventive governance: 'hold' blocks a write from executing (owner-set).
+  action_policy?: "auto" | "hold";
 }
 
 /** The verified, signed-in visitor (from the embed's data-user-token). Never set
@@ -50,7 +52,7 @@ const MAX_RESULT = 6000;
 export async function loadHttpTools(db: SupabaseClient, storeId: string): Promise<HttpTool[]> {
   const { data, error } = await db
     .from("http_tool")
-    .select("id, name, description, method, base_url, path, params, request_map, auth, api_key, side_effect, timeout_ms")
+    .select("id, name, description, method, base_url, path, params, request_map, auth, api_key, side_effect, timeout_ms, action_policy")
     .eq("store_id", storeId).eq("enabled", true);
   if (error) { console.error(`[httptool] load: ${error.message}`); return []; }
   return (data ?? []) as HttpTool[];
@@ -67,6 +69,11 @@ export function httpToolDeclaration(t: HttpTool): FunctionDeclaration {
 export async function executeHttpTool(
   db: SupabaseClient, store: Store, t: HttpTool, args: Record<string, unknown>, visitor?: Visitor,
 ): Promise<Record<string, unknown>> {
+  // Preventive governance: a write held by the owner never executes — flagged
+  // for a person instead. Enforced here, so the model can't override it.
+  if (t.side_effect && t.action_policy === "hold") {
+    return { held: true, note: "That needs a team member to approve — I've flagged it for them and someone will follow up." };
+  }
   try {
     let path = t.path;
     const query = new URLSearchParams();

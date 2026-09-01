@@ -18,7 +18,7 @@ export async function logToolCall(
   db: SupabaseClient,
   store: Store,
   sessionId: string,
-  e: { tool: string; kind: "http" | "mcp" | "connector"; actedAs: string | null; sideEffect: boolean; status: "ok" | "error" },
+  e: { tool: string; kind: "http" | "mcp" | "connector"; actedAs: string | null; sideEffect: boolean; status: "ok" | "error" | "held" },
 ): Promise<void> {
   try {
     await db.from("agent_action_log").insert({

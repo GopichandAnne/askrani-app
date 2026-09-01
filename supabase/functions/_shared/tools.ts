@@ -1650,7 +1650,7 @@ export function buildToolset(
       const out = await executeHttpTool(db, store, t, args, visitor);
       void logToolCall(db, store, sessionId, {
         tool: t.name, kind: "http", actedAs: actedAsLabel(t.auth?.type, visitor),
-        sideEffect: !!t.side_effect, status: out && (out.error || out.ok === false) ? "error" : "ok",
+        sideEffect: !!t.side_effect, status: out?.held ? "held" : out && (out.error || out.ok === false) ? "error" : "ok",
       });
       return out;
     };
@@ -1664,7 +1664,7 @@ export function buildToolset(
       const out = await executeMcpTool(db, store, t, args, visitor);
       void logToolCall(db, store, sessionId, {
         tool: t.name, kind: "mcp", actedAs: actedAsLabel(t.server.auth?.type, visitor),
-        sideEffect: !!t.side_effect, status: out && (out.error || out.ok === false) ? "error" : "ok",
+        sideEffect: !!t.side_effect, status: out?.held ? "held" : out && (out.error || out.ok === false) ? "error" : "ok",
       });
       return out;
     };

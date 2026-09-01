@@ -37,6 +37,7 @@ import { ProofPanel } from "@/components/store-link/proof-panel";
 import { ListingQrs } from "@/components/store-link/listing-qrs";
 import { TableQrs } from "@/components/store-link/table-qrs";
 import { DIAL_CODES, combineDial, splitDial } from "@/lib/phone";
+import { profileFor } from "@/lib/console-profile";
 
 const TIMEOUTS: [number, string][] = [
   [15, "15 minutes"],
@@ -334,8 +335,23 @@ export function StoreLinkPanel({
     );
   }
 
+  const isSaas = profileFor(businessType) === "saas";
+
   return (
     <div className="space-y-5">
+      {isSaas && (
+        <div className="space-y-2 rounded-lg border p-3">
+          <p className="text-sm font-medium">Install Rani on your site</p>
+          <p className="text-muted-foreground text-xs">
+            Paste this one line before <code className="bg-muted rounded px-1">&lt;/body&gt;</code> — a chat bubble appears, no coding.
+          </p>
+          <code className="bg-muted block overflow-x-auto whitespace-pre rounded px-2 py-1.5 text-xs">{embedSnippet || "…"}</code>
+          <Button size="sm" variant="outline" onClick={copyEmbed} disabled={!embedSnippet}>
+            {copiedEmbed ? <Check className="size-4" /> : <Copy className="size-4" />}
+            {copiedEmbed ? "Copied" : "Copy embed code"}
+          </Button>
+        </div>
+      )}
       <div className="flex items-center justify-between gap-3 rounded-lg border p-3">
         <div>
           <p className="text-sm font-medium">Web chat link</p>

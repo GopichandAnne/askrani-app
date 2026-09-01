@@ -99,7 +99,7 @@ Deno.serve(async (req) => {
   } catch { /* ignore */ }
   if (!userId) return json({ error: "unauthorized" }, 401);
 
-  let body: { action?: string; storeSlug?: string; openapiUrl?: string; goal?: string; apiKey?: string; toolId?: string; sampleArgs?: Record<string, unknown>; forwardIdentity?: boolean; identityClaim?: string; identityField?: string; identityIn?: string; authProvider?: string };
+  let body: { action?: string; storeSlug?: string; openapiUrl?: string; goal?: string; apiKey?: string; toolId?: string; sampleArgs?: Record<string, unknown>; forwardIdentity?: boolean; identityClaim?: string; identityField?: string; identityIn?: string; authProvider?: string; policy?: string };
   try { body = await req.json(); } catch { return json({ error: "bad json" }, 400); }
   const slug = String(body.storeSlug ?? "").trim().toLowerCase();
   if (!slug) return json({ error: "storeSlug required" }, 400);
@@ -116,13 +116,19 @@ Deno.serve(async (req) => {
   const action = body.action ?? "build";
 
   if (action === "list") {
-    const { data } = await db.from("http_tool").select("id, name, description, method, side_effect, auth, enabled").eq("store_id", store.id).order("created_at", { ascending: false });
+    const { data } = await db.from("http_tool").select("id, name, description, method, side_effect, auth, enabled, action_policy").eq("store_id", store.id).order("created_at", { ascending: false });
     return json({ tools: data ?? [] });
   }
   if (action === "delete") {
     if (!body.toolId) return json({ error: "toolId required" }, 400);
     await db.from("http_tool").delete().eq("store_id", store.id).eq("id", body.toolId);
     return json({ ok: true });
+  }
+  if (action === "set_policy") {
+    if (!body.toolId) return json({ error: "toolId required" }, 400);
+    const policy = body.policy === "hold" ? "hold" : "auto";
+    await db.from("http_tool").update({ action_policy: policy }).eq("store_id", store.id).eq("id", body.toolId);
+    return json({ ok: true, policy });
   }
   // ── test (dry-run) ── make ONE real call to prove the mapping + auth work.
   // Never runs a write tool (side_effect) — those can only be tried by the bot,

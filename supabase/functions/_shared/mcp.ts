@@ -45,6 +45,7 @@ export interface McpTool {
   // deno-lint-ignore no-explicit-any
   input_schema: any;
   side_effect: boolean;
+  action_policy?: "auto" | "hold";
   server: McpServer;
 }
 
@@ -175,14 +176,14 @@ export async function mcpListTools(
 export async function loadMcpTools(db: SupabaseClient, storeId: string): Promise<McpTool[]> {
   const { data, error } = await db
     .from("mcp_tool")
-    .select("id, name, remote_name, description, input_schema, side_effect, enabled, mcp_server!inner(id, store_id, name, url, auth, api_key, enabled)")
+    .select("id, name, remote_name, description, input_schema, side_effect, action_policy, enabled, mcp_server!inner(id, store_id, name, url, auth, api_key, enabled)")
     .eq("store_id", storeId)
     .eq("enabled", true)
     .eq("mcp_server.enabled", true);
   if (error) { console.error(`[mcp] load: ${error.message}`); return []; }
   return (data ?? []).map((r: Any) => ({
     id: r.id, name: r.name, remote_name: r.remote_name, description: r.description,
-    input_schema: r.input_schema, side_effect: r.side_effect, server: r.mcp_server as McpServer,
+    input_schema: r.input_schema, side_effect: r.side_effect, action_policy: r.action_policy, server: r.mcp_server as McpServer,
   }));
 }
 
@@ -208,6 +209,10 @@ function contentText(result: Any): string {
 export async function executeMcpTool(
   db: SupabaseClient, store: Store, t: McpTool, args: Record<string, unknown>, visitor?: Visitor,
 ): Promise<Record<string, unknown>> {
+  // Preventive governance: an owner-held write never executes — flagged for a person.
+  if (t.side_effect && t.action_policy === "hold") {
+    return { held: true, note: "That needs a team member to approve — I've flagged it for them and someone will follow up." };
+  }
   try {
     // Delegated-identity servers can only be called for a signed-in visitor.
     if (t.server.auth?.type === "identity" && !identityValue(t.server, visitor)) {
