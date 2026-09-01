@@ -890,6 +890,48 @@ export type Database = {
           },
         ]
       }
+      action_request: {
+        Row: {
+          acted_as: string | null
+          created_at: string
+          decided_at: string | null
+          decided_by: string | null
+          detail: string
+          id: string
+          kind: string
+          session_id: string | null
+          status: string
+          store_id: string
+          tool: string
+        }
+        Insert: {
+          acted_as?: string | null
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          detail?: string
+          id?: string
+          kind: string
+          session_id?: string | null
+          status?: string
+          store_id: string
+          tool: string
+        }
+        Update: {
+          acted_as?: string | null
+          created_at?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          detail?: string
+          id?: string
+          kind?: string
+          session_id?: string | null
+          status?: string
+          store_id?: string
+          tool?: string
+        }
+        Relationships: []
+      }
       agent_action_log: {
         Row: {
           acted_as: string | null

@@ -61,6 +61,7 @@ import { me as calMe, listEventTypes as calEventTypes, availableTimes as calAvai
 import { executeHttpTool, httpToolDeclaration, type HttpTool, type Visitor } from "./httptool.ts";
 import { executeMcpTool, mcpToolDeclaration, type McpTool } from "./mcp.ts";
 import { logToolCall, actedAsLabel } from "./audit.ts";
+import { routeHeldAction } from "./holds.ts";
 
 // ── Gemini functionDeclaration shapes ───────────────────────────────────────
 // A JSON-Schema-ish node; `items`/`properties` may nest (e.g. an array of objects).
@@ -1648,10 +1649,16 @@ export function buildToolset(
     if (executors[t.name]) continue; // never override a built-in or connector tool
     executors[t.name] = async (args) => {
       const out = await executeHttpTool(db, store, t, args, visitor);
+      const actedAs = actedAsLabel(t.auth?.type, visitor);
       void logToolCall(db, store, sessionId, {
-        tool: t.name, kind: "http", actedAs: actedAsLabel(t.auth?.type, visitor),
+        tool: t.name, kind: "http", actedAs,
         sideEffect: !!t.side_effect, status: out?.held ? "held" : out && (out.error || out.ok === false) ? "error" : "ok",
       });
+      // A held write becomes a real, resolvable approval request + team notice.
+      if (out?.held) {
+        const routed = await routeHeldAction(db, store, sessionId, { tool: t.name, kind: "http", actedAs, args });
+        return { ...out, ...(routed.reference ? { reference: routed.reference } : {}), note: routed.note };
+      }
       return out;
     };
     declarations.push(httpToolDeclaration(t));
@@ -1662,10 +1669,16 @@ export function buildToolset(
     if (executors[t.name]) continue; // never override a built-in / connector / http tool
     executors[t.name] = async (args) => {
       const out = await executeMcpTool(db, store, t, args, visitor);
+      const actedAs = actedAsLabel(t.server.auth?.type, visitor);
       void logToolCall(db, store, sessionId, {
-        tool: t.name, kind: "mcp", actedAs: actedAsLabel(t.server.auth?.type, visitor),
+        tool: t.name, kind: "mcp", actedAs,
         sideEffect: !!t.side_effect, status: out?.held ? "held" : out && (out.error || out.ok === false) ? "error" : "ok",
       });
+      // A held write becomes a real, resolvable approval request + team notice.
+      if (out?.held) {
+        const routed = await routeHeldAction(db, store, sessionId, { tool: t.name, kind: "mcp", actedAs, args });
+        return { ...out, ...(routed.reference ? { reference: routed.reference } : {}), note: routed.note };
+      }
       return out;
     };
     declarations.push(mcpToolDeclaration(t));

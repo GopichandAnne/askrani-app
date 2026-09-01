@@ -4,6 +4,7 @@ import { getActiveStore } from "@/lib/store/active-store";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { profileFor, homeHrefFor } from "@/lib/console-profile";
 import { ShieldCheck, UserCheck, Store as StoreIcon } from "lucide-react";
+import { Approvals, type Approval } from "@/components/activity/approvals";
 
 export const metadata: Metadata = { title: "Activity · Ask Rani" };
 export const dynamic = "force-dynamic";
@@ -32,13 +33,23 @@ export default async function ActivityPage() {
   if (!isOwner) redirect(homeHrefFor(profileFor(store.businessType)));
 
   const db = createAdminClient();
-  const { data } = await db
-    .from("agent_action_log")
-    .select("id, ts, tool, kind, acted_as, side_effect, status")
-    .eq("store_id", store.id)
-    .order("ts", { ascending: false })
-    .limit(200);
+  const [{ data }, { data: pending }] = await Promise.all([
+    db
+      .from("agent_action_log")
+      .select("id, ts, tool, kind, acted_as, side_effect, status")
+      .eq("store_id", store.id)
+      .order("ts", { ascending: false })
+      .limit(200),
+    db
+      .from("action_request")
+      .select("id, created_at, tool, kind, acted_as, detail")
+      .eq("store_id", store.id)
+      .eq("status", "pending")
+      .order("created_at", { ascending: false })
+      .limit(50),
+  ]);
   const rows = (data ?? []) as Row[];
+  const approvals = (pending ?? []) as Approval[];
 
   const total = rows.length;
   const asCustomer = rows.filter((r) => r.acted_as).length;
@@ -64,6 +75,8 @@ export default async function ActivityPage() {
           </p>
         </div>
       </div>
+
+      <Approvals initial={approvals} />
 
       <div className="grid grid-cols-3 gap-3">
         <Stat label="Actions logged" value={total} />
@@ -107,7 +120,9 @@ export default async function ActivityPage() {
                   <td className="p-3">
                     {r.status === "ok"
                       ? <span className="text-teal-deep text-xs font-medium">ok</span>
-                      : <span className="text-destructive text-xs font-medium">failed</span>}
+                      : r.status === "held"
+                        ? <span className="text-xs font-medium text-amber-600">held for approval</span>
+                        : <span className="text-destructive text-xs font-medium">failed</span>}
                   </td>
                 </tr>
               ))}
