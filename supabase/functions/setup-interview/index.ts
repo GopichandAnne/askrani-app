@@ -132,7 +132,7 @@ Deno.serve(async (req) => {
   // their site — treat them as online and detect from it instead of asking again.
   const site = typeof body.site === "string" ? body.site.trim() : "";
   const siteHint = site
-    ? `\n\n[The owner arrived from our website grader for their site: ${site}. They're an ONLINE / software / product company. Ask their business name first; then run detect (kind "online", query "${site}") — do NOT ask them for their website, we already have it.]`
+    ? `\n\n[The owner arrived from our website grader, which just graded the site: ${site}. Ask their business name first. IF the name they give is the SAME company as ${site}, treat them as an ONLINE / software / product company and run detect (kind "online", query "${site}") WITHOUT asking for their website — we already have it. BUT if the name they give is clearly a DIFFERENT business than ${site} (a different company name), IGNORE this grader site entirely and follow the normal flow: ask for their own website or address and detect from what THEY give you — never detect ${site} for a business it doesn't belong to.]`
     : "";
 
   const out = await generateStructured(SYS, `${transcript}${known}${siteHint}${detected}\n\nWrite Rani's next turn as JSON.`);
