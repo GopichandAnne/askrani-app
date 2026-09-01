@@ -26,4 +26,8 @@ jobs:
       - name: Show migration status
         run: supabase migration list
       - name: Push migrations
-        run: supabase db push
+        # --include-all: the project had migrations hand-applied out of order, so
+        # some sit "before the last remote migration" and are missing from history.
+        # All our migrations are idempotent (if-not-exists / create-or-replace), so
+        # re-applying is a no-op and this simply syncs the history.
+        run: supabase db push --include-all
