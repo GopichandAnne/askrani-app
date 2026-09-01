@@ -39,6 +39,7 @@ export function McpServers({
   const [authType, setAuthType] = useState("none");
   const [apiKey, setApiKey] = useState("");
   const [provider, setProvider] = useState(connectedProviders[0] ?? "");
+  const [identityClaim, setIdentityClaim] = useState("token");
   const [busy, setBusy] = useState(false);
 
   if (!isOwner) return null;
@@ -56,6 +57,7 @@ export function McpServers({
     const body: Record<string, unknown> = { action: "connect", storeSlug, name, url, authType };
     if (authType === "apikey") body.apiKey = apiKey;
     if (authType === "oauth") body.authProvider = provider;
+    if (authType === "identity") body.identityClaim = identityClaim;
     const { data, error } = await supabase.functions.invoke("mcp", { body });
     setBusy(false);
     if (error || data?.error) {
@@ -114,6 +116,7 @@ export function McpServers({
               <SelectItem value="none">No auth</SelectItem>
               <SelectItem value="apikey">API key</SelectItem>
               <SelectItem value="oauth" disabled={connectedProviders.length === 0}>Connected app (OAuth)</SelectItem>
+              <SelectItem value="identity">Signed-in customer</SelectItem>
             </SelectContent>
           </Select>
           {authType === "apikey" && (
@@ -127,11 +130,28 @@ export function McpServers({
               </SelectContent>
             </Select>
           )}
+          {authType === "identity" && (
+            <Select value={identityClaim} onValueChange={setIdentityClaim}>
+              <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="token">Forward sign-in token (Bearer)</SelectItem>
+                <SelectItem value="email">Forward verified email</SelectItem>
+                <SelectItem value="phone">Forward verified phone</SelectItem>
+                <SelectItem value="sub">Forward verified user id</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
           <Button type="submit" disabled={busy || !name.trim() || !url.trim()} className="ml-auto">
             {busy ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
             {busy ? "Connecting…" : "Connect server"}
           </Button>
         </div>
+        {authType === "identity" && (
+          <p className="text-muted-foreground text-xs">
+            These tools run <span className="font-medium">as the signed-in customer</span> — turn on sign-in in Members &amp; access.
+            Tool discovery runs without sign-in, so the server must let you list its tools unauthenticated.
+          </p>
+        )}
       </form>
 
       {servers.length > 0 && (

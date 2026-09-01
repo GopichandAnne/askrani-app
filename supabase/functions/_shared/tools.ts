@@ -1651,7 +1651,7 @@ export function buildToolset(
   // them by context like any other tool; execution proxies to the server.
   for (const t of mcpTools) {
     if (executors[t.name]) continue; // never override a built-in / connector / http tool
-    executors[t.name] = (args) => executeMcpTool(db, store, t, args);
+    executors[t.name] = (args) => executeMcpTool(db, store, t, args, visitor);
     declarations.push(mcpToolDeclaration(t));
   }
   return {

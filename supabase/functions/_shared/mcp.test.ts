@@ -73,6 +73,33 @@ Deno.test("mcp client: call a tool over an SSE reply", async () => {
   } finally { await stop(); }
 });
 
+Deno.test("mcp client: identity auth forwards the visitor token, and blocks anonymous", async () => {
+  let seenAuth: string | null = "unset";
+  const ac = new AbortController();
+  const server = Deno.serve({ port: 0, signal: ac.signal, onListen: () => {} }, async (req) => {
+    const body = await req.json();
+    if (body.method === "tools/call") seenAuth = req.headers.get("authorization");
+    if (body.method === "initialize") return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result: {} }), { headers: { "content-type": "application/json" } });
+    if (body.method === "notifications/initialized") return new Response(null, { status: 202 });
+    return new Response(JSON.stringify({ jsonrpc: "2.0", id: body.id, result: { content: [{ type: "text", text: "ok" }] } }), { headers: { "content-type": "application/json" } });
+  });
+  const addr = server.addr as Deno.NetAddr;
+  try {
+    const srv: McpServer = { id: "s1", store_id: "store-1", name: "Ident", url: `http://localhost:${addr.port}/mcp`, auth: { type: "identity", claim: "token" }, api_key: null, enabled: true };
+    const tool = { id: "t1", name: "mcp_ident_do", remote_name: "do", description: "", input_schema: {}, side_effect: false, server: srv };
+
+    // Anonymous (no visitor) -> blocked, never calls the server.
+    const anon = await executeMcpTool(DB, STORE, tool, {});
+    assert(typeof anon.error === "string" && /logged in/.test(anon.error), "anon should be blocked");
+    assertEquals(seenAuth, "unset", "server must NOT be called for an anonymous visitor");
+
+    // Signed-in -> forwards the token as Authorization: Bearer.
+    const out = await executeMcpTool(DB, STORE, tool, {}, { token: "usr-tok-99" });
+    assertEquals(out, { result: "ok" });
+    assertEquals(seenAuth, "Bearer usr-tok-99");
+  } finally { ac.abort(); await server.finished; }
+});
+
 Deno.test("mcp client: a server that returns an error surfaces a soft note", async () => {
   const ac = new AbortController();
   const server = Deno.serve({ port: 0, signal: ac.signal, onListen: () => {} }, () =>

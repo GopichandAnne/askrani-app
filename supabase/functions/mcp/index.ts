@@ -68,7 +68,7 @@ Deno.serve(async (req) => {
   } catch { /* ignore */ }
   if (!userId) return json({ error: "unauthorized" }, 401);
 
-  let body: { action?: string; storeSlug?: string; name?: string; url?: string; authType?: string; apiKey?: string; authProvider?: string; serverId?: string; toolId?: string; enabled?: boolean };
+  let body: { action?: string; storeSlug?: string; name?: string; url?: string; authType?: string; apiKey?: string; authProvider?: string; identityClaim?: string; identityField?: string; serverId?: string; toolId?: string; enabled?: boolean };
   try { body = await req.json(); } catch { return json({ error: "bad json" }, 400); }
   const slug = String(body.storeSlug ?? "").trim().toLowerCase();
   if (!slug) return json({ error: "storeSlug required" }, 400);
@@ -125,7 +125,7 @@ Deno.serve(async (req) => {
   if (!name) return json({ error: "Give the server a name." }, 400);
   if (!/^https?:\/\//i.test(url)) return json({ error: "Enter the MCP server's URL (https://…)." }, 400);
 
-  const authType = ["none", "apikey", "oauth"].includes(String(body.authType)) ? String(body.authType) : "none";
+  const authType = ["none", "apikey", "oauth", "identity"].includes(String(body.authType)) ? String(body.authType) : "none";
   let auth: Any = { type: "none" };
   let apiKeyEnc: string | null = null;
   if (authType === "apikey") {
@@ -135,6 +135,15 @@ Deno.serve(async (req) => {
   } else if (authType === "oauth") {
     if (!body.authProvider || !isProvider(body.authProvider)) return json({ error: "Pick a connected app for OAuth." }, 400);
     auth = { type: "oauth", provider: body.authProvider };
+  } else if (authType === "identity") {
+    // Delegated identity: the server is called AS the signed-in customer. `claim`
+    // token -> Authorization: Bearer <token>; email/phone/sub -> a named header.
+    const claim = ["token", "email", "phone", "sub"].includes(String(body.identityClaim)) ? String(body.identityClaim) : "token";
+    if (claim === "token") auth = { type: "identity", claim: "token" };
+    else {
+      const defName = claim === "email" ? "X-User-Email" : claim === "phone" ? "X-User-Phone" : "X-User-Id";
+      auth = { type: "identity", claim, name: (String(body.identityField ?? "").trim() || defName).slice(0, 60), prefix: "" };
+    }
   }
 
   // Insert the server first so we have its id, then discover + register tools.

@@ -12,6 +12,7 @@ import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Store } from "./types.ts";
 import type { FunctionDeclaration } from "./tools.ts";
 import { decrypt, getAccessToken, type ProviderId } from "./connections.ts";
+import type { Visitor } from "./httptool.ts";
 
 const PROTOCOL_VERSION = "2025-06-18";
 const MAX_RESULT = 6000;
@@ -22,7 +23,16 @@ export interface McpServer {
   store_id: string;
   name: string;
   url: string;
-  auth: { type: "none" | "apikey" | "oauth"; location?: "header"; name?: string; prefix?: string; provider?: string };
+  // "identity" = forward the signed-in customer's OWN verified identity (delegated
+  // identity) as an HTTP header, so the MCP server acts as that user. `claim`
+  // picks what to send: the raw verified token (default), or a verified email/phone/id.
+  auth: {
+    type: "none" | "apikey" | "oauth" | "identity";
+    name?: string;
+    prefix?: string;
+    provider?: string;
+    claim?: "token" | "email" | "phone" | "sub";
+  };
   api_key: string | null;
   enabled: boolean;
 }
@@ -43,7 +53,7 @@ type Any = any;
 
 /** Store-level auth headers for a server — encrypted key from the vault, or a
  *  broker OAuth token. Never derived from model input. */
-async function authHeaders(db: SupabaseClient, storeId: string, s: McpServer): Promise<Record<string, string>> {
+async function authHeaders(db: SupabaseClient, storeId: string, s: McpServer, visitor?: Visitor): Promise<Record<string, string>> {
   const h: Record<string, string> = {};
   try {
     if (s.auth?.type === "apikey" && s.api_key) {
@@ -52,11 +62,27 @@ async function authHeaders(db: SupabaseClient, storeId: string, s: McpServer): P
     } else if (s.auth?.type === "oauth" && s.auth.provider) {
       const token = await getAccessToken(db, storeId, s.auth.provider as ProviderId);
       if (token) h["Authorization"] = `Bearer ${token}`;
+    } else if (s.auth?.type === "identity") {
+      // Delegated identity: call AS the signed-in visitor. The value comes only
+      // from the server-verified identity token (never the model). Absent (no
+      // sign-in / WhatsApp), we add nothing — executeMcpTool guards the call.
+      const v = identityValue(s, visitor);
+      if (v) h[s.auth.name || "Authorization"] = `${s.auth.prefix ?? "Bearer "}${v}`;
     }
   } catch (e) {
     console.error(`[mcp] auth header build failed: ${e instanceof Error ? e.message : e}`);
   }
   return h;
+}
+
+/** The verified identity value this server forwards (token/email/phone/sub), or "". */
+function identityValue(s: McpServer, visitor?: Visitor): string {
+  const claim = s.auth?.claim ?? "token";
+  const v = claim === "email" ? visitor?.email
+    : claim === "phone" ? visitor?.phone
+    : claim === "sub" ? visitor?.sub
+    : visitor?.token;
+  return v ? String(v) : "";
 }
 
 /** POST one JSON-RPC message; parse a JSON or SSE reply into the matching result. */
@@ -102,11 +128,11 @@ async function post(
 /** Handshake: initialize (+ capture session) then the initialized notification.
  *  Returns the headers to use for subsequent calls (incl. the session id). */
 async function openSession(
-  db: SupabaseClient, storeId: string, s: McpServer,
+  db: SupabaseClient, storeId: string, s: McpServer, visitor?: Visitor,
 ): Promise<{ ok: boolean; headers: Record<string, string>; error?: string }> {
   const base: Record<string, string> = {
     "MCP-Protocol-Version": PROTOCOL_VERSION,
-    ...(await authHeaders(db, storeId, s)),
+    ...(await authHeaders(db, storeId, s, visitor)),
   };
   const init = await post(s.url, base, {
     jsonrpc: "2.0", id: 1, method: "initialize",
@@ -180,10 +206,14 @@ function contentText(result: Any): string {
 
 /** Run one MCP tool. Never throws — a failure returns a soft note. */
 export async function executeMcpTool(
-  db: SupabaseClient, store: Store, t: McpTool, args: Record<string, unknown>,
+  db: SupabaseClient, store: Store, t: McpTool, args: Record<string, unknown>, visitor?: Visitor,
 ): Promise<Record<string, unknown>> {
   try {
-    const sess = await openSession(db, store.id, t.server);
+    // Delegated-identity servers can only be called for a signed-in visitor.
+    if (t.server.auth?.type === "identity" && !identityValue(t.server, visitor)) {
+      return { error: "I can't tell who you're signed in as here — this needs you to be logged in on the site." };
+    }
+    const sess = await openSession(db, store.id, t.server, visitor);
     if (!sess.ok) return { error: `couldn't reach ${t.server.name}`, note: sess.error };
     const res = await post(t.server.url, sess.headers, {
       jsonrpc: "2.0", id: 3, method: "tools/call",
