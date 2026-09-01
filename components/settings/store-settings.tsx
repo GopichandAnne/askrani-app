@@ -20,10 +20,12 @@ export function StoreSettings({
   storeId,
   storeName,
   businessType,
+  canChangeType = false,
 }: {
   storeId: string;
   storeName: string;
   businessType: string | null;
+  canChangeType?: boolean;
 }) {
   const router = useRouter();
   const current = (businessType ?? "").toLowerCase();
@@ -69,7 +71,7 @@ export function StoreSettings({
 
         <div className="space-y-2">
           <label className="text-sm font-medium">Business type</label>
-          <Select value={value} onValueChange={setValue}>
+          <Select value={value} onValueChange={setValue} disabled={!canChangeType}>
             <SelectTrigger className="w-full sm:w-80">
               <SelectValue />
             </SelectTrigger>
@@ -93,12 +95,19 @@ export function StoreSettings({
               </>
             )}
           </p>
+          {!canChangeType && (
+            <p className="text-muted-foreground text-xs">
+              Only Ask Rani can change your console type. Contact us if you need to switch.
+            </p>
+          )}
         </div>
 
-        <Button size="sm" onClick={save} disabled={busy || value === current}>
-          {busy ? <Loader2 className="size-4 animate-spin" /> : null}
-          Save
-        </Button>
+        {canChangeType && (
+          <Button size="sm" onClick={save} disabled={busy || value === current}>
+            {busy ? <Loader2 className="size-4 animate-spin" /> : null}
+            Save
+          </Button>
+        )}
       </div>
     </div>
   );

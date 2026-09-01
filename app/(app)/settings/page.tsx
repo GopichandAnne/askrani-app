@@ -22,6 +22,7 @@ export default async function SettingsPage() {
       storeId={store.id}
       storeName={store.name}
       businessType={store.businessType}
+      canChangeType={ctx.isPlatformAdmin}
     />
   );
 }

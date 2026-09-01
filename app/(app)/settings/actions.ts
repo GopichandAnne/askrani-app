@@ -3,12 +3,11 @@
 import { getSessionContext } from "@/lib/auth/session";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-/** Owner of the store OR a platform admin may change its settings. */
-async function requireStoreAccess(storeId: string) {
+/** Changing the console type / vertical is restricted to Ask Rani (platform
+ *  admins) only — store owners can view it but not switch it. */
+async function requirePlatformAdmin() {
   const ctx = await getSessionContext();
-  const allowed =
-    !!ctx && (ctx.isPlatformAdmin || ctx.stores.some((s) => s.id === storeId && s.role === "owner"));
-  if (!allowed) throw new Error("Not authorized");
+  return !!ctx?.isPlatformAdmin;
 }
 
 /** Set the store's business type — which drives the console profile (SaaS vs
@@ -18,7 +17,9 @@ export async function setConsoleType(
   storeId: string,
   businessType: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  await requireStoreAccess(storeId);
+  if (!(await requirePlatformAdmin())) {
+    return { ok: false, error: "Only Ask Rani can change the console type." };
+  }
   const value = businessType.trim().toLowerCase();
   const db = createAdminClient();
   const { error } = await db
