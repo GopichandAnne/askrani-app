@@ -96,7 +96,7 @@ export default async function ActivityPage() {
                     {r.acted_as ? (
                       <span className="text-teal-deep inline-flex items-center gap-1"><UserCheck className="size-3.5" /> {r.acted_as}</span>
                     ) : (
-                      <span className="text-muted-foreground inline-flex items-center gap-1"><StoreIcon className="size-3.5" /> the store</span>
+                      <span className="text-muted-foreground inline-flex items-center gap-1"><StoreIcon className="size-3.5" /> the account</span>
                     )}
                   </td>
                   <td className="p-3">

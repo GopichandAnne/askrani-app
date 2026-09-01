@@ -16,13 +16,14 @@ export default async function LinkPage() {
   const supabase = await createClient();
   const { data: isOwner } = await supabase.rpc("user_is_owner", { p_store_id: store.id });
   if (!isOwner && !ctx.isPlatformAdmin) redirect(homeHrefFor(profileFor(store.businessType)));
+  const isSaas = profileFor(store.businessType) === "saas";
 
   return (
     <div className="mx-auto max-w-2xl space-y-5 p-6">
       <header>
-        <h1 className="font-display text-2xl italic">Web chat link</h1>
+        <h1 className="font-display text-2xl italic">{isSaas ? "Embed & install" : "Web chat link"}</h1>
         <p className="text-muted-foreground text-sm">
-          {store.name} — your in-store QR and shareable chat link
+          {store.name} — {isSaas ? "your embed snippet, QR, and shareable chat link" : "your in-store QR and shareable chat link"}
         </p>
       </header>
       <div className="bg-card rounded-lg border p-5">

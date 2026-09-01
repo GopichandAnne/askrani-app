@@ -296,7 +296,7 @@ export function StoreLinkPanel({
     setGenChips(false);
     if (res.ok && res.chips.length) {
       setChips(res.chips.join("\n"));
-      toast.success("Drafted from your store — review and Save");
+      toast.success("Drafted from your site — review and Save");
     } else if (res.ok) {
       toast.error("Couldn't compose questions — add more store info first.");
     } else {
@@ -340,7 +340,7 @@ export function StoreLinkPanel({
         <div>
           <p className="text-sm font-medium">Web chat link</p>
           <p className="text-muted-foreground text-xs">
-            {active ? "Live — customers can scan and chat." : "Off — the link won't open."}
+            {active ? "Live — anyone with your link or QR can chat." : "Off — the link won't open."}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -427,7 +427,7 @@ export function StoreLinkPanel({
             <p className="text-sm">Redirect QR to WhatsApp</p>
             <p className="text-muted-foreground text-xs">
               {waRedirect
-                ? "On — every scan of the in-store QR opens WhatsApp."
+                ? "On — your QR (or link) opens WhatsApp instead of web chat."
                 : "Off — the QR opens web chat. Test WhatsApp privately first, then flip this on to go live."}
             </p>
           </div>
@@ -529,7 +529,7 @@ export function StoreLinkPanel({
         </div>
         <p className="text-muted-foreground text-xs">
           The tappable questions shown when a chat opens (the first 3 appear). One per line. “Suggest
-          with AI” drafts them from your store’s info and knowledge base — leave blank to use smart
+          with AI” drafts them from your site’s info and knowledge base — leave blank to use smart
           defaults.
         </p>
         <Textarea
