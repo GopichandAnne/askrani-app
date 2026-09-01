@@ -601,7 +601,7 @@ export function StoreLinkPanel({
 
       {businessType === "realtor" && <ListingQrs storeId={storeId} storeSlug={storeSlug} />}
 
-      {businessType !== "realtor" && token && (
+      {businessType === "restaurant" && token && (
         <TableQrs storeSlug={storeSlug} storeName={storeName} token={token} />
       )}
 

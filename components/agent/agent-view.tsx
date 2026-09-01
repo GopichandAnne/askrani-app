@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { saveAgentConfig, type Charge, type Responder } from "@/app/(app)/agent/actions";
 import { VoiceCard } from "@/components/agent/voice-card";
 import { StreakCard } from "@/components/agent/streak-card";
+import { profileFor } from "@/lib/console-profile";
 import { RespondersSection } from "./responders-section";
 import { ChargesSection } from "./charges-section";
 import { Button } from "@/components/ui/button";
@@ -34,13 +35,16 @@ export function AgentView({
   topics,
   charges,
   storeName,
+  businessType,
 }: {
   initialConfig: Record<string, string>;
   initialResponders: Responder[];
   topics: { key: string; label: string }[];
   charges: Charge[];
   storeName: string;
+  businessType?: string | null;
 }) {
+  const profile = profileFor(businessType);
   const [values, setValues] = useState<Record<string, string>>(initialConfig);
   const [saving, startSave] = useTransition();
 
@@ -124,12 +128,15 @@ export function AgentView({
       {/* Premium diner voice — self-contained (loads + saves on its own). */}
       <VoiceCard />
 
-      {/* Share-streak bonus (co-marketing) */}
-      <StreakCard
-        initialGoal={initialConfig.streak_goal ?? ""}
-        initialBonusCents={initialConfig.streak_bonus_cents ?? ""}
-        initialCapCents={initialConfig.streak_cap_cents ?? ""}
-      />
+      {/* Share-streak bonus (co-marketing) — a loyalty lever for local businesses;
+          not relevant to SaaS/product accounts, so hide it there. */}
+      {profile === "local" && (
+        <StreakCard
+          initialGoal={initialConfig.streak_goal ?? ""}
+          initialBonusCents={initialConfig.streak_bonus_cents ?? ""}
+          initialCapCents={initialConfig.streak_cap_cents ?? ""}
+        />
+      )}
 
       {/* Silence check-back */}
       <div className="bg-card flex items-start justify-between gap-4 rounded-lg border p-4">
