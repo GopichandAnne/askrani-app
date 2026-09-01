@@ -119,7 +119,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
 
-  let body: { messages?: { role?: string; text?: string }[]; email?: string; detected?: Record<string, unknown> | null; site?: string };
+  let body: { messages?: { role?: string; text?: string }[]; email?: string; detected?: Record<string, unknown> | null; site?: string; presetType?: string };
   try { body = await req.json(); } catch { return json({ error: "bad json" }, 400); }
 
   const messages = Array.isArray(body.messages) ? body.messages : [];
@@ -135,7 +135,15 @@ Deno.serve(async (req) => {
     ? `\n\n[The owner arrived from our website grader, which just graded the site: ${site}. Ask their business name first. IF the name they give is the SAME company as ${site}, treat them as an ONLINE / software / product company and run detect (kind "online", query "${site}") WITHOUT asking for their website — we already have it. BUT if the name they give is clearly a DIFFERENT business than ${site} (a different company name), IGNORE this grader site entirely and follow the normal flow: ask for their own website or address and detect from what THEY give you — never detect ${site} for a business it doesn't belong to.]`
     : "";
 
-  const out = await generateStructured(SYS, `${transcript}${known}${siteHint}${detected}\n\nWrite Rani's next turn as JSON.`);
+  // Agent/SaaS product signup: the business type is already known (software/online),
+  // so SKIP the "what kind of business is it?" question entirely and set up an
+  // in-product assistant, not a local business.
+  const presetType = typeof body.presetType === "string" ? body.presetType.trim().toLowerCase() : "";
+  const presetHint = ["saas", "product", "software", "agent"].includes(presetType)
+    ? `\n\n[This owner signed up for the AI assistant / agent product — they are an ONLINE / software / product company. Do NOT ask what kind of business it is; skip that question entirely. Ask their product or company name, then (if they give a website or docs URL) run detect (kind "online") from it to draft the assistant's knowledge. Set businessType to "software" (or the closest online type). Fold what the product does into storePrompt so the assistant can answer prospects, keep the tone professional and helpful, and offer to capture demo / sales / support requests (config.captureTypes). After confirming, tell them they can connect their own APIs, MCP servers, and tools — and embed Rani — from the console.]`
+    : "";
+
+  const out = await generateStructured(SYS, `${transcript}${known}${siteHint}${presetHint}${detected}\n\nWrite Rani's next turn as JSON.`);
   if (!out || typeof out.reply !== "string") {
     return json({ reply: "Sorry, I didn't catch that — could you say it once more?", chips: [], done: false });
   }

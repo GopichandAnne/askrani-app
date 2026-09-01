@@ -18,7 +18,9 @@ export default async function WelcomePage() {
   if (!ctx) redirect("/login");
   if (ctx.stores.length > 0) redirect("/");
 
-  const initialSite = (await cookies()).get("ar_intent_site")?.value || undefined;
+  const cookieStore = await cookies();
+  const initialSite = cookieStore.get("ar_intent_site")?.value || undefined;
+  const initialType = cookieStore.get("ar_intent_type")?.value || undefined;
 
   return (
     <div className="flex min-h-dvh items-center justify-center p-6">
@@ -31,7 +33,7 @@ export default async function WelcomePage() {
           </div>
         </CardHeader>
         <CardContent>
-          <WelcomeChat email={ctx.user.email} initialSite={initialSite} />
+          <WelcomeChat email={ctx.user.email} initialSite={initialSite} initialType={initialType} />
         </CardContent>
       </Card>
     </div>
