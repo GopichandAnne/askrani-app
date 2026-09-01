@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getActiveStore } from "@/lib/store/active-store";
 import { createClient } from "@/lib/supabase/server";
+import { profileFor, homeHrefFor } from "@/lib/console-profile";
 import { MembersManager } from "@/components/members/members-manager";
 
 export const metadata: Metadata = { title: "Members · Ask Rani" };
@@ -13,7 +14,7 @@ export default async function MembersPage() {
 
   const supabase = await createClient();
   const { data: isOwner } = await supabase.rpc("user_is_owner", { p_store_id: store.id });
-  if (!isOwner && !ctx.isPlatformAdmin) redirect("/orders");
+  if (!isOwner && !ctx.isPlatformAdmin) redirect(homeHrefFor(profileFor(store.businessType)));
 
   return (
     <div className="mx-auto max-w-2xl space-y-5 p-6">
