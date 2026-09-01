@@ -255,6 +255,15 @@ async function executeSearchKnowledge(
     console.error(`[tools] search_knowledge embed failed: ${e instanceof Error ? e.message : e}`);
     return { snippets: [], note: "search temporarily unavailable — offer to check with the store" };
   }
+  // Members-only gate: a chunk marked members_only surfaces only when THIS session
+  // is bound to a verified member (SSO token, email OTP, or one-tap). Anonymous
+  // visitors get public chunks only.
+  let isMember = false;
+  try {
+    isMember = !!(await resolveMember(db, store, sessionId));
+  } catch {
+    isMember = false; // fail closed — never leak gated content on an error
+  }
   // p_today (store-local date) lets the RPC hide entries outside their effective
   // window — a past sale or a not-yet-active notice never surfaces.
   const { data, error } = await db.rpc("search_knowledge", {
@@ -262,6 +271,7 @@ async function executeSearchKnowledge(
     p_query_embedding: toVectorLiteral(embedding),
     p_limit: SEARCH_KNOWLEDGE_LIMIT,
     p_today: today,
+    p_is_member: isMember,
   });
   if (error) {
     console.error(`[tools] search_knowledge: ${error.message}`);

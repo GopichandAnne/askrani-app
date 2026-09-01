@@ -335,6 +335,7 @@ export type Database = {
           updated_at: string
           valid_from: string | null
           valid_until: string | null
+          members_only: boolean
         }
         Insert: {
           chunk_index?: number
@@ -353,6 +354,7 @@ export type Database = {
           updated_at?: string
           valid_from?: string | null
           valid_until?: string | null
+          members_only?: boolean
         }
         Update: {
           chunk_index?: number
@@ -371,6 +373,7 @@ export type Database = {
           updated_at?: string
           valid_from?: string | null
           valid_until?: string | null
+          members_only?: boolean
         }
         Relationships: [
           {

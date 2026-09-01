@@ -27,4 +27,6 @@ export type KnowledgeDoc = {
    *  this doc. Null = open-ended. */
   validFrom: string | null;
   validUntil: string | null;
+  /** When true, this document surfaces in chat only for a signed-in member. */
+  membersOnly: boolean;
 };

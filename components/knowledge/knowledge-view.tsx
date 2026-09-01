@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
 import type { KnowledgeDoc, SavedQA } from "@/lib/knowledge/types";
@@ -9,6 +10,7 @@ import {
   documentFileUrl,
   listDocuments,
   refreshKnowledgeBase,
+  setDocumentAccess,
 } from "@/app/(app)/knowledge/actions";
 import { useStore } from "@/components/store/store-provider";
 import { QADialog } from "./qa-dialog";
@@ -34,11 +36,13 @@ import {
   FileText,
   CalendarClock,
   Loader2,
+  Lock,
   Pencil,
   Plus,
   RefreshCw,
   Search,
   Trash2,
+  Unlock,
 } from "lucide-react";
 
 export function KnowledgeView({
@@ -65,6 +69,22 @@ export function KnowledgeView({
     const res = await documentFileUrl(sourcePath);
     if (res.ok) window.open(res.url, "_blank", "noopener");
     else toast.error("Couldn't open file", { description: res.error });
+  }
+
+  async function toggleAccess(title: string, membersOnly: boolean) {
+    const before = docs;
+    setDocs((prev) => prev.map((d) => (d.title === title ? { ...d, membersOnly } : d)));
+    const res = await setDocumentAccess(title, membersOnly);
+    if (res.ok) {
+      toast.success(membersOnly ? "Now members-only" : "Now public", {
+        description: membersOnly
+          ? "Rani shares this only with signed-in members."
+          : "Rani shares this with anyone.",
+      });
+    } else {
+      setDocs(before);
+      toast.error("Couldn't update access", { description: res.error });
+    }
   }
 
   async function removeDoc(title: string) {
@@ -171,6 +191,13 @@ export function KnowledgeView({
             />
           )}
         </div>
+        {isOwner && docs.length > 0 && (
+          <p className="text-muted-foreground text-xs">
+            Use the lock to make a document <span className="font-medium">members-only</span> — Rani
+            shares it only with a signed-in member. Set up sign-in in{" "}
+            <Link href="/members" className="text-teal-deep hover:underline">Members &amp; access</Link>.
+          </p>
+        )}
         {docs.length === 0 ? (
           <p className="text-muted-foreground bg-card rounded-lg border border-dashed px-4 py-6 text-center text-sm">
             {isOwner
@@ -211,8 +238,25 @@ export function KnowledgeView({
                         </Badge>
                       );
                     })()}
+                    {d.membersOnly && (
+                      <Badge variant="outline" className="border-teal/50 text-teal-deep">
+                        <Lock className="mr-1 size-3" /> Members only
+                      </Badge>
+                    )}
                   </div>
                 </div>
+                {isOwner && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-muted-foreground size-8 shrink-0"
+                    aria-label={d.membersOnly ? "Make public" : "Make members-only"}
+                    title={d.membersOnly ? "Members-only — click to make public" : "Public — click to make members-only"}
+                    onClick={() => toggleAccess(d.title, !d.membersOnly)}
+                  >
+                    {d.membersOnly ? <Lock className="size-4 text-teal-deep" /> : <Unlock className="size-4" />}
+                  </Button>
+                )}
                 {isOwner && (
                   <DocumentDatesDialog
                     title={d.title}

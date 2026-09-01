@@ -857,6 +857,19 @@ Deno.serve(async (req) => {
         if (error) return json({ error: error.message }, 500);
         return json({ store: store.slug, title, updated: count ?? 0, valid_from: vf, valid_until: vu });
       }
+      case "set_document_access": {
+        const title = String(body.title ?? "").trim();
+        if (!title) return json({ error: "title required" }, 400);
+        const membersOnly = body.members_only === true;
+        const { error, count } = await db
+          .from("knowledge_index")
+          .update({ members_only: membersOnly }, { count: "exact" })
+          .eq("store_id", store.id)
+          .eq("kind", "document_chunk")
+          .eq("source_ref", title);
+        if (error) return json({ error: error.message }, 500);
+        return json({ store: store.slug, title, updated: count ?? 0, members_only: membersOnly });
+      }
       case "ingest_file": {
         const title = String(body.title ?? "").trim();
         const path = String(body.storage_path ?? "");

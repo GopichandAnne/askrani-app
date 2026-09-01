@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -345,8 +346,15 @@ export function MembersManager({ storeId }: { storeId: string }) {
           Your backend signs <code className="bg-muted rounded px-1">base64url(JSON)+&quot;.&quot;+HMAC-SHA256</code>{" "}
           of <code className="bg-muted rounded px-1">{"{email, exp}"}</code> and adds{" "}
           <code className="bg-muted rounded px-1">data-user-token</code> to the embed snippet. The same
-          signed-in identity also lets Rani call your own APIs <em>as that customer</em> (Connections →
-          &ldquo;answer as the signed-in customer&rdquo;).
+          signed-in identity also lets Rani call your own APIs <em>as that customer</em> — set those up in{" "}
+          <Link href="/connections" className="text-teal-deep hover:underline">Integrations &amp; tools</Link>{" "}
+          (&ldquo;answer as the signed-in customer&rdquo;).
+        </p>
+        <p className="text-muted-foreground text-xs">
+          You can also keep some knowledge private to signed-in members — mark a document{" "}
+          <span className="font-medium">Members only</span> in{" "}
+          <Link href="/knowledge" className="text-teal-deep hover:underline">Knowledge</Link>, and Rani
+          shares it only after someone signs in.
         </p>
         <details className="group">
           <summary className="text-teal-deep hover:text-teal-deep/80 cursor-pointer select-none text-xs font-medium">
