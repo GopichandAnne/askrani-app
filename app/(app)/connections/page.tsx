@@ -52,6 +52,19 @@ export default async function ConnectionsPage() {
           Connect the tools you already use. One click, sign in on their site — Rani gets access, and never sees your password.
         </p>
       </div>
+      <details className="bg-card mb-5 rounded-lg border p-4 text-sm [&_summary]:cursor-pointer">
+        <summary className="font-medium">How Rani uses your tools</summary>
+        <div className="text-muted-foreground mt-3 space-y-2">
+          <p>Rani sees every connected tool with its description. When a customer&apos;s question matches, she calls it — and she can <b>chain</b> several (look something up, then act) before answering.</p>
+          <ul className="list-disc space-y-1 pl-5">
+            <li><b>Reads</b> run on their own. <b>Writes</b> wait for the customer to confirm.</li>
+            <li>A tool set to <b>🔒 Hold</b> never runs itself — Rani flags it for a person.</li>
+            <li>Every call is recorded in <a href="/activity" className="text-teal-deep underline">Activity</a> — what she did, and as whom.</li>
+          </ul>
+          <p>Steer her from the <a href="/agent" className="text-teal-deep underline">Agent</a> prompt — describe the <i>situation</i>, not the tool name: e.g. <i>&ldquo;when a customer asks about their invoice or usage, look it up and answer with their real data.&rdquo;</i></p>
+        </div>
+      </details>
+
       <ConnectionsClient
         storeSlug={ctx.active.slug}
         isOwner={ctx.active.role === "owner"}
