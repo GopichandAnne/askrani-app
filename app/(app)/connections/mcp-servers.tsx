@@ -129,8 +129,10 @@ export function McpServers({
         <h2 className="text-base font-semibold">MCP servers</h2>
       </div>
       <p className="text-muted-foreground mb-4 text-sm">
-        Connect a remote MCP server and Rani discovers its tools automatically — no spec, no mapping. She calls
-        them by context in chat. Store-level auth only; the model never sees your key.
+        Connect a remote MCP server and Rani discovers its tools automatically — no spec, no mapping. She picks
+        each tool by <b>its own description</b> (provided by the server) and calls it by context — if one isn&apos;t
+        triggering, guide it from the <a href="/agent" className="text-teal-deep hover:underline">Agent</a> prompt
+        (describe the situation). Store-level auth only; the model never sees your key.
       </p>
 
       {MCP_CATALOG.some((e) => !connectedUrls.has(e.url)) && (

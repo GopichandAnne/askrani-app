@@ -134,6 +134,9 @@ export function ApiBuilder({ storeSlug, isOwner, tools, connectedProviders = [] 
       <div className="space-y-2 rounded-xl border p-4">
         <Input placeholder="https://api.yourservice.com/openapi.json (or .yaml)" value={url} onChange={(e) => setUrl(e.target.value)} disabled={!isOwner || busy} />
         <Input placeholder="What should Rani do with it? e.g. look up order status, check stock" value={goal} onChange={(e) => setGoal(e.target.value)} disabled={!isOwner || busy} />
+        <p className="text-muted-foreground text-xs">
+          Be specific — this becomes each tool&apos;s description, which is <b>how Rani decides when to call it</b>. Say the job <i>and</i> when to use it: &ldquo;look up an order&apos;s status when a customer asks where their order is.&rdquo;
+        </p>
         {connectedProviders.length > 0 && !asCustomer && (
           <Select value={authProvider} onValueChange={setAuthProvider} disabled={!isOwner || busy}>
             <SelectTrigger className="h-9 text-sm"><SelectValue /></SelectTrigger>
