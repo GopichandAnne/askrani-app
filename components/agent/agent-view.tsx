@@ -15,16 +15,19 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Bot, Loader2, Save } from "lucide-react";
 
-type Section = { key: string; label: string; hint: string; ordersOnly?: boolean; essential?: boolean };
+type Section = { key: string; label: string; hint: string; ordersOnly?: boolean; essential?: boolean; localOnly?: boolean; saas?: { label?: string; hint?: string } };
 
 // Big prompt areas — each maps to an agent_config key (the bot's source of truth).
 const SECTIONS: Section[] = [
   { key: "personality", label: "Personality & tone", hint: "Who Rani is and how she speaks — identity, warmth, style rules.", essential: true },
-  { key: "store_prompt", label: "Store info", hint: "Address, hours, what you sell, anything about the store.", essential: true },
+  { key: "store_prompt", label: "Store info", hint: "Address, hours, what you sell, anything about the store.", essential: true,
+    saas: { label: "Product & company info", hint: "What your product does, key features, plans & pricing, and policies — anything Rani should know to answer prospects and users." } },
   { key: "language_handling", label: "Language handling", hint: "Which languages to mirror, regional product-name mappings, how to handle mixed languages." },
-  { key: "engage_info", label: "Behavior & engagement", hint: "How Rani helps — navigation, escalation, feedback, interaction style, store layout." },
-  { key: "off_topic_handling", label: "Off-topic handling", hint: "How to gracefully redirect non-shopping questions." },
-  { key: "promotions", label: "Promotions & offers", hint: "What to promote and when — combos, specials, seasonal offers. Rani weaves these in naturally and sparingly, and can show a matching product or flyer image from your Knowledge Base. Leave blank for none." },
+  { key: "engage_info", label: "Behavior & engagement", hint: "How Rani helps — navigation, escalation, feedback, interaction style, store layout.",
+    saas: { hint: "How Rani helps — guiding users, when to escalate to a human, gathering feedback, and interaction style." } },
+  { key: "off_topic_handling", label: "Off-topic handling", hint: "How to gracefully redirect non-shopping questions.",
+    saas: { hint: "How to gracefully redirect questions outside what your product covers." } },
+  { key: "promotions", label: "Promotions & offers", hint: "What to promote and when — combos, specials, seasonal offers. Rani weaves these in naturally and sparingly, and can show a matching product or flyer image from your Knowledge Base. Leave blank for none.", localOnly: true },
   { key: "order_prompt", label: "Ordering & checkout", hint: "How to take pre-orders: building the cart, confirmation, pickup, weight vs quantity, notes.", ordersOnly: true },
   { key: "order_item_details", label: "Order details to collect", hint: "Per-item details Rani should try to gather for each order — e.g. brand, size/pack, weight or count, variant. She asks lightly and never forces it; the store confirms anything missing.", ordersOnly: true },
 ];
@@ -159,22 +162,25 @@ export function AgentView({
       {(() => {
         const renderSection = (s: Section, rows: number) => {
           if (s.ordersOnly && !ordersEnabled) return null;
+          if (s.localOnly && profile !== "local") return null;
+          const label = (profile === "saas" && s.saas?.label) || s.label;
+          const hint = (profile === "saas" && s.saas?.hint) || s.hint;
           return (
             <div key={s.key} className="space-y-1.5">
               <div className="flex items-center gap-2">
-                <Label htmlFor={`sec-${s.key}`} className="text-sm font-medium">{s.label}</Label>
+                <Label htmlFor={`sec-${s.key}`} className="text-sm font-medium">{label}</Label>
                 {!s.essential && (
                   <span className="text-muted-foreground text-[10px] uppercase tracking-wide">optional</span>
                 )}
               </div>
-              <p className="text-muted-foreground text-xs">{s.hint}</p>
+              <p className="text-muted-foreground text-xs">{hint}</p>
               <Textarea
                 id={`sec-${s.key}`}
                 value={values[s.key] ?? ""}
                 onChange={(e) => set(s.key, e.target.value)}
                 rows={rows}
                 className="font-mono text-sm"
-                placeholder={`Write ${s.label.toLowerCase()} instructions…`}
+                placeholder={`Write ${label.toLowerCase()} instructions…`}
               />
             </div>
           );

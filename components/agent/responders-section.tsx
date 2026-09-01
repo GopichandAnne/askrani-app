@@ -70,8 +70,8 @@ export function RespondersSection({
         Owner/staff contacts — a WhatsApp number, an email, or both. Each person
         subscribes to the topics they care about; Rani notifies them on whichever
         channel they set. WhatsApp responders can reply right in WhatsApp and Rani
-        relays the first answer to the customer. Topics beyond <b>Orders</b> and{" "}
-        <b>Escalations</b> come from the request types you create in{" "}
+        relays the first answer to the customer. Topics come from{" "}
+        <b>Escalations</b> plus the request types you create in{" "}
         <a href="/inbox" className="text-teal-deep underline">Inbox → Requests</a>.
       </p>
 
@@ -134,7 +134,7 @@ export function RespondersSection({
         </div>
         <div className="space-y-1">
           <Label htmlFor="resp-email" className="text-xs">Email</Label>
-          <Input id="resp-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="ravi@store.com" inputMode="email" className="w-48" />
+          <Input id="resp-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" inputMode="email" className="w-48" />
         </div>
         <div className="space-y-1">
           <Label htmlFor="resp-name" className="text-xs">Name</Label>
