@@ -888,6 +888,42 @@ export type Database = {
           },
         ]
       }
+      agent_action_log: {
+        Row: {
+          acted_as: string | null
+          id: string
+          kind: string
+          session_id: string | null
+          side_effect: boolean
+          status: string
+          store_id: string
+          tool: string
+          ts: string
+        }
+        Insert: {
+          acted_as?: string | null
+          id?: string
+          kind: string
+          session_id?: string | null
+          side_effect?: boolean
+          status?: string
+          store_id: string
+          tool: string
+          ts?: string
+        }
+        Update: {
+          acted_as?: string | null
+          id?: string
+          kind?: string
+          session_id?: string | null
+          side_effect?: boolean
+          status?: string
+          store_id?: string
+          tool?: string
+          ts?: string
+        }
+        Relationships: []
+      }
       mcp_server: {
         Row: {
           api_key: string | null

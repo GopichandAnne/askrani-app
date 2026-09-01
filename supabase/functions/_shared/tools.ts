@@ -60,6 +60,7 @@ import { findContact as hsFindContact, createLead as hsCreateLead } from "./hubs
 import { me as calMe, listEventTypes as calEventTypes, availableTimes as calAvailableTimes } from "./calendly.ts";
 import { executeHttpTool, httpToolDeclaration, type HttpTool, type Visitor } from "./httptool.ts";
 import { executeMcpTool, mcpToolDeclaration, type McpTool } from "./mcp.ts";
+import { logToolCall, actedAsLabel } from "./audit.ts";
 
 // ── Gemini functionDeclaration shapes ───────────────────────────────────────
 // A JSON-Schema-ish node; `items`/`properties` may nest (e.g. an array of objects).
@@ -1642,16 +1643,31 @@ export function buildToolset(
     declarations.push(integrationDeclaration(integ) as FunctionDeclaration);
   }
   // Builder-generated direct-HTTP tools (from an API spec via integration-build).
+  // Each call is audited (what it did + as whom) — the trust surface for actions.
   for (const t of httpTools) {
     if (executors[t.name]) continue; // never override a built-in or connector tool
-    executors[t.name] = (args) => executeHttpTool(db, store, t, args, visitor);
+    executors[t.name] = async (args) => {
+      const out = await executeHttpTool(db, store, t, args, visitor);
+      void logToolCall(db, store, sessionId, {
+        tool: t.name, kind: "http", actedAs: actedAsLabel(t.auth?.type, visitor),
+        sideEffect: !!t.side_effect, status: out && (out.error || out.ok === false) ? "error" : "ok",
+      });
+      return out;
+    };
     declarations.push(httpToolDeclaration(t));
   }
   // MCP tools — discovered from the owner's connected MCP servers. Rani picks
   // them by context like any other tool; execution proxies to the server.
   for (const t of mcpTools) {
     if (executors[t.name]) continue; // never override a built-in / connector / http tool
-    executors[t.name] = (args) => executeMcpTool(db, store, t, args, visitor);
+    executors[t.name] = async (args) => {
+      const out = await executeMcpTool(db, store, t, args, visitor);
+      void logToolCall(db, store, sessionId, {
+        tool: t.name, kind: "mcp", actedAs: actedAsLabel(t.server.auth?.type, visitor),
+        sideEffect: !!t.side_effect, status: out && (out.error || out.ok === false) ? "error" : "ok",
+      });
+      return out;
+    };
     declarations.push(mcpToolDeclaration(t));
   }
   return {
