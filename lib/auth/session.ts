@@ -37,9 +37,21 @@ export const getSessionContext = cache(
   async (): Promise<SessionContext | null> => {
     const supabase = await createClient();
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    // getUser() hits Supabase over the network. Right after login the auth cookie
+    // was just set, and a cold/slow first call can THROW a transient network error
+    // — which would crash the whole route with the raw "Application error" flash.
+    // Retry once on a throw so a blip self-heals; a genuine "no user" (resolves
+    // with user: null) returns immediately → redirect to /login, no false retry.
+    const readUser = async () => {
+      try {
+        return (await supabase.auth.getUser()).data.user;
+      } catch (e) {
+        console.error(`[session] getUser network error: ${e instanceof Error ? e.message : e}`);
+        return undefined; // signal a transient throw (distinct from a null user)
+      }
+    };
+    let user = await readUser();
+    if (user === undefined) user = await readUser(); // one transparent retry
     if (!user) return null;
 
     const [{ data: isAdmin }, storesRes, staffRes] = await Promise.all([
