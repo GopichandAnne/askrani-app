@@ -77,7 +77,10 @@ export async function updateSession(request: NextRequest) {
 
   if (user && pathname === "/login") {
     const url = request.nextUrl.clone();
-    url.pathname = "/";
+    // Honour ?next (e.g. the tour SSO round-trip /login?next=/api/tour/mint) so a
+    // logged-in visitor continues to where they were headed instead of the console.
+    const next = request.nextUrl.searchParams.get("next");
+    url.pathname = next && next.startsWith("/") ? next : "/";
     url.search = "";
     return NextResponse.redirect(url);
   }
