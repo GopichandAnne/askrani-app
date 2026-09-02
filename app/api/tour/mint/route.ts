@@ -31,8 +31,9 @@ export async function GET(req: Request) {
   }
 
   const store = await getTourStore();
-  if (!store?.identitySecret || !store.accessControl) {
-    // Authenticated embed isn't turned on for the tour store yet.
+  // The identity secret existing already means authenticated embed is set up; don't
+  // gate on the access_control value's exact format (web-chat does its own check).
+  if (!store?.identitySecret) {
     return NextResponse.redirect(`${AGENT_URL}/agent?tour=not_configured`);
   }
 
