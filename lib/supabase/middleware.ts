@@ -5,7 +5,16 @@ import { authCookieName } from "./cookie-name";
 /** Public path prefixes that do not require an authenticated session. The Stripe
  *  top-up webhook is called by Stripe (no user cookie) and is secured by its own
  *  signature check — it must not be redirected to /login. */
-const PUBLIC_PREFIXES = ["/login", "/auth", "/api/stripe/topup-webhook"];
+const PUBLIC_PREFIXES = [
+  "/login",
+  "/auth",
+  "/api/stripe/topup-webhook",
+  // Product-tour endpoints handle their OWN auth: /api/tour/mint checks the session
+  // itself (and redirects to /login when absent), while /api/tour/account and
+  // /api/tour/upgrade are called server-to-server by the chat engine with a signed
+  // bearer token — they must not be bounced to /login.
+  "/api/tour",
+];
 
 function isPublic(pathname: string) {
   return PUBLIC_PREFIXES.some(
