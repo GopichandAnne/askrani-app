@@ -13,11 +13,17 @@ const AGENT_URL = (process.env.NEXT_PUBLIC_AGENT_URL || "https://agent.askrani.a
 
 export async function GET(req: Request) {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
 
-  // Not signed in → log in on the app, then come straight back here.
+  // Resolve the signed-in visitor. getUser() does a network validation that can
+  // miss a perfectly valid session in a route handler reached by a cross-subdomain
+  // click — so fall back to the locally-read session, otherwise a logged-in visitor
+  // gets wrongly bounced to /login (and ends up on the console).
+  let user = (await supabase.auth.getUser()).data.user;
+  if (!user?.email) {
+    user = (await supabase.auth.getSession()).data.session?.user ?? null;
+  }
+
+  // Genuinely not signed in → log in on the app, then come straight back here.
   if (!user?.email) {
     return NextResponse.redirect(new URL(`/login?next=${encodeURIComponent("/api/tour/mint")}`, req.url));
   }
