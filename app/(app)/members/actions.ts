@@ -143,6 +143,55 @@ export async function testIdentityToken(storeId: string, token: string): Promise
   return { ok: true, result: { ok: false, kind: "unknown", messages: ["Not a recognized token. Expected an HMAC token (body.signature) or a JWT (header.payload.signature)."] } };
 }
 
+export type LiveVerdict = {
+  ok: boolean;
+  method?: string;
+  recognized?: boolean;
+  recognizedAs?: string | null;
+  name?: string | null;
+  sub?: string | null;
+  reason?: string;
+};
+
+/** The real smoke test: send a sample token to the LIVE bot's verify endpoint (the
+ *  exact code a chat turn runs) and report whether it's accepted + who it resolves
+ *  to. Also returns local decode detail and a curl the owner can run in their CI. */
+export async function smokeTestSso(storeId: string, token: string): Promise<MemberResult<{ verdict: LiveVerdict; detail: TokenTestResult | null; curl: string }>> {
+  await requireMemberManage(storeId);
+  const t = token.trim();
+  const db = createAdminClient();
+  const { data: store } = await db.from("stores").select("slug").eq("id", storeId).single();
+  const slug = (store as { slug?: string } | null)?.slug ?? "";
+  const url = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").replace(/\/$/, "");
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+
+  const curl = `curl -s ${url}/functions/v1/web-chat \\
+  -H "apikey: ${anon}" \\
+  -H "authorization: Bearer ${anon}" \\
+  -H "content-type: application/json" \\
+  -d '{"action":"verify_identity","slug":"${slug}","identity_token":"<PASTE A TOKEN>"}'`;
+
+  let verdict: LiveVerdict = { ok: false, reason: "Couldn’t reach the assistant service." };
+  if (t && url && anon) {
+    try {
+      const r = await fetch(`${url}/functions/v1/web-chat`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${anon}`, apikey: anon },
+        body: JSON.stringify({ action: "verify_identity", slug, identity_token: t }),
+      });
+      verdict = (await r.json()) as LiveVerdict;
+    } catch {
+      /* keep the unreachable default */
+    }
+  } else if (!t) {
+    verdict = { ok: false, reason: "Paste a token to run the live check." };
+  }
+
+  const local = t ? await testIdentityToken(storeId, t) : null;
+  const detail = local && local.ok ? local.result : null;
+  return { ok: true, verdict, detail, curl };
+}
+
 /** Save (or clear) the bring-your-own-JWT (JWKS) SSO config. A JWKS URL enables it;
  *  clearing the URL turns it off. Owner-gated. */
 export async function saveJwksSso(storeId: string, cfg: JwksConfig): Promise<MemberResult> {

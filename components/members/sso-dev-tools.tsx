@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { testIdentityToken, type TokenTestResult } from "@/app/(app)/members/actions";
+import { smokeTestSso, type LiveVerdict, type TokenTestResult } from "@/app/(app)/members/actions";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Check, Copy, Loader2 } from "lucide-react";
@@ -63,7 +63,8 @@ export function SsoDevTools({ storeId }: { storeId: string }) {
   const [lang, setLang] = useState("Node");
   const [copied, setCopied] = useState(false);
   const [token, setToken] = useState("");
-  const [result, setResult] = useState<TokenTestResult | null>(null);
+  const [res, setRes] = useState<{ verdict: LiveVerdict; detail: TokenTestResult | null; curl: string } | null>(null);
+  const [copiedCurl, setCopiedCurl] = useState(false);
   const [testing, start] = useTransition();
 
   function copy() {
@@ -73,9 +74,9 @@ export function SsoDevTools({ storeId }: { storeId: string }) {
   }
   function test() {
     start(async () => {
-      const res = await testIdentityToken(storeId, token);
-      if (res.ok) setResult(res.result);
-      else toast.error("Couldn't test", { description: res.error });
+      const r = await smokeTestSso(storeId, token);
+      if (r.ok) setRes({ verdict: r.verdict, detail: r.detail, curl: r.curl });
+      else toast.error("Couldn't run the check", { description: r.error });
     });
   }
 
@@ -106,12 +107,13 @@ export function SsoDevTools({ storeId }: { storeId: string }) {
         </div>
       </div>
 
-      {/* Token tester */}
+      {/* Live smoke test */}
       <div className="space-y-2">
-        <h3 className="text-sm font-medium">Test a token</h3>
+        <h3 className="text-sm font-medium">Validate a token (live check)</h3>
         <p className="text-muted-foreground text-xs">
-          Paste a token your server generated (HMAC or JWT) — we&apos;ll check it the way the bot
-          will, so you can confirm it&apos;s right before going live.
+          Paste a token your server generated (HMAC or JWT). We send it to the{" "}
+          <span className="font-medium">live assistant</span> — the exact check every chat runs —
+          and tell you whether it&apos;s accepted and who it resolves to. No message is sent.
         </p>
         <Textarea
           value={token}
@@ -120,16 +122,48 @@ export function SsoDevTools({ storeId }: { storeId: string }) {
           className="h-20 font-mono text-[11px]"
         />
         <Button size="sm" onClick={test} disabled={testing || !token.trim()}>
-          {testing ? <Loader2 className="size-4 animate-spin" /> : null} Test token
+          {testing ? <Loader2 className="size-4 animate-spin" /> : null} Run live check
         </Button>
-        {result && (
-          <div className={`rounded-md border p-3 text-xs ${result.ok ? "border-teal-deep/40 bg-teal-deep/5" : "border-amber-400/50 bg-amber-50 dark:bg-amber-950/20"}`}>
-            <p className="mb-1 font-medium">{result.ok ? "✓ Looks good" : "Needs attention"} · {result.kind.toUpperCase()}</p>
-            <ul className="space-y-0.5">
-              {result.messages.map((m, i) => <li key={i}>{m}</li>)}
-            </ul>
+
+        {res && (
+          <div className="space-y-2">
+            <div className={`rounded-md border p-3 text-xs ${res.verdict.recognized ? "border-teal-deep/40 bg-teal-deep/5" : "border-amber-400/50 bg-amber-50 dark:bg-amber-950/20"}`}>
+              {res.verdict.recognized ? (
+                <p className="font-medium">
+                  ✓ Accepted — the assistant will recognize this visitor as{" "}
+                  <span className="text-teal-deep">{res.verdict.recognizedAs}</span>
+                  {res.verdict.name ? ` (${res.verdict.name})` : ""}
+                  {res.verdict.method ? ` · via ${res.verdict.method.toUpperCase()}` : ""}
+                </p>
+              ) : (
+                <p className="font-medium">✗ Not accepted{res.verdict.method ? ` (${res.verdict.method.toUpperCase()})` : ""} — {res.verdict.reason || "token rejected."}</p>
+              )}
+            </div>
+            {res.detail && !res.verdict.recognized && (
+              <ul className="text-muted-foreground space-y-0.5 text-xs">
+                {res.detail.messages.map((m, i) => <li key={i}>{m}</li>)}
+              </ul>
+            )}
           </div>
         )}
+
+        <details className="group">
+          <summary className="text-teal-deep hover:text-teal-deep/80 cursor-pointer select-none text-xs font-medium">
+            Run the same check from your CI (curl)
+          </summary>
+          {res?.curl && (
+            <div className="relative mt-2">
+              <pre className="bg-muted overflow-x-auto rounded p-3 text-[11px] leading-relaxed"><code>{res.curl}</code></pre>
+              <Button
+                size="sm" variant="outline" className="absolute right-2 top-2"
+                onClick={() => { navigator.clipboard.writeText(res.curl); setCopiedCurl(true); setTimeout(() => setCopiedCurl(false), 1500); }}
+              >
+                {copiedCurl ? <Check className="size-4" /> : <Copy className="size-4" />}{copiedCurl ? "Copied" : "Copy"}
+              </Button>
+            </div>
+          )}
+          {!res?.curl && <p className="text-muted-foreground mt-2 text-xs">Run a live check once and the exact curl command (with your endpoint + key) appears here.</p>}
+        </details>
       </div>
     </div>
   );

@@ -56,6 +56,40 @@ Deno.serve(async (req) => {
     return json({ error: "bad json" }, 400);
   }
 
+  // ── SSO smoke test ──────────────────────────────────────────────────────────
+  // Verify an identity token exactly the way a real chat turn will — with NO chat
+  // and NO side effects — so an owner (or their CI) can confirm their SSO setup
+  // before wiring the embed. Public, gated by the anon key like the chat itself.
+  if (body.action === "verify_identity") {
+    const vSlug = String(body.slug ?? "").trim();
+    const idToken = String(body.identity_token ?? "").trim();
+    if (!vSlug || !idToken) return json({ ok: false, reason: "slug and identity_token are required" }, 400);
+    const vdb = serviceClient();
+    const vStore = await getStoreBySlug(vdb, vSlug);
+    if (!vStore) return json({ ok: false, reason: "unknown store" }, 404);
+    const cfg = {
+      secret: vStore.identity_secret,
+      jwksUrl: vStore.sso_jwks_url,
+      issuer: vStore.sso_issuer,
+      audience: vStore.sso_audience,
+      emailClaim: vStore.sso_email_claim,
+      nameClaim: vStore.sso_name_claim,
+    };
+    const method = idToken.split(".").length === 3 ? "jwks" : "hmac";
+    if (method === "jwks" && !cfg.jwksUrl) return json({ ok: false, method, recognized: false, reason: "This is a JWT but no JWKS URL is configured for this store." }, 200);
+    if (method === "hmac" && !cfg.secret) return json({ ok: false, method, recognized: false, reason: "This is an HMAC token but no SSO secret is set for this store." }, 200);
+    const vClaim = await verifyEmbedIdentity(cfg, idToken);
+    if (!vClaim) return json({ ok: false, method, recognized: false, reason: "Token was not accepted — bad signature, expired, wrong issuer/audience, or no email claim." }, 200);
+    return json({
+      ok: true,
+      method,
+      recognized: true,
+      recognizedAs: vClaim.email ?? vClaim.phone ?? null,
+      name: vClaim.name ?? null,
+      sub: (vClaim.metadata as { sub?: string } | undefined)?.sub ?? null,
+    }, 200);
+  }
+
   const slug = String(body.slug ?? "").trim();
   const token = String(body.token ?? "").trim();
   const sessionId = String(body.session_id ?? "").trim();
