@@ -11,12 +11,22 @@ const EMBED_ORIGIN = process.env.NEXT_PUBLIC_AGENT_URL || "https://agent.askrani
 
 export function ConsoleAssistant({ token, publishableKey }: { token: string; publishableKey: string }) {
   const [open, setOpen] = useState(false);
+  // Mount the iframe once (on first open) and keep it mounted — just hide it when
+  // closed — so the conversation survives close/reopen instead of reloading empty.
+  const [mounted, setMounted] = useState(false);
   const src = `${EMBED_ORIGIN}/embed?k=${encodeURIComponent(publishableKey)}&uid=${encodeURIComponent(token)}`;
+
+  function toggle() {
+    setOpen((o) => {
+      if (!o) setMounted(true);
+      return !o;
+    });
+  }
 
   return (
     <div className="fixed bottom-5 right-5 z-50 flex flex-col items-end gap-3">
-      {open && (
-        <div className="bg-card w-[384px] max-w-[calc(100vw-40px)] overflow-hidden rounded-2xl border shadow-2xl">
+      {mounted && (
+        <div className={"bg-card w-[384px] max-w-[calc(100vw-40px)] overflow-hidden rounded-2xl border shadow-2xl" + (open ? "" : " hidden")}>
           <div className="text-muted-foreground flex items-center justify-between gap-2 border-b px-3 py-2 text-xs">
             <span className="text-teal-deep font-medium">✓ Acting as you — preview your assistant</span>
             <button onClick={() => setOpen(false)} aria-label="Close" className="hover:text-foreground">✕</button>
@@ -25,7 +35,7 @@ export function ConsoleAssistant({ token, publishableKey }: { token: string; pub
         </div>
       )}
       <button
-        onClick={() => setOpen((o) => !o)}
+        onClick={toggle}
         className="bg-gradient-primary text-primary-foreground shadow-primary inline-flex items-center gap-2 rounded-full px-5 py-3 text-sm font-semibold"
         aria-label="Chat with your assistant"
       >
