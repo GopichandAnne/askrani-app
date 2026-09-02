@@ -36,13 +36,21 @@ function toMember(r: {
   return { id: r.id, email: r.email, phone: r.phone, role: r.role, displayName: r.display_name, blocked: r.blocked };
 }
 
+export type JwksConfig = {
+  jwksUrl: string;
+  issuer: string;
+  audience: string;
+  emailClaim: string;
+  nameClaim: string;
+};
+
 export async function getMemberSettings(
   storeId: string,
-): Promise<MemberResult<{ mode: AccessMode; members: Member[]; hasSso: boolean; emailVerification: boolean }>> {
+): Promise<MemberResult<{ mode: AccessMode; members: Member[]; hasSso: boolean; emailVerification: boolean; jwks: JwksConfig }>> {
   await requireMemberManage(storeId);
   const db = createAdminClient();
   const [{ data: store }, { data: rows, error }] = await Promise.all([
-    db.from("stores").select("access_control, identity_secret, web_email_verification").eq("id", storeId).single(),
+    db.from("stores").select("access_control, identity_secret, web_email_verification, sso_jwks_url, sso_issuer, sso_audience, sso_email_claim, sso_name_claim").eq("id", storeId).single(),
     db
       .from("store_members")
       .select("id, email, phone, role, display_name, blocked")
@@ -51,13 +59,43 @@ export async function getMemberSettings(
   ]);
   if (error) return { ok: false, error: error.message };
   const mode = ((store?.access_control as AccessMode) ?? "open") satisfies AccessMode;
+  const s = store as Record<string, string | null> | null;
   return {
     ok: true,
     mode,
     members: (rows ?? []).map(toMember),
     hasSso: !!store?.identity_secret,
     emailVerification: !!store?.web_email_verification,
+    jwks: {
+      jwksUrl: s?.sso_jwks_url ?? "",
+      issuer: s?.sso_issuer ?? "",
+      audience: s?.sso_audience ?? "",
+      emailClaim: s?.sso_email_claim ?? "",
+      nameClaim: s?.sso_name_claim ?? "",
+    },
   };
+}
+
+/** Save (or clear) the bring-your-own-JWT (JWKS) SSO config. A JWKS URL enables it;
+ *  clearing the URL turns it off. Owner-gated. */
+export async function saveJwksSso(storeId: string, cfg: JwksConfig): Promise<MemberResult> {
+  await requireMemberManage(storeId);
+  const url = cfg.jwksUrl.trim();
+  if (url && !/^https:\/\/.+/i.test(url)) return { ok: false, error: "JWKS URL must be an https:// URL." };
+  const db = createAdminClient();
+  const { error } = await db
+    .from("stores")
+    .update({
+      sso_jwks_url: url || null,
+      sso_issuer: cfg.issuer.trim() || null,
+      sso_audience: cfg.audience.trim() || null,
+      sso_email_claim: cfg.emailClaim.trim() || null,
+      sso_name_claim: cfg.nameClaim.trim() || null,
+    })
+    .eq("id", storeId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath("/members");
+  return { ok: true };
 }
 
 export async function setEmailVerification(storeId: string, on: boolean): Promise<MemberResult> {

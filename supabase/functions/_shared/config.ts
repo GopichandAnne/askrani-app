@@ -8,7 +8,7 @@ export async function getStoreByPhoneNumberId(
 ): Promise<Store | null> {
   const { data } = await db
     .from("stores")
-    .select("id, slug, store_display_name, business_type, whatsapp_phone_number_id, access_control, identity_secret")
+    .select("id, slug, store_display_name, business_type, whatsapp_phone_number_id, access_control, identity_secret, sso_jwks_url, sso_issuer, sso_audience, sso_email_claim, sso_name_claim")
     .eq("whatsapp_phone_number_id", phoneNumberId)
     .eq("active", true)
     .maybeSingle();
@@ -22,7 +22,7 @@ export async function getStoreBySlug(
 ): Promise<Store | null> {
   const { data } = await db
     .from("stores")
-    .select("id, slug, store_display_name, business_type, whatsapp_phone_number_id, access_control, identity_secret")
+    .select("id, slug, store_display_name, business_type, whatsapp_phone_number_id, access_control, identity_secret, sso_jwks_url, sso_issuer, sso_audience, sso_email_claim, sso_name_claim")
     .eq("slug", slug)
     .maybeSingle();
   return (data as Store) ?? null;

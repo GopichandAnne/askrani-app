@@ -20,7 +20,7 @@ import {
   bindMemberSession,
   findMemberByIdentity,
   provisionMember,
-  verifyIdentityToken,
+  verifyEmbedIdentity,
 } from "../_shared/members.ts";
 import { verifyBrowseIdentity } from "../_shared/catalog.ts";
 import { captureReferral } from "../_shared/referral.ts";
@@ -176,8 +176,18 @@ Deno.serve(async (req) => {
 
   const identityToken = typeof body.identity_token === "string" ? body.identity_token : "";
   let visitor: Visitor | undefined;
-  if (identityToken && store.access_control && (store as { identity_secret?: string | null }).identity_secret) {
-    const claim = await verifyIdentityToken((store as { identity_secret?: string | null }).identity_secret, identityToken);
+  // Either SSO method may be configured: the HMAC shared secret, or bring-your-own
+  // JWT verified against the store's JWKS. verifyEmbedIdentity dispatches by token shape.
+  const ssoCfg = {
+    secret: store.identity_secret,
+    jwksUrl: store.sso_jwks_url,
+    issuer: store.sso_issuer,
+    audience: store.sso_audience,
+    emailClaim: store.sso_email_claim,
+    nameClaim: store.sso_name_claim,
+  };
+  if (identityToken && store.access_control && (ssoCfg.secret || ssoCfg.jwksUrl)) {
+    const claim = await verifyEmbedIdentity(ssoCfg, identityToken);
     if (claim && (claim.email || claim.phone)) {
       // Find the member, or JIT-provision them from the verified token (so a
       // property manager's portal drives the directory with no upload).

@@ -45,4 +45,10 @@ export interface Store {
   whatsapp_phone_number_id: string | null;
   access_control?: string | null; // open | optional | required
   identity_secret?: string | null; // HMAC secret for embedded-SSO identity tokens
+  // Bring-your-own-JWT (JWKS) SSO — an alternative to the HMAC secret.
+  sso_jwks_url?: string | null;
+  sso_issuer?: string | null;
+  sso_audience?: string | null;
+  sso_email_claim?: string | null;
+  sso_name_claim?: string | null;
 }

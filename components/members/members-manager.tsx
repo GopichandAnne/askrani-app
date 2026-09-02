@@ -13,8 +13,10 @@ import {
   setEmailVerification,
   setMemberBlocked,
   type AccessMode,
+  type JwksConfig,
   type Member,
 } from "@/app/(app)/members/actions";
+import { JwksSso } from "@/components/members/jwks-sso";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -74,6 +76,7 @@ export function MembersManager({ storeId }: { storeId: string }) {
   const [copiedCode, setCopiedCode] = useState(false);
   const [csv, setCsv] = useState("");
   const [emailVerify, setEmailVerify] = useState(false);
+  const [jwks, setJwks] = useState<JwksConfig | null>(null);
 
   async function refresh() {
     const res = await getMemberSettings(storeId);
@@ -82,6 +85,7 @@ export function MembersManager({ storeId }: { storeId: string }) {
       setMembers(res.members);
       setHasSso(res.hasSso);
       setEmailVerify(res.emailVerification);
+      setJwks(res.jwks);
     }
   }
 
@@ -94,6 +98,7 @@ export function MembersManager({ storeId }: { storeId: string }) {
         setMembers(res.members);
         setHasSso(res.hasSso);
         setEmailVerify(res.emailVerification);
+        setJwks(res.jwks);
       } else toast.error("Couldn't load members", { description: res.error });
     });
     return () => {
@@ -384,6 +389,8 @@ export function MembersManager({ storeId }: { storeId: string }) {
           </p>
         </details>
       </div>
+
+      {jwks && <JwksSso storeId={storeId} initial={jwks} />}
     </div>
   );
 }

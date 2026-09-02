@@ -2286,6 +2286,11 @@ export type Database = {
           session_minutes: number
           model_name: string | null
           model_provider: string | null
+          sso_audience: string | null
+          sso_email_claim: string | null
+          sso_issuer: string | null
+          sso_jwks_url: string | null
+          sso_name_claim: string | null
           slug: string
           store_display_name: string | null
           store_folder_id: string | null
@@ -2322,6 +2327,11 @@ export type Database = {
           session_minutes?: number
           model_name?: string | null
           model_provider?: string | null
+          sso_audience?: string | null
+          sso_email_claim?: string | null
+          sso_issuer?: string | null
+          sso_jwks_url?: string | null
+          sso_name_claim?: string | null
           slug: string
           store_display_name?: string | null
           store_folder_id?: string | null
@@ -2358,6 +2368,11 @@ export type Database = {
           session_minutes?: number
           model_name?: string | null
           model_provider?: string | null
+          sso_audience?: string | null
+          sso_email_claim?: string | null
+          sso_issuer?: string | null
+          sso_jwks_url?: string | null
+          sso_name_claim?: string | null
           slug?: string
           store_display_name?: string | null
           store_folder_id?: string | null

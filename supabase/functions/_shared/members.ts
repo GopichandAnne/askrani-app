@@ -142,6 +142,108 @@ export async function verifyIdentityToken(
   }
 }
 
+// ── Bring-your-own-JWT (JWKS) ────────────────────────────────────────────────
+// A store with an existing auth provider registers its JWKS URL + issuer; the
+// visitor's own JWT (RS256/ES256, asymmetric only — never HS*, which would be a
+// key-confusion attack) is verified against the provider's public keys. No shared
+// secret, no signing code on the customer's side.
+export interface SsoConfig {
+  secret?: string | null;
+  jwksUrl?: string | null;
+  issuer?: string | null;
+  audience?: string | null;
+  emailClaim?: string | null;
+  nameClaim?: string | null;
+}
+
+// deno-lint-ignore no-explicit-any
+const JWKS_CACHE = new Map<string, { keys: any[]; exp: number }>();
+// deno-lint-ignore no-explicit-any
+async function fetchJwks(url: string): Promise<any[]> {
+  const c = JWKS_CACHE.get(url);
+  if (c && c.exp > Date.now()) return c.keys;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`jwks ${res.status}`);
+  const j = await res.json();
+  const keys = Array.isArray(j?.keys) ? j.keys : [];
+  JWKS_CACHE.set(url, { keys, exp: Date.now() + 10 * 60 * 1000 }); // 10-min cache
+  return keys;
+}
+
+const JWT_ALGS: Record<string, { name: string; hash: string; curve?: string }> = {
+  RS256: { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+  RS384: { name: "RSASSA-PKCS1-v1_5", hash: "SHA-384" },
+  RS512: { name: "RSASSA-PKCS1-v1_5", hash: "SHA-512" },
+  ES256: { name: "ECDSA", hash: "SHA-256", curve: "P-256" },
+  ES384: { name: "ECDSA", hash: "SHA-384", curve: "P-384" },
+};
+
+function b64urlBytes(s: string): Uint8Array {
+  const bin = b64urlDecode(s);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+async function verifyJwtViaJwks(cfg: SsoConfig, token: string): Promise<IdentityClaim | null> {
+  try {
+    const [h, p, s] = token.split(".");
+    const header = JSON.parse(b64urlDecode(h));
+    const alg = JWT_ALGS[header.alg]; // unknown alg (incl. "none" and HS*) → reject
+    if (!alg || !cfg.jwksUrl) return null;
+    const keys = await fetchJwks(cfg.jwksUrl);
+    // deno-lint-ignore no-explicit-any
+    const jwk = keys.find((k: any) => k.kid === header.kid) || (keys.length === 1 ? keys[0] : null);
+    if (!jwk) return null;
+    // deno-lint-ignore no-explicit-any
+    const importParams: any = alg.curve ? { name: "ECDSA", namedCurve: alg.curve } : { name: alg.name, hash: alg.hash };
+    const key = await crypto.subtle.importKey("jwk", jwk, importParams, false, ["verify"]);
+    // deno-lint-ignore no-explicit-any
+    const verifyParams: any = alg.curve ? { name: "ECDSA", hash: alg.hash } : { name: alg.name };
+    const sigBytes = b64urlBytes(s) as unknown as BufferSource;
+    const signed = new TextEncoder().encode(`${h}.${p}`) as unknown as BufferSource;
+    const ok = await crypto.subtle.verify(verifyParams, key, sigBytes, signed);
+    if (!ok) return null;
+
+    const payload = JSON.parse(b64urlDecode(p));
+    const now = Date.now() / 1000;
+    if (payload.exp && now > Number(payload.exp)) return null; // expired
+    if (payload.nbf && now < Number(payload.nbf) - 60) return null; // not yet valid
+    if (cfg.issuer && payload.iss !== cfg.issuer) return null; // wrong issuer
+    if (cfg.audience) {
+      const aud = payload.aud;
+      const audOk = Array.isArray(aud) ? aud.includes(cfg.audience) : aud === cfg.audience;
+      if (!audOk) return null;
+    }
+    const emailClaim = cfg.emailClaim || "email";
+    const nameClaim = cfg.nameClaim || "name";
+    const email = payload[emailClaim] ? String(payload[emailClaim]) : undefined;
+    const phone = payload.phone_number ? String(payload.phone_number) : undefined;
+    if (!email && !phone) return null;
+    const sub = payload.sub != null ? String(payload.sub) : undefined;
+    return {
+      email,
+      phone,
+      name: payload[nameClaim] ? String(payload[nameClaim]) : undefined,
+      role: payload.role ? String(payload.role) : undefined,
+      metadata: sub ? { sub } : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Verify an embed identity token: a 3-part JWT (when JWKS is configured) OR the
+ *  2-part HMAC shared-secret token. Returns the verified claims or null. */
+export async function verifyEmbedIdentity(cfg: SsoConfig, token: string): Promise<IdentityClaim | null> {
+  if (!token) return null;
+  // A JWT has two dots (header.payload.signature); the HMAC token has exactly one.
+  if (token.split(".").length === 3 && cfg.jwksUrl) {
+    return await verifyJwtViaJwks(cfg, token);
+  }
+  return await verifyIdentityToken(cfg.secret, token);
+}
+
 /** Just-in-time provisioning: create a member from a VERIFIED SSO token's claims
  *  (the store's own backend vouched for them). Returns the member, or re-finds on
  *  a race. Null only if nothing to key on / a hard error. */
