@@ -4,6 +4,7 @@ import { getActiveStore } from "@/lib/store/active-store";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ConnectionsClient, type ConnStatus } from "./connections-client";
 import { ApiBuilder, type ApiTool } from "./api-builder";
+import { QuickTool } from "./quick-tool";
 import { McpServers, type McpServerRow, type McpToolRow } from "./mcp-servers";
 
 export const metadata: Metadata = { title: "Connections · Ask Rani" };
@@ -70,6 +71,9 @@ export default async function ConnectionsPage() {
         isOwner={ctx.active.role === "owner"}
         connected={connected}
       />
+      <div className="mt-6">
+        <QuickTool isOwner={ctx.active.role === "owner" || ctx.isPlatformAdmin} />
+      </div>
       <ApiBuilder storeSlug={ctx.active.slug} isOwner={ctx.active.role === "owner"} tools={customTools} connectedProviders={Object.keys(connected)} />
       <McpServers
         storeSlug={ctx.active.slug}
