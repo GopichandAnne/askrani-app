@@ -17,6 +17,7 @@ import {
   type Member,
 } from "@/app/(app)/members/actions";
 import { JwksSso } from "@/components/members/jwks-sso";
+import { SsoDevTools } from "@/components/members/sso-dev-tools";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -391,6 +392,8 @@ export function MembersManager({ storeId }: { storeId: string }) {
       </div>
 
       {jwks && <JwksSso storeId={storeId} initial={jwks} />}
+
+      <SsoDevTools storeId={storeId} />
     </div>
   );
 }

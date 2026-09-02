@@ -1,5 +1,6 @@
 "use server";
 
+import crypto from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { getSessionContext } from "@/lib/auth/session";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -74,6 +75,72 @@ export async function getMemberSettings(
       nameClaim: s?.sso_name_claim ?? "",
     },
   };
+}
+
+export type TokenTestResult = {
+  ok: boolean;
+  kind: "hmac" | "jwt" | "unknown";
+  messages: string[];
+  identity?: { email?: string; name?: string; sub?: string };
+};
+
+function decodeB64Url(s: string): string {
+  try { return Buffer.from(s, "base64url").toString("utf8"); } catch { return ""; }
+}
+
+/** Verify a sample identity token the way the bot will — so an owner can confirm
+ *  their signing/JWT is right BEFORE going live. HMAC signature is checked here;
+ *  for a JWT we decode + validate claims (the live signature check runs against
+ *  your JWKS in the bot). Owner-gated. */
+export async function testIdentityToken(storeId: string, token: string): Promise<MemberResult<{ result: TokenTestResult }>> {
+  await requireMemberManage(storeId);
+  const t = token.trim();
+  if (!t) return { ok: true, result: { ok: false, kind: "unknown", messages: ["Paste a token to test."] } };
+
+  const db = createAdminClient();
+  const { data: store } = await db
+    .from("stores")
+    .select("identity_secret, sso_jwks_url, sso_issuer, sso_email_claim, sso_name_claim")
+    .eq("id", storeId)
+    .single();
+  const s = store as Record<string, string | null> | null;
+  const parts = t.split(".");
+  const msgs: string[] = [];
+
+  // ── JWT (JWKS method) ──
+  if (parts.length === 3) {
+    const header = JSON.parse(decodeB64Url(parts[0]) || "{}");
+    const payload = JSON.parse(decodeB64Url(parts[1]) || "{}");
+    const emailClaim = s?.sso_email_claim || "email";
+    const nameClaim = s?.sso_name_claim || "name";
+    const email = payload[emailClaim];
+    const now = Date.now() / 1000;
+    let ok = true;
+    msgs.push(`Looks like a JWT (alg: ${header.alg ?? "?"}).`);
+    if (!s?.sso_jwks_url) { ok = false; msgs.push("⚠ No JWKS URL is configured — set it above so the bot can verify this token."); }
+    if (!["RS256", "RS384", "RS512", "ES256", "ES384"].includes(header.alg)) { ok = false; msgs.push(`⚠ Unsupported alg "${header.alg}" — use an asymmetric key (RS256/ES256).`); }
+    if (email) msgs.push(`✓ Email claim "${emailClaim}" = ${email}`); else { ok = false; msgs.push(`⚠ No email under claim "${emailClaim}" — check the Email claim setting.`); }
+    if (payload.exp && now > Number(payload.exp)) { ok = false; msgs.push("⚠ Token is expired (exp in the past)."); } else if (payload.exp) msgs.push("✓ Not expired.");
+    if (s?.sso_issuer && payload.iss !== s.sso_issuer) { ok = false; msgs.push(`⚠ Issuer mismatch: token iss="${payload.iss}" but you configured "${s.sso_issuer}".`); }
+    msgs.push("Signature is verified live against your JWKS when the bot runs.");
+    return { ok: true, result: { ok, kind: "jwt", messages: msgs, identity: { email: email ? String(email) : undefined, name: payload[nameClaim] ? String(payload[nameClaim]) : undefined, sub: payload.sub ? String(payload.sub) : undefined } } };
+  }
+
+  // ── HMAC (shared-secret method) ──
+  if (parts.length === 2) {
+    if (!s?.identity_secret) return { ok: true, result: { ok: false, kind: "hmac", messages: ["This looks like an HMAC token but no SSO secret is set — click ‘Set up embedded SSO’ first."] } };
+    const expected = crypto.createHmac("sha256", s.identity_secret).update(parts[0]).digest("hex");
+    const sigOk = expected === parts[1];
+    const payload = JSON.parse(decodeB64Url(parts[0]) || "{}");
+    const now = Date.now() / 1000;
+    let ok = sigOk;
+    msgs.push(sigOk ? "✓ Signature valid (matches your SSO secret)." : "⚠ Signature invalid — it wasn’t signed with this store’s current secret.");
+    if (payload.email) msgs.push(`✓ email = ${payload.email}`); else { ok = false; msgs.push("⚠ No email in the payload."); }
+    if (payload.exp && now > Number(payload.exp)) { ok = false; msgs.push("⚠ Token is expired."); } else if (payload.exp) msgs.push("✓ Not expired."); else msgs.push("⚠ No exp — add a short expiry (e.g. 1 hour).");
+    return { ok: true, result: { ok, kind: "hmac", messages: msgs, identity: { email: payload.email ? String(payload.email) : undefined, name: payload.name ? String(payload.name) : undefined, sub: payload.sub ? String(payload.sub) : undefined } } };
+  }
+
+  return { ok: true, result: { ok: false, kind: "unknown", messages: ["Not a recognized token. Expected an HMAC token (body.signature) or a JWT (header.payload.signature)."] } };
 }
 
 /** Save (or clear) the bring-your-own-JWT (JWKS) SSO config. A JWKS URL enables it;
