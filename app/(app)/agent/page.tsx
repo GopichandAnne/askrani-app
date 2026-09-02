@@ -20,11 +20,12 @@ export default async function AgentPage() {
   });
   if (!isOwner) redirect("/orders");
 
-  const [{ data: rows }, responders, requestTypes, charges] = await Promise.all([
+  const [{ data: rows }, responders, requestTypes, charges, { data: modelRow }] = await Promise.all([
     supabase.from("agent_config").select("key, value").eq("store_id", store.id),
     listResponders(),
     listRequestTypes(),
     listCharges(),
+    supabase.from("stores").select("model_provider, model_name").eq("id", store.id).maybeSingle(),
   ]);
 
   const config: Record<string, string> = {};
@@ -46,6 +47,8 @@ export default async function AgentPage() {
       charges={charges}
       storeName={store.name}
       businessType={store.businessType}
+      initialModelProvider={(modelRow as { model_provider?: string | null } | null)?.model_provider ?? "gemini"}
+      initialModelName={(modelRow as { model_name?: string | null } | null)?.model_name ?? ""}
     />
   );
 }

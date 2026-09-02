@@ -2284,6 +2284,8 @@ export type Database = {
           prompt_file_id: string | null
           redemption_rules: Json
           session_minutes: number
+          model_name: string | null
+          model_provider: string | null
           slug: string
           store_display_name: string | null
           store_folder_id: string | null
@@ -2318,6 +2320,8 @@ export type Database = {
           prompt_file_id?: string | null
           redemption_rules?: Json
           session_minutes?: number
+          model_name?: string | null
+          model_provider?: string | null
           slug: string
           store_display_name?: string | null
           store_folder_id?: string | null
@@ -2352,6 +2356,8 @@ export type Database = {
           prompt_file_id?: string | null
           redemption_rules?: Json
           session_minutes?: number
+          model_name?: string | null
+          model_provider?: string | null
           slug?: string
           store_display_name?: string | null
           store_folder_id?: string | null

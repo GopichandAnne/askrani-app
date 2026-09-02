@@ -18,7 +18,8 @@ import {
   shouldBotRespond,
   splitBubbles,
 } from "./prompt.ts";
-import { generateReply, type GeminiReply } from "./gemini.ts";
+import { type GeminiReply } from "./gemini.ts";
+import { generateReplyWith, type ModelChoice } from "./llm.ts";
 import { buildToolset, recordAndSend, type UiDirectives } from "./tools.ts";
 import { browseLink, browseProducts, describeFilter } from "./catalog.ts";
 
@@ -138,7 +139,14 @@ export async function generateTurnReply(
     db, store, opts.sessionId, config.ordersEnabled, hasProposal, config.catalogEnabled, today, integrations,
     requestTypes, ui, config.timezone, connectedProviders, httpTools, opts.visitor, mcpTools,
   );
-  const reply = await generateReply(systemInstruction, contents, toolset, {
+  // Which model answers is a per-store choice (null → Gemini, the default). One
+  // light read; the dispatcher swaps providers behind the same contract.
+  const { data: mc } = await db
+    .from("stores")
+    .select("model_provider, model_name")
+    .eq("id", store.id)
+    .maybeSingle();
+  const reply = await generateReplyWith(mc as ModelChoice | null, systemInstruction, contents, toolset, {
     svc: db, storeId: store.id, kind: "bot_chat", ref: { sessionId: opts.sessionId },
   });
   return { ...reply, catalogView: ui.catalog_view };

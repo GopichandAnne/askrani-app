@@ -139,6 +139,31 @@ export async function updateBusinessType(businessType: string): Promise<SaveResu
   return { ok: true };
 }
 
+// ── Model choice: which LLM answers this store's chat ─────────────────────────
+// NULL provider ⇒ Gemini (the default). Platform keys power the alternatives.
+export async function saveModelChoice(provider: string, model: string | null): Promise<SaveResult> {
+  const ctx = await getActiveStore();
+  if (!ctx?.active) return { ok: false, error: "No active store." };
+
+  const supabase = await createClient();
+  const { data: isOwner } = await supabase.rpc("user_is_owner", { p_store_id: ctx.active.id });
+  if (!isOwner) return { ok: false, error: "Only owners can change the model." };
+
+  const p = ["gemini", "anthropic", "openai"].includes(provider) ? provider : "gemini";
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("stores")
+    .update({
+      model_provider: p === "gemini" ? null : p,
+      model_name: p === "gemini" ? null : model || null,
+    })
+    .eq("id", ctx.active.id);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/agent");
+  return { ok: true };
+}
+
 // ── Premium diner voice (OpenAI TTS) ──────────────────────────────────────────
 export type VoiceSettings = { voice: string; enabled: boolean; slug: string; token: string | null };
 

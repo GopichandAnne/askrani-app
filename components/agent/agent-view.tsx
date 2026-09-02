@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { saveAgentConfig, type Charge, type Responder } from "@/app/(app)/agent/actions";
 import { VoiceCard } from "@/components/agent/voice-card";
 import { StreakCard } from "@/components/agent/streak-card";
+import { ModelPicker } from "@/components/agent/model-picker";
 import { profileFor } from "@/lib/console-profile";
 import { RespondersSection } from "./responders-section";
 import { ChargesSection } from "./charges-section";
@@ -39,6 +40,8 @@ export function AgentView({
   charges,
   storeName,
   businessType,
+  initialModelProvider,
+  initialModelName,
 }: {
   initialConfig: Record<string, string>;
   initialResponders: Responder[];
@@ -46,6 +49,8 @@ export function AgentView({
   charges: Charge[];
   storeName: string;
   businessType?: string | null;
+  initialModelProvider: string;
+  initialModelName: string;
 }) {
   const profile = profileFor(businessType);
   const [values, setValues] = useState<Record<string, string>>(initialConfig);
@@ -94,6 +99,8 @@ export function AgentView({
         (never invent a price, always confirm before placing an order) are always
         enforced on top of what you write.
       </p>
+
+      <ModelPicker initialProvider={initialModelProvider} initialModel={initialModelName} />
 
       {/* Ordering toggle */}
       <div className="bg-card flex items-start justify-between gap-4 rounded-lg border p-4">
