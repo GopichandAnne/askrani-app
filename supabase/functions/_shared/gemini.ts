@@ -180,6 +180,35 @@ export async function generateStructuredFromMedia(
  * Generate a reply, running the tool loop if a toolset is given. Returns the
  * final text (null on no-key/failure) and the ordered list of tools invoked.
  */
+// Gemini function-declaration schemas accept only a small OpenAPI subset. Imported
+// APIs and (especially) MCP servers often include fields Gemini rejects
+// (additionalProperties, $ref, $schema, oneOf/anyOf/allOf, default, examples…),
+// and ONE bad declaration makes it reject the whole request — so every message
+// fails. Recursively keep only the supported keys so a single tool can't break chat.
+const SCHEMA_KEEP = new Set([
+  "type", "description", "enum", "items", "properties", "required", "nullable", "format",
+]);
+// deno-lint-ignore no-explicit-any
+function cleanSchema(node: any): any {
+  if (!node || typeof node !== "object") return node;
+  if (Array.isArray(node)) return node.map(cleanSchema);
+  // deno-lint-ignore no-explicit-any
+  const out: any = {};
+  for (const k of Object.keys(node)) {
+    if (!SCHEMA_KEEP.has(k)) continue;
+    if (k === "properties" && node.properties && typeof node.properties === "object") {
+      out.properties = {};
+      for (const [pk, pv] of Object.entries(node.properties)) out.properties[pk] = cleanSchema(pv);
+    } else if (k === "items") {
+      out.items = cleanSchema(node.items);
+    } else {
+      out[k] = node[k];
+    }
+  }
+  if (!out.type && (out.properties || out.required)) out.type = "object";
+  return out;
+}
+
 export async function generateReply(
   systemInstruction: string,
   contents: GeminiContent[],
@@ -193,8 +222,8 @@ export async function generateReply(
   }
   const model = Deno.env.get("GEMINI_MODEL") ?? DEFAULT_MODEL;
   const url = `${API_BASE}/models/${model}:generateContent?key=${key}`;
-  const tools = toolset && toolset.declarations.length > 0
-    ? [{ functionDeclarations: toolset.declarations }]
+  let tools = toolset && toolset.declarations.length > 0
+    ? [{ functionDeclarations: toolset.declarations.map((d) => ({ ...d, parameters: cleanSchema(d.parameters) })) }]
     : undefined;
 
   const convo: GeminiContent[] = [...contents];
@@ -220,6 +249,24 @@ export async function generateReply(
       const res = await fetchWithRetry(url, body);
       if (!res.ok) {
         console.error(`[gemini] ${res.status}: ${await res.text()}`);
+        // A tool declaration Gemini won't accept fails the WHOLE request → every
+        // message would hiccup. Drop tools and retry once so the assistant still
+        // answers from knowledge. Only before any tool has run (no side effects yet).
+        if (tools && iter === 0) {
+          tools = undefined;
+          const r2 = await fetchWithRetry(url, JSON.stringify({
+            systemInstruction: { parts: [{ text: systemInstruction }] },
+            contents: convo,
+            generationConfig: { temperature: 0.7, maxOutputTokens: 1024, thinkingConfig: { thinkingBudget: 128 } },
+          }));
+          if (r2.ok) {
+            // deno-lint-ignore no-explicit-any
+            const j2: any = await r2.json();
+            addUsage(usage, j2?.usageMetadata);
+            const p2: GeminiPart[] = j2?.candidates?.[0]?.content?.parts ?? [];
+            return { text: p2.map((p) => p.text ?? "").join("").trim() || null, toolsUsed };
+          }
+        }
         return { text: null, toolsUsed };
       }
       // deno-lint-ignore no-explicit-any
