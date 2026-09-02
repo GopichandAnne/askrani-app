@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { getTourStore } from "@/lib/tour/store";
 import { mintTourToken } from "@/lib/tour/token";
@@ -23,9 +24,18 @@ export async function GET(req: Request) {
     user = (await supabase.auth.getSession()).data.session?.user ?? null;
   }
 
-  // Genuinely not signed in → log in on the app, then come straight back here.
+  // Genuinely not signed in → send the visitor back to the tour with a diagnostic
+  // so we can see WHY (was the auth cookie even present on this route?), instead of
+  // bouncing to /login → the console.
   if (!user?.email) {
-    return NextResponse.redirect(new URL(`/login?next=${encodeURIComponent("/api/tour/mint")}`, req.url));
+    let authCookies = "none";
+    try {
+      const all = (await cookies()).getAll().map((c) => c.name).filter((n) => n.includes("auth"));
+      authCookies = all.length ? all.join("|") : "no-auth-cookie";
+    } catch {
+      authCookies = "cookies-error";
+    }
+    return NextResponse.redirect(`${AGENT_URL}/agent?tour=nosession&dbg=${encodeURIComponent(authCookies)}`);
   }
 
   const store = await getTourStore();
