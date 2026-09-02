@@ -30,7 +30,7 @@ export default async function AppLayout({
         capabilities,
       }}
     >
-      <div className="bg-background flex h-dvh overflow-hidden">
+      <div className="bg-background fixed inset-0 flex overflow-hidden">
         <Sidebar />
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="bg-background/80 sticky top-0 z-10 flex h-14 items-center gap-3 border-b px-4 backdrop-blur">
