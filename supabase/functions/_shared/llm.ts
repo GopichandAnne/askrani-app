@@ -40,5 +40,7 @@ export async function generateReplyWith(
     console.warn("[llm] openai selected but OPENAI_API_KEY unset — using gemini");
   }
 
-  return await generateReply(systemInstruction, contents, toolset, meter);
+  // Gemini (default). A per-store model_name pins the exact Gemini model; else
+  // the adapter's env/alias default.
+  return await generateReply(systemInstruction, contents, toolset, meter, model);
 }

@@ -214,13 +214,15 @@ export async function generateReply(
   contents: GeminiContent[],
   toolset?: Toolset,
   meter?: MeterCtx,
+  modelOverride?: string,
 ): Promise<GeminiReply> {
   const key = Deno.env.get("GEMINI_API_KEY");
   if (!key) {
     console.warn("[gemini] GEMINI_API_KEY not set — skipping reply (inbound still logged)");
     return { text: null, toolsUsed: [] };
   }
-  const model = Deno.env.get("GEMINI_MODEL") ?? DEFAULT_MODEL;
+  // Per-store model choice wins; else the env override; else the alias default.
+  const model = modelOverride || Deno.env.get("GEMINI_MODEL") || DEFAULT_MODEL;
   const url = `${API_BASE}/models/${model}:generateContent?key=${key}`;
   let tools = toolset && toolset.declarations.length > 0
     ? [{ functionDeclarations: toolset.declarations.map((d) => ({ ...d, parameters: cleanSchema(d.parameters) })) }]

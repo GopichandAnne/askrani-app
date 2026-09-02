@@ -9,7 +9,10 @@ import { Loader2, Sparkles } from "lucide-react";
 
 // Provider → the models we offer. Gemini keeps an empty value (the adapter default).
 const MODELS: Record<string, { value: string; label: string }[]> = {
-  gemini: [{ value: "", label: "Gemini Flash (default)" }],
+  gemini: [
+    { value: "", label: "Gemini Flash — fast (default)" },
+    { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro — most capable" },
+  ],
   anthropic: [
     { value: "claude-sonnet-5", label: "Claude Sonnet 5 — balanced" },
     { value: "claude-opus-5", label: "Claude Opus 5 — most capable" },
@@ -71,8 +74,7 @@ export function ModelPicker({ initialProvider, initialModel }: { initialProvider
           <select
             value={model}
             onChange={(e) => setModel(e.target.value)}
-            disabled={provider === "gemini"}
-            className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm disabled:opacity-60"
+            className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
           >
             {models.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
           </select>

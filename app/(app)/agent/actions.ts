@@ -154,8 +154,11 @@ export async function saveModelChoice(provider: string, model: string | null): P
   const { error } = await admin
     .from("stores")
     .update({
-      model_provider: p === "gemini" ? null : p,
-      model_name: p === "gemini" ? null : model || null,
+      // Store the provider explicitly (incl. 'gemini') so the pick round-trips;
+      // NULL model_name ⇒ that provider's default model. Legacy NULL provider
+      // still resolves to Gemini in the dispatcher, so nothing breaks.
+      model_provider: p,
+      model_name: model || null,
     })
     .eq("id", ctx.active.id);
   if (error) return { ok: false, error: error.message };
