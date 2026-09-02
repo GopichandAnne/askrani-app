@@ -5,6 +5,9 @@ import { Sidebar } from "@/components/app-shell/sidebar";
 import { StoreSwitcher } from "@/components/app-shell/store-switcher";
 import { ThemeToggle } from "@/components/app-shell/theme-toggle";
 import { UserMenu } from "@/components/app-shell/user-menu";
+import { ConsoleAssistant } from "@/components/app-shell/console-assistant";
+import { getTourStore, TOUR_STORE_KEY } from "@/lib/tour/store";
+import { mintTourToken } from "@/lib/tour/token";
 
 export default async function AppLayout({
   children,
@@ -20,6 +23,20 @@ export default async function AppLayout({
   }
 
   const capabilities = await getStoreCapabilities(ctx.active.id);
+
+  // Product-tour: on the tour store's own console, embed its customer-facing
+  // assistant as a floating bubble that acts AS the signed-in owner — the identity
+  // token is minted here, server-side, from the session we already have (no separate
+  // chat login). Only for the tour store, and only when authenticated embed is set.
+  let tourToken: string | null = null;
+  try {
+    const tour = await getTourStore();
+    if (tour && tour.id === ctx.active.id && tour.identitySecret && ctx.user.email) {
+      tourToken = mintTourToken(tour.identitySecret, { email: ctx.user.email, sub: ctx.user.id, ttlSec: 3600 });
+    }
+  } catch {
+    /* never break the console for the preview bubble */
+  }
 
   return (
     <StoreProvider
@@ -42,6 +59,7 @@ export default async function AppLayout({
           <main className="flex-1 overflow-y-auto">{children}</main>
         </div>
       </div>
+      {tourToken ? <ConsoleAssistant token={tourToken} publishableKey={TOUR_STORE_KEY} /> : null}
     </StoreProvider>
   );
 }
