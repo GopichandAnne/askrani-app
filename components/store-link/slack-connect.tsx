@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { getSlackStatus, type SlackStatus } from "@/app/(app)/link/slack-actions";
+import { getSlackStatus, setSlackApprovalsChannel, type SlackStatus } from "@/app/(app)/link/slack-actions";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Check, Loader2, MessageSquare } from "lucide-react";
 
 const NOTES: Record<string, { ok: boolean; msg: string }> = {
@@ -16,6 +18,8 @@ const NOTES: Record<string, { ok: boolean; msg: string }> = {
 
 export function SlackConnect({ storeId }: { storeId: string }) {
   const [status, setStatus] = useState<SlackStatus | null>(null);
+  const [channel, setChannel] = useState("");
+  const [savingCh, setSavingCh] = useState(false);
 
   useEffect(() => {
     // Surface the OAuth callback result (?slack=…) once, then clean the URL.
@@ -28,8 +32,18 @@ export function SlackConnect({ storeId }: { storeId: string }) {
         window.history.replaceState({}, "", window.location.pathname + (p.toString() ? `?${p}` : ""));
       }
     } catch { /* ignore */ }
-    getSlackStatus(storeId).then(setStatus).catch(() => setStatus({ configured: false, connected: false }));
+    getSlackStatus(storeId)
+      .then((s) => { setStatus(s); setChannel(s.approvalsChannel ?? ""); })
+      .catch(() => setStatus({ configured: false, connected: false }));
   }, [storeId]);
+
+  async function saveChannel() {
+    setSavingCh(true);
+    const res = await setSlackApprovalsChannel(storeId, channel);
+    setSavingCh(false);
+    if (res.ok) toast.success(channel.trim() ? "Approvals will post to that channel" : "Approvals channel cleared");
+    else toast.error("Couldn't save", { description: res.error });
+  }
 
   return (
     <div className="bg-card space-y-3 rounded-lg border p-5">
@@ -44,9 +58,25 @@ export function SlackConnect({ storeId }: { storeId: string }) {
       {status === null && <p className="text-muted-foreground text-sm">Checking…</p>}
 
       {status?.connected && (
-        <p className="text-teal-deep flex items-center gap-1.5 text-sm font-medium">
-          <Check className="size-4" /> Connected{status.teamName ? ` to ${status.teamName}` : ""}
-        </p>
+        <div className="space-y-3">
+          <p className="text-teal-deep flex items-center gap-1.5 text-sm font-medium">
+            <Check className="size-4" /> Connected{status.teamName ? ` to ${status.teamName}` : ""}
+          </p>
+          <div className="space-y-1.5 rounded-md border p-3">
+            <Label className="text-xs">Approvals channel</Label>
+            <p className="text-muted-foreground text-xs">
+              Post <span className="font-medium">Approve / Decline</span> buttons for held actions to this
+              Slack channel — a manager can sign off right there. Paste the channel ID (e.g.{" "}
+              <code className="bg-muted rounded px-1">C0123ABCD</code>). Leave blank to only notify by email.
+            </p>
+            <div className="flex gap-2">
+              <Input value={channel} onChange={(e) => setChannel(e.target.value)} placeholder="C0123ABCD" className="font-mono text-sm" />
+              <Button size="sm" variant="outline" onClick={saveChannel} disabled={savingCh}>
+                {savingCh ? <Loader2 className="size-4 animate-spin" /> : null} Save
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
 
       {status && !status.connected && status.configured && status.installUrl && (

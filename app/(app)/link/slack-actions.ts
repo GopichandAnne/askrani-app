@@ -13,6 +13,7 @@ export type SlackStatus = {
   connected: boolean;
   teamName?: string | null;
   installUrl?: string | null;
+  approvalsChannel?: string | null;
 };
 
 async function requireOwner(storeId: string) {
@@ -35,7 +36,7 @@ export async function getSlackStatus(storeId: string): Promise<SlackStatus> {
   // slack_installs isn't in the generated types; a scoped cast keeps this query untyped.
   // deno-lint-ignore no-explicit-any
   const from = db.from as unknown as (t: string) => any;
-  const { data: install } = await from("slack_installs").select("team_name").eq("store_id", storeId).eq("active", true).maybeSingle();
+  const { data: install } = await from("slack_installs").select("team_name, approvals_channel").eq("store_id", storeId).eq("active", true).maybeSingle();
 
   const clientId = process.env.SLACK_CLIENT_ID ?? "";
   const stateSecret = process.env.SLACK_STATE_SECRET ?? "";
@@ -51,5 +52,16 @@ export async function getSlackStatus(storeId: string): Promise<SlackStatus> {
     u.searchParams.set("state", signState(stateSecret, storeId));
     installUrl = u.toString();
   }
-  return { configured, connected: !!install, teamName: install?.team_name ?? null, installUrl };
+  return { configured, connected: !!install, teamName: install?.team_name ?? null, installUrl, approvalsChannel: install?.approvals_channel ?? null };
+}
+
+/** Set the Slack channel that gets Approve/Decline prompts for held actions. */
+export async function setSlackApprovalsChannel(storeId: string, channel: string): Promise<{ ok: boolean; error?: string }> {
+  await requireOwner(storeId);
+  const db = createAdminClient();
+  // deno-lint-ignore no-explicit-any
+  const from = db.from as unknown as (t: string) => any;
+  const { error } = await from("slack_installs").update({ approvals_channel: channel.trim() || null }).eq("store_id", storeId).eq("active", true);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
 }

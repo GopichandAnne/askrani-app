@@ -12,6 +12,33 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import type { Store } from "./types.ts";
 import { notifyResponders } from "./responders.ts";
+import { buildApprovalBlocks } from "./slack.ts";
+import { slackPostMessage } from "./slack-api.ts";
+
+/** If the store connected Slack and set an approvals channel, post Approve/Decline
+ *  buttons there for this held action. Best-effort — a Slack failure never matters. */
+async function postSlackApproval(
+  db: SupabaseClient,
+  store: Store,
+  reqId: string,
+  detail: string,
+  actedAs: string | null,
+): Promise<void> {
+  try {
+    // deno-lint-ignore no-explicit-any
+    const from = db.from as unknown as (t: string) => any;
+    const { data: install } = await from("slack_installs")
+      .select("bot_token, approvals_channel")
+      .eq("store_id", store.id)
+      .eq("active", true)
+      .maybeSingle();
+    if (!install?.bot_token || !install?.approvals_channel) return;
+    const { text, blocks } = buildApprovalBlocks({ id: reqId, detail, orgName: store.store_display_name ?? store.slug, actedAs });
+    await slackPostMessage(install.bot_token, install.approvals_channel, text, blocks);
+  } catch (e) {
+    console.warn(`[holds] slack approval post: ${(e as Error)?.message ?? e}`);
+  }
+}
 
 const PANEL_URL = "https://app.askrani.ai";
 const APPROVAL_TOPIC = "approval";
@@ -100,6 +127,9 @@ export async function routeHeldAction(
     } catch (e) {
       console.error(`[holds] notify: ${e instanceof Error ? e.message : e}`);
     }
+
+    // In-channel approval: Approve/Decline buttons in Slack, if configured.
+    await postSlackApproval(db, store, (inserted as { id: string }).id, detail, h.actedAs);
 
     return {
       reference: (inserted as { id: string }).id,

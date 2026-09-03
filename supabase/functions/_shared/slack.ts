@@ -123,6 +123,56 @@ export function buildRawIdentity(userId: string, _teamId: string, email?: string
   return { email: email ?? null, phone: null, name: name ?? null, sub: userId, rawToken: null };
 }
 
+// ── Governance in-channel: Approve / Decline buttons for a held action ──
+export interface ApprovalReq {
+  id: string; // action_request id → the button's value
+  detail: string;
+  orgName: string;
+  actedAs?: string | null;
+}
+
+/** Block Kit message with Approve / Decline buttons carrying the action_request id. */
+export function buildApprovalBlocks(a: ApprovalReq): { text: string; blocks: unknown[] } {
+  const text = `Approval needed — ${a.orgName}: ${a.detail}`;
+  return {
+    text, // notification fallback
+    blocks: [
+      { type: "section", text: { type: "mrkdwn", text: `*Approval needed* — ${a.orgName}\n${a.detail}` } },
+      { type: "context", elements: [{ type: "mrkdwn", text: a.actedAs ? `Requested for: ${a.actedAs}` : "Flagged by Rani" }] },
+      {
+        type: "actions",
+        block_id: `approval_${a.id}`,
+        elements: [
+          { type: "button", action_id: "approve", style: "primary", text: { type: "plain_text", text: "Approve" }, value: a.id },
+          { type: "button", action_id: "decline", style: "danger", text: { type: "plain_text", text: "Decline" }, value: a.id },
+        ],
+      },
+    ],
+  };
+}
+
+export interface ParsedInteraction {
+  decision: "approved" | "declined";
+  actionRequestId: string;
+  userName: string;
+  responseUrl: string;
+}
+
+/** Extract an Approve/Decline click from a Slack interactivity payload; null for
+ *  anything else (so unrelated interactions are safely ignored). */
+// deno-lint-ignore no-explicit-any
+export function parseInteraction(payload: any): ParsedInteraction | null {
+  if (!payload || payload.type !== "block_actions") return null;
+  const action = Array.isArray(payload.actions) ? payload.actions[0] : null;
+  if (!action) return null;
+  const decision = action.action_id === "approve" ? "approved" : action.action_id === "decline" ? "declined" : null;
+  if (!decision) return null;
+  const id = action.value ? String(action.value) : "";
+  if (!id) return null;
+  const userName = String(payload.user?.name || payload.user?.username || payload.user?.id || "someone");
+  return { decision, actionRequestId: id, userName, responseUrl: payload.response_url ? String(payload.response_url) : "" };
+}
+
 /** Split a reply to fit Slack's per-message limit (~4000 chars), breaking on a
  *  newline or space near the cut rather than mid-word. */
 export function chunkForSlack(text: string, max = 3800): string[] {

@@ -5,7 +5,7 @@
 //   deno test --allow-env supabase/functions/_shared/slack.test.ts
 
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { buildRawIdentity, chunkForSlack, classifyInbound, signState, slackSessionId, verifySlackSignature, verifyState } from "./slack.ts";
+import { buildApprovalBlocks, buildRawIdentity, chunkForSlack, classifyInbound, parseInteraction, signState, slackSessionId, verifySlackSignature, verifyState } from "./slack.ts";
 
 // ── Slack's documented example (api.slack.com/authentication/verifying-requests) ──
 const SECRET = "8f742231b10e8888abcd99yyyzzz85a5";
@@ -127,4 +127,41 @@ Deno.test("state: expired is rejected", async () => {
 Deno.test("state: junk is rejected", async () => {
   assertEquals(await verifyState(STATE_SECRET, "notatoken", ), null);
   assertEquals(await verifyState(STATE_SECRET, "", ), null);
+});
+
+// ── Approval buttons (governance in Slack) ──
+Deno.test("approval message: Approve/Decline buttons carry the request id", () => {
+  const { text, blocks } = buildApprovalBlocks({ id: "req-77", detail: "refund_order — order: 7742", orgName: "Acme", actedAs: "ada@acme.com" });
+  assert(text.includes("Acme"));
+  // deno-lint-ignore no-explicit-any
+  const actions = (blocks as any[]).find((b) => b.type === "actions");
+  assertEquals(actions.elements.map((e: { action_id: string }) => e.action_id), ["approve", "decline"]);
+  assertEquals(actions.elements[0].value, "req-77");
+  assertEquals(actions.elements[1].value, "req-77");
+});
+
+Deno.test("interaction: an Approve click parses to a decision + request id + user", () => {
+  const p = parseInteraction({
+    type: "block_actions",
+    user: { name: "manager.jo" },
+    response_url: "https://hooks.slack.com/actions/x",
+    actions: [{ action_id: "approve", value: "req-77" }],
+  });
+  assertEquals(p?.decision, "approved");
+  assertEquals(p?.actionRequestId, "req-77");
+  assertEquals(p?.userName, "manager.jo");
+  assertEquals(p?.responseUrl, "https://hooks.slack.com/actions/x");
+});
+
+Deno.test("interaction: a Decline click parses to declined", () => {
+  const p = parseInteraction({ type: "block_actions", user: { id: "U1" }, actions: [{ action_id: "decline", value: "req-9" }] });
+  assertEquals(p?.decision, "declined");
+  assertEquals(p?.actionRequestId, "req-9");
+});
+
+Deno.test("interaction: unrelated payloads are ignored", () => {
+  assertEquals(parseInteraction({ type: "view_submission" }), null);
+  assertEquals(parseInteraction({ type: "block_actions", actions: [{ action_id: "something_else", value: "x" }] }), null);
+  assertEquals(parseInteraction({ type: "block_actions", actions: [{ action_id: "approve" }] }), null); // no value
+  assertEquals(parseInteraction(null), null);
 });

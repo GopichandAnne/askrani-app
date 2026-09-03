@@ -19,6 +19,7 @@ import { generateTurnReply } from "../_shared/conversation.ts";
 import { resolveIdentity } from "../_shared/identity.ts";
 import { splitBubbles } from "../_shared/prompt.ts";
 import { buildRawIdentity, chunkForSlack, classifyInbound, slackSessionId, verifySlackSignature } from "../_shared/slack.ts";
+import { slackPostMessage, slackUserInfo } from "../_shared/slack-api.ts";
 
 // deno-lint-ignore no-explicit-any
 declare const EdgeRuntime: any;
@@ -139,42 +140,5 @@ async function handleEvent(body: Record<string, unknown>): Promise<void> {
         created_at: new Date().toISOString(),
       });
     }
-  }
-}
-
-/** Look up a Slack user's email + name (needs users:read.email). Best-effort. */
-async function slackUserInfo(botToken: string, userId: string): Promise<{ email?: string | null; name?: string | null } | null> {
-  try {
-    const res = await fetch(`https://slack.com/api/users.info?user=${encodeURIComponent(userId)}`, {
-      headers: { authorization: `Bearer ${botToken}` },
-    });
-    // deno-lint-ignore no-explicit-any
-    const j: any = await res.json();
-    if (!j?.ok) {
-      console.warn(`[slack] users.info: ${j?.error}`);
-      return null;
-    }
-    return { email: j.user?.profile?.email ?? null, name: j.user?.profile?.real_name ?? j.user?.real_name ?? null };
-  } catch (e) {
-    console.warn(`[slack] users.info error: ${(e as Error)?.message}`);
-    return null;
-  }
-}
-
-/** Post a message to a Slack channel/DM. Returns true on success. */
-async function slackPostMessage(botToken: string, channel: string, text: string): Promise<boolean> {
-  try {
-    const res = await fetch("https://slack.com/api/chat.postMessage", {
-      method: "POST",
-      headers: { "content-type": "application/json; charset=utf-8", authorization: `Bearer ${botToken}` },
-      body: JSON.stringify({ channel, text }),
-    });
-    // deno-lint-ignore no-explicit-any
-    const j: any = await res.json();
-    if (!j?.ok) console.warn(`[slack] chat.postMessage: ${j?.error}`);
-    return !!j?.ok;
-  } catch (e) {
-    console.warn(`[slack] chat.postMessage error: ${(e as Error)?.message}`);
-    return false;
   }
 }
