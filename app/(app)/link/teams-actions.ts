@@ -17,7 +17,7 @@ async function requireOwner(storeId: string) {
 export async function getTeamsStatus(storeId: string): Promise<TeamsStatus> {
   await requireOwner(storeId);
   const db = createAdminClient();
-  // deno-lint-ignore no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const from = db.from as unknown as (t: string) => any;
   const { data } = await from("teams_installs").select("tenant_id").eq("store_id", storeId).eq("active", true).maybeSingle();
   const configured = !!(process.env.MICROSOFT_APP_ID && process.env.MICROSOFT_APP_PASSWORD);
@@ -30,7 +30,7 @@ export async function setTeamsTenant(storeId: string, tenantId: string): Promise
   await requireOwner(storeId);
   const t = tenantId.trim();
   const db = createAdminClient();
-  // deno-lint-ignore no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const from = db.from as unknown as (t: string) => any;
   if (!t) {
     await from("teams_installs").update({ active: false }).eq("store_id", storeId);

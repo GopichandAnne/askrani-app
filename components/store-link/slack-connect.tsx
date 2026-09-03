@@ -27,7 +27,8 @@ export function SlackConnect({ storeId }: { storeId: string }) {
       const p = new URLSearchParams(window.location.search);
       const s = p.get("slack");
       if (s && NOTES[s]) {
-        NOTES[s].ok ? toast.success(NOTES[s].msg) : toast.error(NOTES[s].msg);
+        if (NOTES[s].ok) toast.success(NOTES[s].msg);
+        else toast.error(NOTES[s].msg);
         p.delete("slack");
         window.history.replaceState({}, "", window.location.pathname + (p.toString() ? `?${p}` : ""));
       }

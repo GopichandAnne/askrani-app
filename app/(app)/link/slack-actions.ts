@@ -34,7 +34,7 @@ export async function getSlackStatus(storeId: string): Promise<SlackStatus> {
   await requireOwner(storeId);
   const db = createAdminClient();
   // slack_installs isn't in the generated types; a scoped cast keeps this query untyped.
-  // deno-lint-ignore no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const from = db.from as unknown as (t: string) => any;
   const { data: install } = await from("slack_installs").select("team_name, approvals_channel").eq("store_id", storeId).eq("active", true).maybeSingle();
 
@@ -59,7 +59,7 @@ export async function getSlackStatus(storeId: string): Promise<SlackStatus> {
 export async function setSlackApprovalsChannel(storeId: string, channel: string): Promise<{ ok: boolean; error?: string }> {
   await requireOwner(storeId);
   const db = createAdminClient();
-  // deno-lint-ignore no-explicit-any
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const from = db.from as unknown as (t: string) => any;
   const { error } = await from("slack_installs").update({ approvals_channel: channel.trim() || null }).eq("store_id", storeId).eq("active", true);
   if (error) return { ok: false, error: error.message };
