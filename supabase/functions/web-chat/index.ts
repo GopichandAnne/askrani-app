@@ -16,12 +16,8 @@ import { classifyTurn } from "../_shared/analytics.ts";
 import { creditGateOpen } from "../_shared/meter.ts";
 import { splitBubbles } from "../_shared/prompt.ts";
 import { storeChatFile, storeChatImage } from "../_shared/chat-media.ts";
-import {
-  bindMemberSession,
-  findMemberByIdentity,
-  provisionMember,
-  verifyEmbedIdentity,
-} from "../_shared/members.ts";
+import { bindMemberSession } from "../_shared/members.ts";
+import { resolveIdentity, verifyIdentityForStore } from "../_shared/identity.ts";
 import { verifyBrowseIdentity } from "../_shared/catalog.ts";
 import { captureReferral } from "../_shared/referral.ts";
 import {
@@ -67,26 +63,16 @@ Deno.serve(async (req) => {
     const vdb = serviceClient();
     const vStore = await getStoreBySlug(vdb, vSlug);
     if (!vStore) return json({ ok: false, reason: "unknown store" }, 404);
-    const cfg = {
-      secret: vStore.identity_secret,
-      jwksUrl: vStore.sso_jwks_url,
-      issuer: vStore.sso_issuer,
-      audience: vStore.sso_audience,
-      emailClaim: vStore.sso_email_claim,
-      nameClaim: vStore.sso_name_claim,
-    };
-    const method = idToken.split(".").length === 3 ? "jwks" : "hmac";
-    if (method === "jwks" && !cfg.jwksUrl) return json({ ok: false, method, recognized: false, reason: "This is a JWT but no JWKS URL is configured for this store." }, 200);
-    if (method === "hmac" && !cfg.secret) return json({ ok: false, method, recognized: false, reason: "This is an HMAC token but no SSO secret is set for this store." }, 200);
-    const vClaim = await verifyEmbedIdentity(cfg, idToken);
-    if (!vClaim) return json({ ok: false, method, recognized: false, reason: "Token was not accepted — bad signature, expired, wrong issuer/audience, or no email claim." }, 200);
+    // Same providers-aware verify + domain gate the chat path runs.
+    const v = await verifyIdentityForStore(vdb, vStore, idToken);
+    if (!v.claim) return json({ ok: false, method: v.method, recognized: false, reason: v.reason }, 200);
     return json({
       ok: true,
-      method,
+      method: v.method,
       recognized: true,
-      recognizedAs: vClaim.email ?? vClaim.phone ?? null,
-      name: vClaim.name ?? null,
-      sub: (vClaim.metadata as { sub?: string } | undefined)?.sub ?? null,
+      recognizedAs: v.claim.email ?? v.claim.phone ?? null,
+      name: v.claim.name ?? null,
+      sub: (v.claim.metadata as { sub?: string } | undefined)?.sub ?? null,
     }, 200);
   }
 
@@ -210,32 +196,14 @@ Deno.serve(async (req) => {
 
   const identityToken = typeof body.identity_token === "string" ? body.identity_token : "";
   let visitor: Visitor | undefined;
-  // Either SSO method may be configured: the HMAC shared secret, or bring-your-own
-  // JWT verified against the store's JWKS. verifyEmbedIdentity dispatches by token shape.
-  const ssoCfg = {
-    secret: store.identity_secret,
-    jwksUrl: store.sso_jwks_url,
-    issuer: store.sso_issuer,
-    audience: store.sso_audience,
-    emailClaim: store.sso_email_claim,
-    nameClaim: store.sso_name_claim,
-  };
-  if (identityToken && store.access_control && (ssoCfg.secret || ssoCfg.jwksUrl)) {
-    const claim = await verifyEmbedIdentity(ssoCfg, identityToken);
-    if (claim && (claim.email || claim.phone)) {
-      // Find the member, or JIT-provision them from the verified token (so a
-      // property manager's portal drives the directory with no upload).
-      let m = await findMemberByIdentity(db, store.id, claim.email, claim.phone);
-      if (!m) m = await provisionMember(db, store.id, claim);
-      if (m) await bindMemberSession(db, sessionId, store.id, m.id);
-      // Carry the VERIFIED identity into the turn so delegated-identity API tools
-      // can call the host's own API as this signed-in customer. We forward the raw
-      // token (the host signed it and can verify it) plus the verified claims.
-      const sub = claim.metadata && typeof claim.metadata === "object"
-        ? (claim.metadata as Record<string, unknown>).sub ?? (claim.metadata as Record<string, unknown>).id
-        : undefined;
-      visitor = { token: identityToken, email: claim.email ?? null, phone: claim.phone ?? null, sub: sub != null ? String(sub) : null };
-    }
+  // Resolve the signed-in visitor through the shared organization-identity path:
+  // verify (HMAC or bring-your-own-JWT via the store's providers) → domain gate →
+  // find or JIT-provision the member → bind the session. No token ⇒ anonymous, as
+  // today. The carried identity lets delegated-identity tools act as this customer
+  // (the raw token is forwarded; the model never sees it).
+  if (identityToken && store.access_control) {
+    const resolved = await resolveIdentity(db, store, sessionId, { channel: "web", identityToken });
+    if (resolved) visitor = resolved.visitor;
   }
 
   // Give-and-get: a recipient who arrived via a forwarded referral card (?ref=)
