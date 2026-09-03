@@ -7,6 +7,7 @@ import { StoreLinkPanel } from "@/components/store-link/store-link-panel";
 import { SignedInEmbedGuide } from "@/components/store-link/signed-in-embed-guide";
 import { IdentityProviders } from "@/components/store-link/identity-providers";
 import { SsoDevTools } from "@/components/members/sso-dev-tools";
+import { SlackConnect } from "@/components/store-link/slack-connect";
 
 export const metadata: Metadata = { title: "Web chat link · Ask Rani" };
 
@@ -41,6 +42,7 @@ export default async function LinkPage() {
       <div className="bg-card rounded-lg border p-5">
         <StoreLinkPanel key={store.slug} storeId={store.id} storeSlug={store.slug} storeName={store.name} />
       </div>
+      {isSaas && <SlackConnect storeId={store.id} />}
       {isSaas && <SignedInEmbedGuide pubKey={pubKey} />}
       {isSaas && <IdentityProviders storeId={store.id} />}
       {isSaas && <SsoDevTools storeId={store.id} />}

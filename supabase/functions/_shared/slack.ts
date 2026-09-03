@@ -36,6 +36,42 @@ export async function verifySlackSignature(
   return timingSafeEqual("v0=" + hex(new Uint8Array(mac)), signature);
 }
 
+async function hmacHex(secret: string, msg: string): Promise<string> {
+  const key = await crypto.subtle.importKey("raw", enc(secret) as unknown as BufferSource, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const mac = await crypto.subtle.sign("HMAC", key, enc(msg) as unknown as BufferSource);
+  return hex(new Uint8Array(mac));
+}
+function b64url(s: string): string {
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function b64urlDecode(s: string): string {
+  const pad = s.length % 4 ? "=".repeat(4 - (s.length % 4)) : "";
+  return atob(s.replace(/-/g, "+").replace(/_/g, "/") + pad);
+}
+
+/** Sign the OAuth `state` so the install callback can trust which store started it —
+ *  base64url({s: storeId, exp}) + "." + HMAC-SHA256. */
+export async function signState(secret: string, storeId: string, ttlSec = 600): Promise<string> {
+  const payload = b64url(JSON.stringify({ s: storeId, exp: Math.floor(Date.now() / 1000) + ttlSec }));
+  return payload + "." + await hmacHex(secret, payload);
+}
+
+/** Verify a signed OAuth state → the store id, or null (bad signature / expired). */
+export async function verifyState(secret: string, state: string, nowSec: number = Date.now() / 1000): Promise<string | null> {
+  if (!secret || !state) return null;
+  const i = state.lastIndexOf(".");
+  if (i <= 0) return null;
+  const payload = state.slice(0, i);
+  if (state.slice(i + 1) !== await hmacHex(secret, payload)) return null;
+  try {
+    const p = JSON.parse(b64urlDecode(payload));
+    if (p.exp && nowSec > Number(p.exp)) return null;
+    return p.s ? String(p.s) : null;
+  } catch {
+    return null;
+  }
+}
+
 export interface SlackInbound {
   text: string;
   user: string;

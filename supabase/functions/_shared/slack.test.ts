@@ -5,7 +5,7 @@
 //   deno test --allow-env supabase/functions/_shared/slack.test.ts
 
 import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { buildRawIdentity, chunkForSlack, classifyInbound, slackSessionId, verifySlackSignature } from "./slack.ts";
+import { buildRawIdentity, chunkForSlack, classifyInbound, signState, slackSessionId, verifySlackSignature, verifyState } from "./slack.ts";
 
 // ── Slack's documented example (api.slack.com/authentication/verifying-requests) ──
 const SECRET = "8f742231b10e8888abcd99yyyzzz85a5";
@@ -97,4 +97,34 @@ Deno.test("chunking: long text splits into <= limit pieces on boundaries", () =>
   assert(parts.length > 1, "should split");
   for (const p of parts) assert(p.length <= 1000, `chunk within limit (was ${p.length})`);
   assert(parts.join(" ").includes("line 399"), "keeps all content");
+});
+
+// ── OAuth state signing (install can't be spoofed to another store) ──
+const STATE_SECRET = "state-secret-xyz";
+
+Deno.test("state: round-trips to the store id", async () => {
+  const s = await signState(STATE_SECRET, "store-123", 600);
+  assertEquals(await verifyState(STATE_SECRET, s), "store-123");
+});
+
+Deno.test("state: wrong secret is rejected", async () => {
+  const s = await signState(STATE_SECRET, "store-123", 600);
+  assertEquals(await verifyState("other-secret", s), null);
+});
+
+Deno.test("state: tampered payload is rejected", async () => {
+  const s = await signState(STATE_SECRET, "store-123", 600);
+  const [, sig] = s.split(".");
+  const forged = btoa(JSON.stringify({ s: "store-999", exp: Math.floor(Date.now() / 1000) + 600 })).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  assertEquals(await verifyState(STATE_SECRET, `${forged}.${sig}`), null);
+});
+
+Deno.test("state: expired is rejected", async () => {
+  const s = await signState(STATE_SECRET, "store-123", 600);
+  assertEquals(await verifyState(STATE_SECRET, s, Date.now() / 1000 + 900), null);
+});
+
+Deno.test("state: junk is rejected", async () => {
+  assertEquals(await verifyState(STATE_SECRET, "notatoken", ), null);
+  assertEquals(await verifyState(STATE_SECRET, "", ), null);
 });
