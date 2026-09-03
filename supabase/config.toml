@@ -144,3 +144,20 @@ verify_jwt = false
 # HMAC-signed `state` minted by oauth-start. (oauth-start keeps verify_jwt ON.)
 [functions.oauth-callback]
 verify_jwt = false
+
+# Slack front door — Slack posts events / OAuth redirect / interactions here with no
+# Supabase JWT; each function verifies its OWN caller (signing secret, OAuth code,
+# request signature), so the gateway's JWT check must be off.
+[functions.slack-events]
+verify_jwt = false
+
+[functions.slack-oauth]
+verify_jwt = false
+
+[functions.slack-interactions]
+verify_jwt = false
+
+# Teams front door — Bot Framework posts activities here; the function verifies the
+# Bot Framework JWT against Microsoft's JWKS (not a Supabase token).
+[functions.teams-messages]
+verify_jwt = false
