@@ -16,8 +16,6 @@ import {
   type JwksConfig,
   type Member,
 } from "@/app/(app)/members/actions";
-import { JwksSso } from "@/components/members/jwks-sso";
-import { SsoDevTools } from "@/components/members/sso-dev-tools";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -313,87 +311,25 @@ export function MembersManager({ storeId }: { storeId: string }) {
         </div>
       )}
 
-      {/* Embedded SSO */}
+      {/* Identity setup lives with the front doors now */}
       <div className="space-y-2 border-t pt-4">
         <p className="flex items-center gap-1.5 text-sm font-medium">
-          <KeyRound className="text-teal-deep size-4" /> Embedded website login (SSO)
+          <KeyRound className="text-teal-deep size-4" /> How people sign in
         </p>
         <p className="text-muted-foreground text-xs">
-          Already have logins on your website? When the widget is embedded there, your site signs a
-          short token with this secret and passes it to Rani — so your existing login recognizes the
-          member automatically, with nothing to manage here. WhatsApp needs no setup: the phone number
-          is matched on its own.
-        </p>
-        {secret ? (
-          <div className="space-y-1">
-            <code className="bg-muted block overflow-x-auto rounded px-2 py-1.5 text-xs">{secret}</code>
-            <p className="text-muted-foreground text-xs">
-              Copy this now — it won&apos;t be shown again. Keep it server-side only.
-            </p>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                navigator.clipboard.writeText(secret);
-                setCopied(true);
-                setTimeout(() => setCopied(false), 1500);
-              }}
-            >
-              {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
-              {copied ? "Copied" : "Copy secret"}
-            </Button>
-          </div>
-        ) : (
-          <Button size="sm" variant="outline" onClick={makeSecret} disabled={busy}>
-            <KeyRound className="size-4" /> {hasSso ? "Rotate SSO secret" : "Set up embedded SSO"}
-          </Button>
-        )}
-        <p className="text-muted-foreground text-xs">
-          Your backend signs <code className="bg-muted rounded px-1">base64url(JSON)+&quot;.&quot;+HMAC-SHA256</code>{" "}
-          of <code className="bg-muted rounded px-1">{"{email, exp}"}</code> and adds{" "}
-          <code className="bg-muted rounded px-1">data-user-token</code> to the embed snippet. The same
-          signed-in identity also lets Rani call your own APIs <em>as that customer</em> — set those up in{" "}
-          <Link href="/connections" className="text-teal-deep hover:underline">Integrations &amp; tools</Link>{" "}
-          (&ldquo;answer as the signed-in customer&rdquo;).
+          Sign-in and identity — your auth provider (SSO / JWKS), a shared secret, allowed domains, the
+          signing snippets and the token tester — now live with your front doors in{" "}
+          <Link href="/link" className="text-teal-deep hover:underline">Embed &amp; install → Identity providers</Link>.
+          Set it up once there and every channel recognizes signed-in users. This page keeps the people
+          themselves — the directory above, roles, and members-only access. WhatsApp needs no setup: the
+          phone number is matched on its own.
         </p>
         <p className="text-muted-foreground text-xs">
-          You can also keep some knowledge private to signed-in members — mark a document{" "}
+          Keep some knowledge private to signed-in members — mark a document{" "}
           <span className="font-medium">Members only</span> in{" "}
-          <Link href="/knowledge" className="text-teal-deep hover:underline">Knowledge</Link>, and Rani
-          shares it only after someone signs in.
+          <Link href="/knowledge" className="text-teal-deep hover:underline">Knowledge</Link>.
         </p>
-        <details className="group">
-          <summary className="text-teal-deep hover:text-teal-deep/80 cursor-pointer select-none text-xs font-medium">
-            Show the signing code (Node.js)
-          </summary>
-          <div className="relative mt-2">
-            <pre className="bg-muted overflow-x-auto rounded p-3 text-[11px] leading-relaxed">
-              <code>{SIGN_SNIPPET}</code>
-            </pre>
-            <Button
-              size="sm"
-              variant="outline"
-              className="absolute right-2 top-2"
-              onClick={() => {
-                navigator.clipboard.writeText(SIGN_SNIPPET);
-                setCopiedCode(true);
-                setTimeout(() => setCopiedCode(false), 1500);
-              }}
-            >
-              {copiedCode ? <Check className="size-4" /> : <Copy className="size-4" />}
-              {copiedCode ? "Copied" : "Copy"}
-            </Button>
-          </div>
-          <p className="text-muted-foreground mt-2 text-xs">
-            Other stacks: same recipe — base64url the JSON <code className="bg-muted rounded px-1">{"{email, exp}"}</code>,
-            HMAC-SHA256 it with your secret, join as <code className="bg-muted rounded px-1">body.signature</code>.
-          </p>
-        </details>
       </div>
-
-      {jwks && <JwksSso storeId={storeId} initial={jwks} />}
-
-      <SsoDevTools storeId={storeId} />
     </div>
   );
 }

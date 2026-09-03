@@ -5,6 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 import { profileFor, homeHrefFor } from "@/lib/console-profile";
 import { StoreLinkPanel } from "@/components/store-link/store-link-panel";
 import { SignedInEmbedGuide } from "@/components/store-link/signed-in-embed-guide";
+import { IdentityProviders } from "@/components/store-link/identity-providers";
+import { SsoDevTools } from "@/components/members/sso-dev-tools";
 
 export const metadata: Metadata = { title: "Web chat link · Ask Rani" };
 
@@ -40,6 +42,8 @@ export default async function LinkPage() {
         <StoreLinkPanel key={store.slug} storeId={store.id} storeSlug={store.slug} storeName={store.name} />
       </div>
       {isSaas && <SignedInEmbedGuide pubKey={pubKey} />}
+      {isSaas && <IdentityProviders storeId={store.id} />}
+      {isSaas && <SsoDevTools storeId={store.id} />}
     </div>
   );
 }

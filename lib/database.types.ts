@@ -317,6 +317,74 @@ export type Database = {
         }
         Relationships: []
       }
+      identity_providers: {
+        Row: {
+          active: boolean
+          allowed_domains: string[] | null
+          audience: string | null
+          auto_admit: boolean
+          claim_role_map: Json | null
+          created_at: string
+          default_role: string | null
+          email_claim: string | null
+          id: string
+          issuer: string | null
+          jwks_url: string | null
+          label: string | null
+          name_claim: string | null
+          secret: string | null
+          store_id: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          allowed_domains?: string[] | null
+          audience?: string | null
+          auto_admit?: boolean
+          claim_role_map?: Json | null
+          created_at?: string
+          default_role?: string | null
+          email_claim?: string | null
+          id?: string
+          issuer?: string | null
+          jwks_url?: string | null
+          label?: string | null
+          name_claim?: string | null
+          secret?: string | null
+          store_id: string
+          type?: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          allowed_domains?: string[] | null
+          audience?: string | null
+          auto_admit?: boolean
+          claim_role_map?: Json | null
+          created_at?: string
+          default_role?: string | null
+          email_claim?: string | null
+          id?: string
+          issuer?: string | null
+          jwks_url?: string | null
+          label?: string | null
+          name_claim?: string | null
+          secret?: string | null
+          store_id?: string
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "identity_providers_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       knowledge_index: {
         Row: {
           chunk_index: number

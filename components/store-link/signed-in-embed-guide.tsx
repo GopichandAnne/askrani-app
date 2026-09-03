@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
 import { Check, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -63,7 +62,7 @@ export function SignedInEmbedGuide({ pubKey }: { pubKey: string | null }) {
         <div className="space-y-2 text-sm">
           <p className="font-medium">Bring your own JWT (JWKS)</p>
           <ol className="text-muted-foreground list-decimal space-y-1 pl-5 text-xs">
-            <li>In <Link href="/members" className="text-teal-deep hover:underline">Members &amp; access</Link>, open <span className="font-medium">“Already have an auth provider? (JWKS)”</span> and paste your JWKS URL + issuer.</li>
+            <li>In <span className="font-medium">Identity providers</span> below, add a provider, choose <span className="font-medium">Existing auth (JWKS)</span>, and paste your JWKS URL + issuer.</li>
             <li>Pass the JWT your provider already mints for the logged-in user as <code className="bg-muted rounded px-1">data-user-token</code>. We verify it against your public keys — no shared secret, no signing code.</li>
           </ol>
           <Snippet code={`<script src="https://app.askrani.ai/embed.js"\n  data-key="${k}"\n  data-user-token="<the JWT you already issue>"\n  async></script>`} />
@@ -74,9 +73,9 @@ export function SignedInEmbedGuide({ pubKey }: { pubKey: string | null }) {
         <div className="space-y-2 text-sm">
           <p className="font-medium">Shared secret + a signing snippet</p>
           <ol className="text-muted-foreground list-decimal space-y-1 pl-5 text-xs">
-            <li>In <Link href="/members" className="text-teal-deep hover:underline">Members &amp; access</Link>, click <span className="font-medium">“Set up embedded SSO”</span> to get your secret.</li>
-            <li>Copy the signing code (Node/Python/PHP/Ruby/Go are all there) and mint a token per logged-in user on your server.</li>
-            <li>Pass it as <code className="bg-muted rounded px-1">data-user-token</code>. Use the <span className="font-medium">token tester</span> on that page to confirm before going live.</li>
+            <li>In <span className="font-medium">Identity providers</span> below, add a <span className="font-medium">Shared secret</span> provider and generate a secret.</li>
+            <li>Copy the signing code (Node/Python/PHP/Ruby/Go are all in the tools below) and mint a token per logged-in user on your server.</li>
+            <li>Pass it as <code className="bg-muted rounded px-1">data-user-token</code>. Use the <span className="font-medium">token tester</span> below to confirm before going live.</li>
           </ol>
           <Snippet code={`<script src="https://app.askrani.ai/embed.js"\n  data-key="${k}"\n  data-user-token="<raniUserToken(user)>"\n  async></script>`} />
         </div>
