@@ -28,6 +28,20 @@ export async function getStoreBySlug(
   return (data as Store) ?? null;
 }
 
+/** Load a store by id (same columns as getStoreBySlug) — used by channel adapters
+ *  that resolve the store from an install mapping (e.g. Slack team_id → store_id). */
+export async function getStoreById(
+  db: SupabaseClient,
+  storeId: string,
+): Promise<Store | null> {
+  const { data } = await db
+    .from("stores")
+    .select("id, slug, store_display_name, business_type, whatsapp_phone_number_id, access_control, identity_secret, sso_jwks_url, sso_issuer, sso_audience, sso_email_claim, sso_name_claim")
+    .eq("id", storeId)
+    .maybeSingle();
+  return (data as Store) ?? null;
+}
+
 /** The store's WhatsApp access token (service-role only — never client-readable). */
 export async function getStoreAccessToken(
   db: SupabaseClient,
